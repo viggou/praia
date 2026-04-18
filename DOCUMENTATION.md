@@ -1,0 +1,1560 @@
+# Praia Language Documentation
+
+Praia is a dynamically typed, interpreted programming language built in C++.
+
+## Table of Contents
+
+- [Getting Started](#getting-started)
+- [Variables](#variables)
+- [Data Types](#data-types)
+- [Operators](#operators)
+- [Strings](#strings)
+- [Arrays](#arrays)
+- [Maps](#maps)
+- [Control Flow](#control-flow)
+- [Error Handling](#error-handling)
+- [Loops](#loops)
+- [Functions](#functions)
+- [Lambdas](#lambdas)
+- [Classes](#classes)
+- [Built-in Functions](#built-in-functions)
+- [String Methods](#string-methods)
+- [Regex](#regex)
+- [Array Methods](#array-methods)
+- [The sys Namespace](#the-sys-namespace)
+- [Pipe Operator](#pipe-operator)
+- [JSON](#json)
+- [YAML](#yaml)
+- [Async / Await](#async--await)
+- [HTTP Networking](#http-networking)
+- [Grains (Modules)](#grains-modules)
+- [Comments](#comments)
+- [Operator Precedence](#operator-precedence)
+- [REPL](#repl)
+- [Command-Line Usage](#command-line-usage)
+
+---
+
+## Getting Started
+
+Build and run:
+
+```sh
+make
+./praia script.praia          # run a file
+./praia                       # start the REPL
+```
+
+Hello world:
+
+```
+print("Hello, World!")
+```
+
+---
+
+## Variables
+
+Declare variables with `let`. Uninitialized variables are `nil`.
+
+```
+let name = "Ada"
+let age = 36
+let score              // nil
+
+age = 37               // reassignment (no let)
+```
+
+---
+
+## Data Types
+
+Praia has 7 types:
+
+| Type | Examples | Notes |
+|------|---------|-------|
+| `nil` | `nil` | The absence of a value |
+| `bool` | `true`, `false` | |
+| `number` | `42`, `3.14`, `0` | Double-precision float |
+| `string` | `"hello"` | Supports interpolation and escape sequences |
+| `array` | `[1, 2, 3]` | Ordered, mixed-type, reference semantics |
+| `map` | `{name: "Ada"}` | String keys, reference semantics |
+| `function` | `func add(a, b) { ... }` | First-class, supports closures |
+
+### Truthiness
+
+Only `nil` and `false` are falsy. Everything else is truthy, including `0`, `""`, and `[]`.
+
+```
+if (0)  { print("truthy") }       // prints "truthy"
+if (nil) { print("truthy") }      // does not print
+```
+
+---
+
+## Operators
+
+### Arithmetic
+
+```
+2 + 3       // 5
+10 - 4      // 6
+3 * 7       // 21
+15 / 4      // 3.75
+17 % 5      // 2
+```
+
+### Comparison
+
+```
+3 < 5       // true
+3 > 5       // false
+3 <= 3      // true
+3 >= 5      // false
+```
+
+### Equality
+
+Works on any types. Arrays and maps compare by value.
+
+```
+1 == 1              // true
+"hi" == "hi"        // true
+[1, 2] == [1, 2]    // true
+nil == nil           // true
+1 == "1"             // false
+```
+
+### Logical
+
+`&&` and `||` short-circuit and return the deciding value, not just `true`/`false`.
+
+```
+true && "yes"       // "yes"
+false && "yes"      // false
+nil || "default"    // "default"
+true || "other"     // true
+!true               // false
+!nil                // true
+```
+
+### Increment / Decrement
+
+```
+let i = 0
+i++                 // i is now 1
+i--                 // i is now 0
+```
+
+### String Concatenation
+
+`+` concatenates when either side is a string:
+
+```
+"hello " + "world"  // "hello world"
+"count: " + 42      // "count: 42"
+```
+
+---
+
+## Strings
+
+Strings are enclosed in double quotes.
+
+### Escape Sequences
+
+| Escape | Meaning |
+|--------|---------|
+| `\n` | Newline |
+| `\t` | Tab |
+| `\\` | Backslash |
+| `\"` | Double quote |
+| `\%` | Literal `%` (prevents interpolation) |
+
+### String Interpolation
+
+Use `%{expression}` inside strings:
+
+```
+let name = "Ada"
+let age = 36
+print("%{name} is %{age} years old")
+// Ada is 36 years old
+
+print("2 + 2 = %{2 + 2}")
+// 2 + 2 = 4
+```
+
+### String Indexing
+
+```
+let s = "hello"
+print(s[0])         // h
+print(s[-1])        // o (negative = from end)
+```
+
+---
+
+## Arrays
+
+Arrays are ordered, mixed-type collections with reference semantics.
+
+```
+let nums = [1, 2, 3]
+let mixed = [1, "two", true, nil]
+let empty = []
+```
+
+### Index Access and Assignment
+
+```
+let arr = [10, 20, 30]
+print(arr[0])       // 10
+print(arr[-1])      // 30
+
+arr[1] = 99
+print(arr)          // [10, 99, 30]
+```
+
+### Nested Arrays
+
+```
+let matrix = [[1, 2], [3, 4]]
+print(matrix[1][0]) // 3
+```
+
+### Reference Semantics
+
+```
+let a = [1, 2, 3]
+let b = a           // b points to the same array
+b.push(4)
+print(a)            // [1, 2, 3, 4]
+```
+
+---
+
+## Maps
+
+Maps hold key-value pairs with string keys. Keys can be identifiers or quoted strings.
+
+```
+let person = {name: "Ada", age: 36}
+let config = {"api-key": "abc123"}
+let empty = {}
+```
+
+### Access and Assignment
+
+```
+// Dot notation
+print(person.name)          // Ada
+person.email = "ada@ex.com"
+
+// Bracket notation
+print(person["name"])       // Ada
+person["city"] = "London"
+```
+
+### Reference Semantics
+
+Maps, like arrays, use reference semantics:
+
+```
+let a = {x: 1}
+let b = a
+b.y = 2
+print(a)            // {x: 1, y: 2}
+```
+
+---
+
+## Control Flow
+
+### if / elif / else
+
+Conditions are always wrapped in parentheses. Bodies use braces.
+
+```
+let score = 85
+
+if (score >= 90) {
+    print("A")
+} elif (score >= 80) {
+    print("B")
+} elif (score >= 70) {
+    print("C")
+} else {
+    print("F")
+}
+```
+
+Truthiness check:
+
+```
+let name = nil
+if (name) {
+    print(name)
+} else {
+    print("no name set")
+}
+```
+
+---
+
+## Error Handling
+
+### try / catch
+
+Wrap code that might fail in a `try` block. If an error occurs — either from `throw` or a runtime error — execution jumps to the `catch` block with the error value.
+
+```
+try {
+    let data = sys.read("config.txt")
+    print(data)
+} catch (err) {
+    print("failed to read config:", err)
+}
+```
+
+### throw
+
+Throw any value as an error. If not caught by a `try/catch`, the program terminates.
+
+```
+func divide(a, b) {
+    if (b == 0) {
+        throw "division by zero"
+    }
+    return a / b
+}
+
+try {
+    print(divide(10, 0))
+} catch (err) {
+    print("error:", err)     // error: division by zero
+}
+```
+
+You can throw any value — strings, numbers, maps:
+
+```
+throw {code: 404, message: "not found"}
+```
+
+Runtime errors (type errors, index out of bounds, etc.) are also caught:
+
+```
+try {
+    let arr = [1, 2, 3]
+    print(arr[99])
+} catch (err) {
+    print(err)              // Array index out of bounds
+}
+```
+
+### ensure
+
+`ensure` is an early-exit guard (like Swift's `guard`). If the condition is falsy, the `else` block runs — which should exit the scope (typically `return` or `throw`).
+
+```
+func greet(name) {
+    ensure (name) else {
+        print("no name provided")
+        return
+    }
+    print("hello %{name}!")
+}
+
+greet("Ada")    // hello Ada!
+greet(nil)      // no name provided
+```
+
+`ensure` is useful for input validation at the top of functions:
+
+```
+func processAge(age) {
+    ensure (type(age) == "number") else {
+        throw "age must be a number"
+    }
+    ensure (age >= 0 && age <= 150) else {
+        throw "age out of range"
+    }
+    print("valid age: %{age}")
+}
+```
+
+---
+
+## Loops
+
+### while
+
+```
+let i = 0
+while (i < 5) {
+    print(i)
+    i++
+}
+```
+
+### for (range)
+
+`for (var in start..end)` — end is exclusive.
+
+```
+for (i in 0..5) {
+    print(i)            // 0, 1, 2, 3, 4
+}
+
+// Expressions work as bounds
+let n = 10
+for (i in 1..n + 1) {
+    print(i)            // 1 through 10
+}
+```
+
+### for-in (arrays)
+
+```
+let names = ["alice", "bob", "charlie"]
+for (name in names) {
+    print("hello %{name}")
+}
+```
+
+### break and continue
+
+`break` exits the innermost loop. `continue` skips to the next iteration. Both work in `while`, `for`, and `for-in` loops.
+
+```
+// Skip odd numbers
+for (i in 0..10) {
+    if (i % 2 != 0) { continue }
+    print(i)                        // 0, 2, 4, 6, 8
+}
+
+// Stop at first match
+let names = ["alice", "bob", "charlie"]
+for (name in names) {
+    if (name == "bob") { break }
+    print(name)                     // alice
+}
+
+// break in while
+let n = 0
+while (true) {
+    if (n >= 3) { break }
+    print(n)                        // 0, 1, 2
+    n++
+}
+```
+
+In nested loops, `break` and `continue` only affect the innermost loop.
+
+---
+
+## Functions
+
+Define functions with `func`. Functions are first-class values.
+
+```
+func add(a, b) {
+    return a + b
+}
+
+print(add(2, 3))    // 5
+```
+
+### Implicit nil Return
+
+Functions without an explicit `return` return `nil`.
+
+```
+func greet(name) {
+    print("hello %{name}")
+}
+```
+
+### Closures
+
+Functions capture their enclosing scope:
+
+```
+func makeCounter() {
+    let count = 0
+    func increment() {
+        count = count + 1
+        return count
+    }
+    return increment
+}
+
+let counter = makeCounter()
+print(counter())    // 1
+print(counter())    // 2
+print(counter())    // 3
+```
+
+### Recursion
+
+```
+func fib(n) {
+    if (n <= 1) { return n }
+    return fib(n - 1) + fib(n - 2)
+}
+print(fib(10))      // 55
+```
+
+### Functions as Values
+
+```
+func apply(f, x) {
+    return f(x)
+}
+
+func double(n) { return n * 2 }
+
+print(apply(double, 21))   // 42
+```
+
+---
+
+## Lambdas
+
+Lambdas are anonymous functions defined inline with `lam{ params in body }`.
+
+### Single expression (auto-returned)
+
+```
+let double = lam{ x in x * 2 }
+let add = lam{ a, b in a + b }
+
+print(double(5))        // 10
+print(add(3, 4))        // 7
+```
+
+A single-expression lambda automatically returns its result — no `return` needed.
+
+### Multi-line (explicit return)
+
+```
+let process = lam{ x, y in
+    let sum = x + y
+    let product = x * y
+    return {sum: sum, product: product}
+}
+```
+
+### No parameters
+
+```
+let sayHi = lam{ in print("hello!") }
+sayHi()
+```
+
+### Passing lambdas to functions
+
+Lambdas are ideal for callbacks, filters, and transforms:
+
+```
+func filter(arr, predicate) {
+    let result = []
+    for (item in arr) {
+        if (predicate(item)) { result.push(item) }
+    }
+    return result
+}
+
+func map(arr, transform) {
+    let result = []
+    for (item in arr) { result.push(transform(item)) }
+    return result
+}
+
+let nums = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+let evens = filter(nums, lam{ n in n % 2 == 0 })
+let squares = map(nums, lam{ n in n * n })
+
+print(evens)            // [2, 4, 6, 8, 10]
+print(squares)          // [1, 4, 9, 16, 25, 36, 49, 64, 81, 100]
+```
+
+### Closures
+
+Lambdas capture their enclosing scope, just like named functions:
+
+```
+func makeMultiplier(factor) {
+    return lam{ x in x * factor }
+}
+
+let triple = makeMultiplier(3)
+print(triple(5))        // 15
+```
+
+### Lambdas in maps
+
+```
+let actions = {
+    double: lam{ x in x * 2 },
+    negate: lam{ x in -x }
+}
+print(actions.double(21))   // 42
+```
+
+---
+
+## Classes
+
+### Defining a class
+
+```
+class Animal {
+    init(name, sound) {
+        this.name = name
+        this.sound = sound
+    }
+
+    speak() {
+        print("%{this.name} says %{this.sound}")
+    }
+}
+```
+
+- `class` keyword defines a class
+- `init` is the constructor (called automatically when creating instances)
+- `this` refers to the current instance
+- Methods are defined without `func`
+
+### Creating instances
+
+Call the class like a function — no `new` keyword:
+
+```
+let cat = Animal("Whiskers", "meow")
+cat.speak()         // Whiskers says meow
+```
+
+### Properties
+
+Properties are set on `this` inside methods and accessed with dot notation:
+
+```
+print(cat.name)     // Whiskers
+cat.name = "Luna"   // reassignment works
+cat.speak()         // Luna says meow
+```
+
+### Inheritance
+
+Use `extends` for single inheritance:
+
+```
+class Dog extends Animal {
+    init(name) {
+        super.init(name, "woof")
+        this.tricks = []
+    }
+
+    learn(trick) {
+        this.tricks.push(trick)
+    }
+}
+
+let buddy = Dog("Buddy")
+buddy.speak()           // Buddy says woof (inherited)
+buddy.learn("sit")
+```
+
+### super
+
+Use `super.method()` to call the parent class's version of a method:
+
+```
+class Cat extends Animal {
+    init(name) {
+        super.init(name, "meow")
+    }
+
+    describe() {
+        return "%{this.name} the cat"
+    }
+}
+```
+
+`super` works correctly with multi-level inheritance (e.g., Kitten -> Cat -> Animal).
+
+### Method overriding
+
+Child classes can override parent methods. The child's version is used:
+
+```
+class Animal {
+    describe() { return "an animal" }
+}
+
+class Cat extends Animal {
+    describe() { return "a cat" }
+}
+
+let c = Cat()
+print(c.describe())    // a cat
+c.speak()              // still works (inherited from Animal)
+```
+
+### Classes are values
+
+Classes are first-class — they can be stored in variables and passed around:
+
+```
+let MyClass = Animal
+let a = MyClass("Rex", "woof")
+a.speak()
+```
+
+### Instance equality
+
+Instances use reference equality:
+
+```
+let a = Animal("Rex", "woof")
+let b = a
+print(a == b)       // true (same reference)
+
+let c = Animal("Rex", "woof")
+print(a == c)       // false (different instances)
+```
+
+---
+
+## Built-in Functions
+
+| Function | Description |
+|----------|-------------|
+| `print(args...)` | Print values separated by spaces, followed by a newline |
+| `len(value)` | Length of an array, string, or map |
+| `push(array, value)` | Append a value to an array |
+| `pop(array)` | Remove and return the last element of an array |
+| `type(value)` | Return the type as a string: `"nil"`, `"bool"`, `"number"`, `"string"`, `"array"`, `"map"`, `"function"` |
+| `str(value)` | Convert any value to a string |
+| `num(value)` | Convert a string or number to a number |
+| `filter(arr, fn)` | Keep elements where fn returns truthy |
+| `map(arr, fn)` | Transform each element |
+| `each(arr, fn)` | Call fn on each element, returns the array |
+| `sort(arr)` | Return sorted copy (ascending) |
+| `keys(map)` | Return array of map keys |
+| `values(map)` | Return array of map values |
+
+```
+print(len([1, 2, 3]))      // 3
+print(len("hello"))         // 5
+print(len({a: 1, b: 2}))   // 2
+
+print(type(42))             // number
+print(type("hi"))           // string
+
+print(str(42) + "!")        // 42!
+print(num("3.14") * 2)     // 6.28
+```
+
+---
+
+## Universal Methods
+
+These work on any value type via dot notation.
+
+| Method | Description |
+|--------|-------------|
+| `.toString()` | Convert any value to its string representation |
+| `.toNum()` | Convert to number — works on numbers (identity), bools (`true`=1, `false`=0), and numeric strings. Also handles `"true"`/`"false"` (case-insensitive). Throws on invalid strings. |
+
+```
+42.toString()           // "42"
+true.toString()         // "true"
+[1, 2].toString()       // "[1, 2]"
+
+true.toNum()            // 1
+false.toNum()           // 0
+"3.14".toNum()          // 3.14
+"TRUE".toNum()          // 1
+"hello".toNum()         // Error: Cannot convert 'hello' to number
+```
+
+---
+
+## String Methods
+
+Methods are called with dot notation on string values.
+
+| Method | Description |
+|--------|-------------|
+| `.upper()` | Uppercase copy |
+| `.lower()` | Lowercase copy |
+| `.strip()` | Remove leading/trailing whitespace |
+| `.split(sep)` | Split into array by separator |
+| `.contains(sub)` | Check if substring exists |
+| `.replace(old, new)` | Replace all occurrences |
+| `.startsWith(prefix)` | Check prefix |
+| `.endsWith(suffix)` | Check suffix |
+| `.title()` | Capitalize first letter of each word, lowercase the rest |
+| `.capitalize()` | Capitalize first letter, lowercase the rest |
+| `.capitalizeFirst()` | Capitalize first letter, leave the rest intact |
+
+```
+"hello".upper()                  // "HELLO"
+"  hello  ".strip()              // "hello"
+"a,b,c".split(",")              // ["a", "b", "c"]
+"hello world".contains("world") // true
+"hello".replace("l", "r")       // "herro"
+"hello".startsWith("hel")      // true
+
+// Casing variants
+"how old is Ada?".title()           // "How Old Is Ada?"
+"how old is Ada?".capitalize()      // "How old is ada?"
+"how old is Ada?".capitalizeFirst() // "How old is Ada?"
+
+// Chaining works
+"  Hello World  ".strip().lower()   // "hello world"
+```
+
+---
+
+## Regex
+
+Regular expressions are available as string methods. Patterns use ECMAScript regex syntax.
+
+| Method | Description |
+|--------|-------------|
+| `.test(pattern)` | Returns `true` if the pattern matches anywhere in the string |
+| `.match(pattern)` | Returns a map with `match`, `groups`, and `index` for the first match, or `nil` |
+| `.matchAll(pattern)` | Returns an array of match maps for all matches |
+| `.replacePattern(pattern, replacement)` | Replaces all matches with the replacement string |
+
+### test
+
+```
+"hello123".test("[0-9]+")       // true
+"hello".test("[0-9]+")          // false
+```
+
+### match
+
+Returns a map with the full match, capture groups, and position — or `nil` if no match:
+
+```
+let m = "age: 25".match("(\\w+): (\\d+)")
+print(m.match)      // age: 25
+print(m.groups)     // ["age", "25"]
+print(m.index)      // 0
+
+"hello".match("\\d+")   // nil
+```
+
+### matchAll
+
+Returns an array of match maps:
+
+```
+let nums = "abc123def456".matchAll("\\d+")
+for (m in nums) {
+    print(m.match, "at", m.index)
+}
+// 123 at 3
+// 456 at 9
+```
+
+### replacePattern
+
+Replaces all regex matches. Supports back-references (`$1`, `$2`):
+
+```
+"hello   world".replacePattern("\\s+", " ")         // "hello world"
+"John Smith".replacePattern("(\\w+) (\\w+)", "$2, $1")  // "Smith, John"
+```
+
+Use `.replace()` for literal string replacement, `.replacePattern()` for regex.
+
+### Error handling
+
+Invalid regex patterns throw a catchable error:
+
+```
+try {
+    "test".test("[invalid")
+} catch (err) {
+    print(err)      // Invalid regex: ...
+}
+```
+
+### Practical examples
+
+```
+// Email validation
+let email = "ada@example.com"
+if (email.test("^[\\w.+-]+@[\\w-]+\\.[\\w.]+$")) {
+    print("valid email")
+}
+
+// Extract all words
+let words = "Hello, World! 123".matchAll("[a-zA-Z]+")
+for (w in words) { print(w.match) }
+
+// Clean up whitespace
+let clean = "  too   many   spaces  ".strip().replacePattern("\\s+", " ")
+print(clean)    // "too many spaces"
+```
+
+---
+
+## Array Methods
+
+Methods are called with dot notation on array values.
+
+| Method | Description |
+|--------|-------------|
+| `.push(value)` | Append an element |
+| `.pop()` | Remove and return the last element |
+| `.contains(value)` | Check if value is in the array |
+| `.join(separator)` | Join elements into a string |
+| `.reverse()` | Reverse the array in place |
+
+```
+let arr = [1, 2, 3]
+arr.push(4)                     // [1, 2, 3, 4]
+arr.pop()                       // returns 4
+arr.contains(2)                 // true
+["a", "b", "c"].join(", ")     // "a, b, c"
+arr.reverse()                   // [3, 2, 1]
+```
+
+---
+
+## The sys Namespace
+
+`sys` is a built-in map providing OS-level operations.
+
+### File I/O
+
+```
+// Write a file
+sys.write("output.txt", "hello from praia")
+
+// Read a file
+let content = sys.read("output.txt")
+print(content)          // hello from praia
+
+// Append to a file
+sys.append("output.txt", "\nmore text")
+```
+
+### File System
+
+```
+sys.mkdir("my/nested/dir")          // creates all parent dirs
+print(sys.exists("output.txt"))     // true
+sys.remove("output.txt")            // delete file
+```
+
+### Running Commands
+
+```
+let result = sys.exec("ls -la")
+print(result)
+
+let date = sys.exec("date")
+print("Today is %{date}")
+```
+
+### Command-Line Arguments
+
+Arguments passed after the script name are available in `sys.args`:
+
+```sh
+./praia script.praia hello world
+```
+
+```
+// Inside script.praia:
+print(sys.args)         // ["hello", "world"]
+for (arg in sys.args) {
+    print(arg)
+}
+```
+
+### Exiting
+
+```
+sys.exit(0)             // exit with code 0
+sys.exit(1)             // exit with code 1
+```
+
+---
+
+## Pipe Operator
+
+The pipe operator `|>` passes the left side as the first argument to the right side. It turns nested calls into readable top-to-bottom chains.
+
+### Basic usage
+
+```
+// Without pipe: nested, reads inside-out
+print(sort(filter(nums, lam{ n in n > 5 })))
+
+// With pipe: linear, reads top-to-bottom
+nums
+    |> filter(lam{ n in n > 5 })
+    |> sort
+    |> print
+```
+
+`a |> f` becomes `f(a)`. `a |> f(x)` becomes `f(a, x)` — the left side is prepended as the first argument.
+
+### Chaining
+
+```
+let result = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    |> filter(lam{ n in n % 2 == 0 })
+    |> map(lam{ n in n * n })
+    |> sort
+print(result)   // [4, 16, 36, 64, 100]
+```
+
+### With any function
+
+```
+func double(x) { return x * 2 }
+func add10(x) { return x + 10 }
+
+let val = 5 |> double |> add10 |> double
+print(val)      // 40
+```
+
+### Data processing pipeline
+
+```
+let adults = sys.read("users.json")
+    |> json.parse
+    |> filter(lam{ u in u.age >= 18 })
+    |> map(lam{ u in u.name })
+    |> sort
+```
+
+### Functional built-ins
+
+These functions are designed to work with `|>`:
+
+| Function | Description |
+|----------|-------------|
+| `filter(arr, predicate)` | Keep elements where predicate returns truthy |
+| `map(arr, transform)` | Transform each element |
+| `each(arr, fn)` | Call fn on each element (side effects), returns the array |
+| `sort(arr)` | Return sorted copy (numbers ascending, strings alphabetical) |
+| `keys(map)` | Return array of map keys |
+| `values(map)` | Return array of map values |
+
+```
+let config = {host: "localhost", port: 8080}
+config |> keys |> print          // ["host", "port"]
+config |> values |> print        // ["localhost", 8080]
+```
+
+---
+
+## JSON
+
+The `json` namespace provides fast built-in JSON parsing and serialization.
+
+### json.parse(string)
+
+Converts a JSON string into Praia values:
+
+| JSON | Praia |
+|------|-------|
+| `{}` | map |
+| `[]` | array |
+| `"string"` | string |
+| `123` | number |
+| `true/false` | bool |
+| `null` | nil |
+
+```
+let data = json.parse("{\"name\": \"Ada\", \"age\": 36}")
+print(data.name)        // Ada
+print(data.age)         // 36
+
+let list = json.parse("[1, 2, 3]")
+print(list)             // [1, 2, 3]
+```
+
+### json.stringify(value, indent?)
+
+Converts a Praia value to a JSON string. Optional `indent` for pretty-printing.
+
+```
+let obj = {name: "Ada", scores: [100, 95]}
+
+json.stringify(obj)         // {"name":"Ada","scores":[100,95]}
+json.stringify(obj, 2)      // pretty-printed with 2-space indent
+```
+
+### Round-tripping
+
+```
+let original = {users: [{name: "Alice"}, {name: "Bob"}]}
+let str = json.stringify(original)
+let restored = json.parse(str)
+print(restored.users[0].name)   // Alice
+```
+
+---
+
+## YAML
+
+The `yaml` namespace provides built-in YAML parsing and serialization.
+
+### yaml.parse(string)
+
+Parses a YAML string into Praia values. Supports mappings, sequences, nested structures, comments, flow sequences, and quoted strings.
+
+```
+let config = yaml.parse("host: localhost\nport: 8080\ndebug: true")
+print(config.host)      // localhost
+print(config.port)      // 8080
+print(config.debug)     // true
+```
+
+Nested:
+
+```
+let yaml_str = "database:\n  host: localhost\n  port: 5432"
+let conf = yaml.parse(yaml_str)
+print(conf.database.host)   // localhost
+```
+
+Sequences:
+
+```
+let list = yaml.parse("- apple\n- banana\n- cherry")
+print(list)                 // ["apple", "banana", "cherry"]
+```
+
+Flow sequences:
+
+```
+let data = yaml.parse("tags: [web, api, fast]")
+print(data.tags)            // ["web", "api", "fast"]
+```
+
+Comments are stripped:
+
+```
+let data = yaml.parse("name: Ada  # the inventor")
+print(data.name)            // Ada
+```
+
+### yaml.stringify(value)
+
+Converts a Praia value to a YAML string.
+
+```
+let obj = {name: "Praia", features: ["fast", "simple"]}
+print(yaml.stringify(obj))
+// name: Praia
+// features:
+//   - fast
+//   - simple
+```
+
+### Practical: reading config files
+
+```
+let config = yaml.parse(sys.read("config.yaml"))
+print("Listening on port %{config.server.port}")
+```
+
+---
+
+## Async / Await
+
+`async` runs a function call in a background thread and returns a **future**. `await` blocks until the future has a result.
+
+### Basic usage
+
+```
+// Start tasks in parallel
+let f1 = async sys.exec("sleep 1 && echo done1")
+let f2 = async sys.exec("sleep 1 && echo done2")
+let f3 = async sys.exec("sleep 1 && echo done3")
+
+// Wait for results
+let r1 = await f1
+let r2 = await f2
+let r3 = await f3
+// Total time: ~1 second (not 3)
+```
+
+### Parallel HTTP requests
+
+```
+let f1 = async http.get("http://api1.com/data")
+let f2 = async http.get("http://api2.com/data")
+let f3 = async http.get("http://api3.com/data")
+
+let r1 = await f1
+let r2 = await f2
+let r3 = await f3
+```
+
+### Error handling
+
+If an async task throws an error, `await` re-throws it:
+
+```
+let f = async http.get("http://invalid-host")
+try {
+    let r = await f
+} catch (err) {
+    print("request failed:", err)
+}
+```
+
+### How it works
+
+- `async funcCall(args)` evaluates the function and arguments on the current thread, then spawns the actual call in a new OS thread
+- Returns a **future** value immediately
+- `await future` blocks until the background thread finishes
+- **Native functions** (http.get, sys.exec, sys.read, etc.) run in **true parallel** — they're pure C++ and don't need the interpreter
+- **Praia functions** use a mutex (like Python's GIL) — only one runs at a time, but I/O operations still overlap
+
+### Building on futures in grains
+
+Futures are regular values, so you can build patterns on top:
+
+```
+// grains/parallel.praia
+func all(futures) {
+    let results = []
+    for (f in futures) {
+        results.push(await f)
+    }
+    return results
+}
+
+export { all }
+```
+
+```
+use "parallel"
+let results = parallel.all([
+    async http.get("http://api1.com"),
+    async http.get("http://api2.com")
+])
+```
+
+---
+
+## HTTP Networking
+
+The `http` namespace provides an HTTP client and server. Supports HTTP only (not HTTPS).
+
+### HTTP Client
+
+#### GET request
+
+```
+let res = http.get("http://example.com/api")
+print(res.status)       // 200
+print(res.body)         // response body string
+print(res.headers)      // map of lowercase header names
+```
+
+#### POST request
+
+```
+// Simple string body
+let res = http.post("http://example.com/api", "hello")
+
+// With headers
+let res = http.post("http://example.com/api", {
+    body: "{\"name\": \"Ada\"}",
+    headers: {"Content-Type": "application/json"}
+})
+```
+
+#### General request
+
+```
+let res = http.request({
+    method: "PUT",
+    url: "http://example.com/api/1",
+    body: "updated data",
+    headers: {"Content-Type": "text/plain"}
+})
+```
+
+#### Response format
+
+All client methods return a map:
+
+```
+{
+    status: 200,
+    body: "...",
+    headers: {"content-type": "text/html", ...}
+}
+```
+
+Header names are lowercased for consistent access.
+
+### HTTP Server
+
+#### Creating a server
+
+Pass a handler function to `http.createServer`. The handler receives a request map and returns a response map:
+
+```
+let server = http.createServer(lam{ req in
+    if (req.path == "/") {
+        return {
+            status: 200,
+            body: "<h1>Hello!</h1>",
+            headers: {"Content-Type": "text/html"}
+        }
+    }
+    return {status: 404, body: "Not Found"}
+})
+
+server.listen(8080)     // blocks, prints "Server listening on port 8080"
+```
+
+#### Request object
+
+The handler receives a map with:
+
+| Field | Description |
+|-------|-------------|
+| `method` | `"GET"`, `"POST"`, etc. |
+| `path` | URL path (e.g. `"/hello"`) |
+| `query` | Query string without `?` (e.g. `"name=Ada&age=36"`) |
+| `headers` | Map of lowercase header names |
+| `body` | Request body string |
+
+#### Response format
+
+Return a map with:
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `status` | `200` | HTTP status code |
+| `body` | `""` | Response body |
+| `headers` | `{"Content-Type": "text/plain"}` | Response headers |
+
+You can also return a plain string — it becomes a 200 text/plain response.
+
+#### Example: JSON API
+
+```
+let server = http.createServer(lam{ req in
+    if (req.method == "GET" && req.path == "/api/time") {
+        return {
+            status: 200,
+            body: "{\"time\": \"%{sys.exec("date")}\"}",
+            headers: {"Content-Type": "application/json"}
+        }
+    }
+
+    if (req.method == "POST" && req.path == "/api/echo") {
+        return {
+            status: 200,
+            body: req.body,
+            headers: {"Content-Type": req.headers["content-type"]}
+        }
+    }
+
+    return {status: 404, body: "Not Found"}
+})
+
+server.listen(3000)
+```
+
+#### Error handling
+
+If the handler throws an error, the server returns a 500 response and continues running.
+
+---
+
+## Grains (Modules)
+
+Praia's module system uses **grains** (like sand grains). Each grain is a `.praia` file that exports functions and values.
+
+### Creating a grain
+
+A grain is any `.praia` file that ends with an `export` statement:
+
+```
+// grains/math.praia
+let PI = 3.14159
+
+func square(x) { return x * x }
+func cube(x) { return x * x * x }
+
+export { PI, square, cube }
+```
+
+### Importing a grain
+
+Use `use` to import a grain. The grain is bound to a variable named after the last path segment:
+
+```
+use "math"
+
+print(math.PI)          // 3.14159
+print(math.square(5))   // 25
+```
+
+### Relative imports
+
+Paths starting with `./` or `../` are resolved relative to the importing file:
+
+```
+use "./helpers/greeter"
+
+greeter.hello("world")
+```
+
+### Resolution order
+
+When you write `use "math"`, Praia looks for the grain in this order:
+
+1. **`grains/`** directory — walking up from the current file's directory to find a `grains/` folder
+2. **`grains/`** relative to the current working directory
+3. **`~/.praia/grains/`** — global grains (for a future package manager)
+
+The `.praia` extension is added automatically.
+
+### Grains importing other grains
+
+Grains can import other grains:
+
+```
+// grains/geometry.praia
+use "math"
+
+func circleArea(r) {
+    return math.PI * math.square(r)
+}
+
+export { circleArea }
+```
+
+### Rules
+
+- **No duplicate imports** — importing the same grain twice in one file is an error (enforces clean code)
+- **Grains run once** — if multiple files import the same grain, it is only executed the first time; subsequent imports get the cached exports
+- **Isolated scope** — grains cannot access the importer's variables; they only see globals and their own definitions
+- **Explicit exports** — only names listed in `export { ... }` are visible to the importer
+
+```
+use "math"
+use "math"      // Error: Grain 'math' is already imported in this file
+```
+
+### Project structure
+
+A typical Praia project might look like:
+
+```
+my-project/
+├── grains/
+│   ├── math.praia
+│   ├── strings.praia
+│   └── geometry.praia
+├── examples/
+│   └── demo.praia
+└── main.praia
+```
+
+---
+
+## Comments
+
+```
+// This is a single-line comment
+
+/* This is a
+   multi-line comment */
+
+/* Block comments /* can nest */ like this */
+```
+
+---
+
+## Operator Precedence
+
+From highest to lowest:
+
+| Precedence | Operators | Description |
+|-----------|-----------|-------------|
+| 1 | `()` `[]` `.` | Call, index, field access |
+| 2 | `++` `--` | Postfix increment/decrement |
+| 3 | `-` `!` | Unary negation, logical NOT |
+| 4 | `*` `/` `%` | Multiplication, division, modulo |
+| 5 | `+` `-` | Addition, subtraction |
+| 6 | `<` `>` `<=` `>=` | Comparison |
+| 7 | `==` `!=` | Equality |
+| 8 | `&&` | Logical AND |
+| 9 | `\|\|` | Logical OR |
+| 10 | `=` | Assignment (right-associative) |
+
+Parentheses can override precedence:
+
+```
+print(2 + 3 * 4)       // 14
+print((2 + 3) * 4)     // 20
+```
+
+---
+
+## REPL
+
+Run `./praia` with no arguments to start the interactive REPL.
+
+```
+$ ./praia
+Praia REPL (type 'exit' to quit)
+>> 2 + 3
+5
+>> let x = 10
+>> x * 2
+20
+>> "hello".upper()
+HELLO
+```
+
+Features:
+- **Arrow keys** for command history (up/down) and line editing (left/right)
+- **Auto-print** expression results (nil results are hidden)
+- **Multi-line input** detected automatically when braces are unbalanced
+- **Persistent state** across inputs (variables, functions survive between lines)
+- **Ctrl-D** or `exit` to quit
+
+```
+>> func greet(name) {
+..   print("hello %{name}")
+.. }
+>> greet("world")
+hello world
+```
+
+---
+
+## Command-Line Usage
+
+```
+./praia                             # REPL
+./praia script.praia                # run a script
+./praia script.praia arg1 arg2      # run with arguments (sys.args)
+./praia --tokens script.praia       # show lexer tokens
+./praia --ast script.praia          # show parse tree
+```

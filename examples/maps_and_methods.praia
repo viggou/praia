@@ -1,0 +1,50 @@
+// ── Maps ──
+let person = {name: "Ada", age: 36, lang: "Praia"}
+print(person)
+print(person.name, "is", person.age)
+
+// Dot assignment
+person.email = "ada@example.com"
+print(person.email)
+
+// Bracket access with string keys
+print(person["lang"])
+
+// ── String methods ──
+let msg = "  Hello, World!  "
+print(msg.strip())
+print(msg.strip().upper())
+print(msg.strip().lower())
+print("hello world".contains("world"))
+print("hello world".replace("world", "praia"))
+print("hello world".split(" "))
+print("foobar".startsWith("foo"))
+print("foobar".endsWith("baz"))
+
+// ── Array methods ──
+let nums = [3, 1, 4, 1, 5]
+print(nums.contains(4))
+print(nums.contains(9))
+nums.push(9)
+print(nums)
+nums.reverse()
+print("reversed:", nums)
+print(["a", "b", "c"].join(", "))
+
+// ── sys namespace ──
+// Write a file, read it back, clean up
+sys.write("/tmp/praia_test.txt", "hello from praia!")
+let content = sys.read("/tmp/praia_test.txt")
+print("file says:", content)
+print("exists?", sys.exists("/tmp/praia_test.txt"))
+sys.remove("/tmp/praia_test.txt")
+print("after remove?", sys.exists("/tmp/praia_test.txt"))
+
+// Run a command
+let result = sys.exec("echo 'praia says hi'")
+print("exec:", result)
+
+// ── Utility functions ──
+print(type(42), type("hi"), type([1]), type({a: 1}), type(nil))
+print(str(42) + " is a string now")
+print(num("3.14") * 2)

@@ -1,0 +1,9 @@
+func hello(name) {
+    print("Hello from the greeter grain, %{name}!")
+}
+
+func goodbye(name) {
+    print("Goodbye, %{name}!")
+}
+
+export { hello, goodbye }

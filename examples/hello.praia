@@ -1,0 +1,38 @@
+let name = "ada"
+let age
+
+func getAge(who) {
+    if (age) {
+        print("%{name} is %{age} years old")
+    }
+    else {
+        print("%{name} has no age set")
+    }
+}
+
+getAge(name)
+
+age = 20
+
+getAge(name)
+
+// for loop (same as the while loop below)
+for (i in 0..5) {
+    print(i)
+}
+
+// equivalent while loop
+let j = 0
+while (j < 5) {
+    print(j)
+    j = j + 1
+}
+
+/* This should result in the following output:
+ada has no age set
+ada is 20 years old
+0
+1
+2
+3
+4 */

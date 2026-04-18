@@ -1,0 +1,20 @@
+// ── Import grains from the grains/ directory ──
+use "math"
+use "strings"
+
+// ── Use math grain ──
+print("PI =", math.PI)
+print("E =", math.E)
+print("square(7) =", math.square(7))
+print("cube(3) =", math.cube(3))
+print("abs(-42) =", math.abs(-42))
+print("clamp(150, 0, 100) =", math.clamp(150, 0, 100))
+
+// ── Use strings grain ──
+print(strings.repeat("ha", 3))
+print(strings.padLeft("42", 6, "0"))
+print(strings.padRight("hi", 10, "."))
+
+// ── Import a relative grain ──
+use "./helpers/greeter"
+greeter.hello("Praia")

@@ -1,0 +1,57 @@
+// Test various Praia features
+
+// Arithmetic & precedence
+let x = 2 + 3 * 4
+print("2 + 3 * 4 =", x)  // 14
+
+// String interpolation with expressions
+let name = "Praia"
+let version = 1
+print("%{name} v%{version}")
+
+// Truthiness: only nil and false are falsy
+if (0)     { print("0 is truthy") }
+if ("")    { print("empty string is truthy") }
+if (nil)   { print("BUG: nil should be falsy") }
+if (false) { print("BUG: false should be falsy") }
+
+// elif
+let score = 85
+if (score >= 90) {
+    print("A")
+} elif (score >= 80) {
+    print("B")
+} elif (score >= 70) {
+    print("C")
+} else {
+    print("F")
+}
+
+// Functions with return values
+func fib(n) {
+    if (n <= 1) { return n }
+    return fib(n - 1) + fib(n - 2)
+}
+print("fib(10) =", fib(10))
+
+// Closures
+func makeCounter() {
+    let count = 0
+    func increment() {
+        count = count + 1
+        return count
+    }
+    return increment
+}
+
+let counter = makeCounter()
+print(counter())
+print(counter())
+print(counter())
+
+// Postfix increment
+let i = 0
+i++
+i++
+i++
+print("After 3 increments:", i)

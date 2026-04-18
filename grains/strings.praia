@@ -1,0 +1,21 @@
+func repeat(s, n) {
+    let result = ""
+    for (i in 0..n) {
+        result = result + s
+    }
+    return result
+}
+
+func padLeft(s, width, ch) {
+    let pad = width - len(s)
+    if (pad <= 0) { return s }
+    return repeat(ch, pad) + s
+}
+
+func padRight(s, width, ch) {
+    let pad = width - len(s)
+    if (pad <= 0) { return s }
+    return s + repeat(ch, pad)
+}
+
+export { repeat, padLeft, padRight }

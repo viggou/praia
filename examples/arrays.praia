@@ -1,0 +1,68 @@
+// Array literals and printing
+let nums = [1, 2, 3, 4, 5]
+print(nums)
+
+// Index access
+print("first:", nums[0])
+print("last:", nums[-1])
+
+// Index assignment
+nums[0] = 10
+print("after mutation:", nums)
+
+// len, push, pop
+print("length:", len(nums))
+push(nums, 6)
+print("after push:", nums)
+let popped = pop(nums)
+print("popped:", popped, "remaining:", nums)
+
+// For-in over arrays
+let names = ["alice", "bob", "charlie"]
+for (name in names) {
+    print("hello %{name}")
+}
+
+// Mixed types
+let mixed = [1, "two", true, nil, [3, 4]]
+print("mixed:", mixed)
+print("nested:", mixed[4][1])
+
+// Building arrays dynamically
+let squares = []
+for (i in 0..5) {
+    push(squares, i * i)
+}
+print("squares:", squares)
+
+// Reference semantics
+let a = [1, 2, 3]
+let b = a
+push(b, 4)
+print("a:", a)
+print("b:", b)
+print("same?", a == b)
+
+// Equality
+print([1, 2] == [1, 2])
+print([1, 2] == [1, 3])
+
+// String indexing
+let s = "hello"
+print(s[0], s[-1])
+print("len of string:", len(s))
+
+// FizzBuzz with array collection
+let results = []
+for (n in 1..16) {
+    if (n % 15 == 0) {
+        push(results, "FizzBuzz")
+    } elif (n % 3 == 0) {
+        push(results, "Fizz")
+    } elif (n % 5 == 0) {
+        push(results, "Buzz")
+    } else {
+        push(results, n)
+    }
+}
+print(results)

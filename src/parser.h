@@ -1,0 +1,69 @@
+#pragma once
+
+#include "ast.h"
+#include "token.h"
+#include <stdexcept>
+#include <string>
+#include <vector>
+
+class Parser {
+public:
+    Parser(const std::vector<Token>& tokens);
+    std::vector<StmtPtr> parse();
+    bool hasError() const { return hadError; }
+
+private:
+    struct ParseError : std::runtime_error {
+        using std::runtime_error::runtime_error;
+    };
+
+    // Statements
+    StmtPtr statement();
+    StmtPtr letStatement();
+    StmtPtr funcStatement();
+    StmtPtr classStatement();
+    StmtPtr ifStatement();
+    StmtPtr whileStatement();
+    StmtPtr forStatement();
+    StmtPtr returnStatement();
+    StmtPtr breakStatement();
+    StmtPtr continueStatement();
+    StmtPtr throwStatement();
+    StmtPtr tryCatchStatement();
+    StmtPtr ensureStatement();
+    StmtPtr useStatement();
+    StmtPtr exportStatement();
+    StmtPtr expressionStatement();
+    StmtPtr block();
+
+    // Expressions (ordered low → high precedence)
+    ExprPtr expression();
+    ExprPtr assignment();
+    ExprPtr pipe();
+    ExprPtr logicOr();
+    ExprPtr logicAnd();
+    ExprPtr equality();
+    ExprPtr comparison();
+    ExprPtr addition();
+    ExprPtr multiplication();
+    ExprPtr unary();
+    ExprPtr postfix();
+    ExprPtr call();
+    ExprPtr primary();
+    ExprPtr interpolatedString();
+
+    // Helpers
+    Token advance();
+    Token peek() const;
+    Token previous() const;
+    bool check(TokenType type) const;
+    bool match(TokenType type);
+    Token consume(TokenType type, const std::string& message);
+    bool isAtEnd() const;
+    ParseError error(const Token& token, const std::string& message);
+    void synchronize();
+
+    std::vector<Token> tokens;
+    int current = 0;
+    bool hadError = false;
+};

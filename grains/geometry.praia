@@ -1,0 +1,19 @@
+use "math"
+
+func circleArea(r) {
+    return math.PI * math.square(r)
+}
+
+func distance(x1, y1, x2, y2) {
+    let dx = x2 - x1
+    let dy = y2 - y1
+    // approximate sqrt via Newton's method
+    let s = dx * dx + dy * dy
+    let guess = s / 2
+    for (i in 0..20) {
+        guess = (guess + s / guess) / 2
+    }
+    return guess
+}
+
+export { circleArea, distance }

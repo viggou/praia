@@ -1,0 +1,95 @@
+// ── Basic lambdas ──
+let double = lam{ x in x * 2 }
+let add = lam{ a, b in a + b }
+print("double(5):", double(5))
+print("add(3, 4):", add(3, 4))
+
+// ── No params ──
+let greet = lam{ in print("hello from lambda!") }
+greet()
+
+// ── Passing lambdas to functions ──
+func apply(f, x) {
+    return f(x)
+}
+print("apply:", apply(lam{ x in x * x }, 7))
+
+// ── Filter/map pattern ──
+func filter(arr, predicate) {
+    let result = []
+    for (item in arr) {
+        if (predicate(item)) {
+            result.push(item)
+        }
+    }
+    return result
+}
+
+func map(arr, transform) {
+    let result = []
+    for (item in arr) {
+        result.push(transform(item))
+    }
+    return result
+}
+
+let nums = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+let evens = filter(nums, lam{ n in n % 2 == 0 })
+print("evens:", evens)
+
+let squares = map(nums, lam{ n in n * n })
+print("squares:", squares)
+
+// ── Chaining ──
+let result = map(filter(nums, lam{ n in n > 5 }), lam{ n in n * 10 })
+print("filtered & mapped:", result)
+
+// ── Closures work ──
+func makeMultiplier(factor) {
+    return lam{ x in x * factor }
+}
+let triple = makeMultiplier(3)
+let times10 = makeMultiplier(10)
+print("triple(5):", triple(5))
+print("times10(5):", times10(5))
+
+// ── Multi-line lambda ──
+let process = lam{ x, y in
+    let sum = x + y
+    let product = x * y
+    return {sum: sum, product: product}
+}
+let r = process(3, 4)
+print("sum:", r.sum, "product:", r.product)
+
+// ── Lambda in a map ──
+let actions = {
+    double: lam{ x in x * 2 },
+    negate: lam{ x in -x },
+    greet: lam{ name in "hello %{name}" }
+}
+print(actions.double(21))
+print(actions.negate(42))
+print(actions.greet("Praia"))
+
+// ── Sorting with lambdas (bubble sort) ──
+func sort(arr, compare) {
+    let n = len(arr)
+    for (i in 0..n) {
+        for (j in 0..n - 1 - i) {
+            if (compare(arr[j], arr[j + 1]) > 0) {
+                let tmp = arr[j]
+                arr[j] = arr[j + 1]
+                arr[j + 1] = tmp
+            }
+        }
+    }
+    return arr
+}
+
+let data = [5, 2, 8, 1, 9, 3]
+sort(data, lam{ a, b in a - b })
+print("sorted:", data)
+
+sort(data, lam{ a, b in b - a })
+print("reversed:", data)

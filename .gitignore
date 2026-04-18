@@ -1,0 +1,4 @@
+build/
+praia
+*.o
+.DS_Store

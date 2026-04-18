@@ -1,0 +1,19 @@
+// ── Async demo: parallel shell commands ──
+// Each "sleep" takes 1 second. Sequential = 3s, parallel = ~1s.
+
+print("Starting 3 tasks in parallel...")
+
+let f1 = async sys.exec("sleep 1 && echo 'task 1 done'")
+let f2 = async sys.exec("sleep 1 && echo 'task 2 done'")
+let f3 = async sys.exec("sleep 1 && echo 'task 3 done'")
+
+print("All tasks launched, awaiting results...")
+
+let r1 = await f1
+let r2 = await f2
+let r3 = await f3
+
+print(r1)
+print(r2)
+print(r3)
+print("All done!")

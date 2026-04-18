@@ -1,0 +1,100 @@
+// ── try/catch: catching explicit throw ──
+try {
+    print("before throw")
+    throw "something went wrong"
+    print("this never runs")
+} catch (err) {
+    print("caught:", err)
+}
+
+// ── try/catch: catching runtime errors ──
+try {
+    let x = 1 / 0
+} catch (err) {
+    print("caught runtime error:", err)
+}
+
+try {
+    let arr = [1, 2, 3]
+    print(arr[99])
+} catch (err) {
+    print("caught:", err)
+}
+
+// ── throw any value ──
+try {
+    throw {code: 404, message: "not found"}
+} catch (err) {
+    print("error code:", err.code, "message:", err.message)
+}
+
+// ── nested try/catch ──
+try {
+    try {
+        throw "inner error"
+    } catch (e) {
+        print("inner catch:", e)
+        throw "re-thrown from inner"
+    }
+} catch (e) {
+    print("outer catch:", e)
+}
+
+// ── try/catch with functions ──
+func divide(a, b) {
+    ensure (b != 0) else {
+        throw "division by zero"
+    }
+    return a / b
+}
+
+try {
+    print("10 / 3 =", divide(10, 3))
+    print("10 / 0 =", divide(10, 0))
+} catch (err) {
+    print("caught:", err)
+}
+
+// ── ensure: early exit guard ──
+func greet(name) {
+    ensure (name) else {
+        print("no name provided")
+        return
+    }
+    print("hello %{name}!")
+}
+
+greet("Ada")
+greet(nil)
+greet("Bob")
+
+// ── ensure: validate input ──
+func processAge(age) {
+    ensure (type(age) == "number") else {
+        throw "age must be a number"
+    }
+    ensure (age >= 0 && age <= 150) else {
+        throw "age out of range: %{age}"
+    }
+    print("valid age: %{age}")
+}
+
+try { processAge(25) } catch (e) { print(e) }
+try { processAge(-5) } catch (e) { print(e) }
+try { processAge("old") } catch (e) { print(e) }
+
+// ── safe file reading with try/catch ──
+func readFile(path) {
+    try {
+        return sys.read(path)
+    } catch (err) {
+        return nil
+    }
+}
+
+let content = readFile("/tmp/nonexistent_file_12345.txt")
+ensure (content) else {
+    print("file not found, using default")
+    content = "default value"
+}
+print("content:", content)

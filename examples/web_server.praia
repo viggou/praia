@@ -1,0 +1,35 @@
+let server = http.createServer(lam{ req in
+    print("%{req.method} %{req.path}")
+
+    if (req.path == "/") {
+        return {
+            status: 200,
+            body: "<h1>Welcome to Praia!</h1><p>Try /hello or /json</p>",
+            headers: {"Content-Type": "text/html"}
+        }
+    }
+
+    if (req.path == "/hello") {
+        let name = "world"
+        if (req.query.contains("name=")) {
+            name = req.query.replace("name=", "")
+        }
+        return {status: 200, body: "Hello, %{name}!"}
+    }
+
+    if (req.path == "/json") {
+        return {
+            status: 200,
+            body: "{\"language\": \"Praia\", \"version\": 1}",
+            headers: {"Content-Type": "application/json"}
+        }
+    }
+
+    if (req.path == "/echo" && req.method == "POST") {
+        return {status: 200, body: "You sent: %{req.body}"}
+    }
+
+    return {status: 404, body: "Not Found: %{req.path}"}
+})
+
+server.listen(8080)

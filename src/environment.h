@@ -1,0 +1,35 @@
+#pragma once
+
+#include "value.h"
+#include <memory>
+#include <string>
+#include <unordered_map>
+
+class Environment : public std::enable_shared_from_this<Environment> {
+public:
+    Environment() = default;
+    explicit Environment(std::shared_ptr<Environment> parent)
+        : parent(std::move(parent)) {}
+
+    void define(const std::string& name, Value value) {
+        variables[name] = std::move(value);
+    }
+
+    Value get(const std::string& name, int line) const {
+        auto it = variables.find(name);
+        if (it != variables.end()) return it->second;
+        if (parent) return parent->get(name, line);
+        throw RuntimeError("Undefined variable '" + name + "'", line);
+    }
+
+    void set(const std::string& name, Value value, int line) {
+        auto it = variables.find(name);
+        if (it != variables.end()) { it->second = std::move(value); return; }
+        if (parent) { parent->set(name, std::move(value), line); return; }
+        throw RuntimeError("Undefined variable '" + name + "'", line);
+    }
+
+private:
+    std::unordered_map<std::string, Value> variables;
+    std::shared_ptr<Environment> parent;
+};

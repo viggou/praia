@@ -1,0 +1,122 @@
+// ── Basic class ──
+class Animal {
+    init(name, sound) {
+        this.name = name
+        this.sound = sound
+    }
+
+    speak() {
+        print("%{this.name} says %{this.sound}")
+    }
+
+    describe() {
+        return "%{this.name} the animal"
+    }
+}
+
+let cat = Animal("Whiskers", "meow")
+let dog = Animal("Rex", "woof")
+cat.speak()
+dog.speak()
+print(cat.describe())
+
+// ── Property access and mutation ──
+print(cat.name)
+cat.name = "Mr. Whiskers"
+cat.speak()
+
+// ── Inheritance ──
+class Dog extends Animal {
+    init(name) {
+        super.init(name, "woof")
+        this.tricks = []
+    }
+
+    learn(trick) {
+        this.tricks.push(trick)
+    }
+
+    showTricks() {
+        if (len(this.tricks) == 0) {
+            print("%{this.name} knows no tricks")
+        } else {
+            print("%{this.name} knows: %{this.tricks.join(", ")}")
+        }
+    }
+}
+
+let buddy = Dog("Buddy")
+buddy.speak()           // inherited
+buddy.learn("sit")
+buddy.learn("shake")
+buddy.showTricks()
+
+// ── Method override ──
+class Cat extends Animal {
+    init(name) {
+        super.init(name, "meow")
+    }
+
+    describe() {
+        return "%{this.name} the majestic cat"
+    }
+}
+
+let c = Cat("Luna")
+print(c.describe())     // overridden
+c.speak()               // inherited
+
+// ── Multi-level inheritance ──
+class Kitten extends Cat {
+    init(name) {
+        super.init(name)
+        this.energy = 100
+    }
+
+    play() {
+        this.energy = this.energy - 10
+        print("%{this.name} plays! Energy: %{this.energy}")
+    }
+}
+
+let kit = Kitten("Tiny")
+kit.speak()             // inherited from Animal
+print(kit.describe())   // inherited from Cat
+kit.play()
+kit.play()
+
+// ── Classes with lambdas ──
+class Counter {
+    init(start) {
+        this.count = start
+    }
+
+    increment() {
+        this.count = this.count + 1
+    }
+
+    getCallback() {
+        let self = this
+        return lam{ in
+            self.increment()
+            return self.count
+        }
+    }
+}
+
+let counter = Counter(0)
+let cb = counter.getCallback()
+print(cb())    // 1
+print(cb())    // 2
+print(cb())    // 3
+
+// ── Type checking ──
+print(type(cat))        // instance
+print(type(Animal))     // function (classes are callable)
+
+// ── Equality is by reference ──
+let a = Dog("A")
+let b = a
+print(a == b)           // true (same reference)
+let c2 = Dog("A")
+print(a == c2)          // false (different instances)
