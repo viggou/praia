@@ -76,6 +76,7 @@ struct Value {
     bool isTruthy() const {
         if (isNil()) return false;
         if (isBool()) return asBool();
+        if (isNumber()) return asNumber() != 0;
         return true;
     }
 

@@ -27,6 +27,7 @@ Praia is a dynamically typed, interpreted programming language built in C++.
 - [YAML](#yaml)
 - [Async / Await](#async--await)
 - [HTTP Networking](#http-networking)
+- [TCP Sockets](#tcp-sockets)
 - [Grains (Modules)](#grains-modules)
 - [Comments](#comments)
 - [Operator Precedence](#operator-precedence)
@@ -62,7 +63,7 @@ let name = "Ada"
 let age = 36
 let score              // nil
 
-age = 37               // reassignment (no let)
+age = 37               // reassignment
 ```
 
 ---
@@ -83,10 +84,11 @@ Praia has 7 types:
 
 ### Truthiness
 
-Only `nil` and `false` are falsy. Everything else is truthy, including `0`, `""`, and `[]`.
+`nil`, `false`, and `0` are falsy. Everything else is truthy, including `""` and `[]`.
 
 ```
-if (0)  { print("truthy") }       // prints "truthy"
+if (1)   { print("truthy") }      // prints
+if (0)   { print("truthy") }      // does not print
 if (nil) { print("truthy") }      // does not print
 ```
 
@@ -1381,6 +1383,56 @@ server.listen(3000)
 #### Error handling
 
 If the handler throws an error, the server returns a 500 response and continues running.
+
+---
+
+## TCP Sockets
+
+The `net` namespace provides raw TCP socket operations. Sockets are represented as numbers (file descriptors).
+
+### Client
+
+```
+let sock = net.connect("localhost", 5432)
+net.send(sock, "hello")
+let response = net.recv(sock)
+print(response)
+net.close(sock)
+```
+
+### Server
+
+```
+let server = net.listen(9000)
+print("listening on 9000")
+
+while (true) {
+    let client = net.accept(server)
+    let data = net.recv(client)
+    net.send(client, "echo: " + data)
+    net.close(client)
+}
+```
+
+### Functions
+
+| Function | Description |
+|----------|-------------|
+| `net.connect(host, port)` | Connect to a TCP server, returns socket |
+| `net.listen(port)` | Bind and listen on a port, returns server socket |
+| `net.accept(server)` | Wait for and accept a connection, returns client socket |
+| `net.send(sock, data)` | Send a string, returns bytes sent |
+| `net.recv(sock, maxBytes?)` | Receive data (default 4096 bytes max), returns string |
+| `net.recvAll(sock)` | Read until the connection closes, returns string |
+| `net.close(sock)` | Close a socket |
+
+### Use cases
+
+With raw TCP sockets, these can be implemented:
+- Database clients (PostgreSQL, MySQL, Redis)
+- SMTP (email sending)
+- WebSocket protocol
+- Any custom TCP protocol
 
 ---
 

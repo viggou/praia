@@ -1441,6 +1441,129 @@ Interpreter::Interpreter() {
         }));
 
     globals->define("yaml", Value(yamlMap));
+
+    // ── net namespace (TCP sockets) ──
+
+    auto netMap = std::make_shared<PraiaMap>();
+
+    netMap->entries["connect"] = Value(makeNative("net.connect", 2,
+        [](const std::vector<Value>& args) -> Value {
+            if (!args[0].isString())
+                throw RuntimeError("net.connect() requires a host string", 0);
+            if (!args[1].isNumber())
+                throw RuntimeError("net.connect() requires a port number", 0);
+            std::string host = args[0].asString();
+            int port = static_cast<int>(args[1].asNumber());
+
+            struct addrinfo hints = {}, *res;
+            hints.ai_family = AF_INET;
+            hints.ai_socktype = SOCK_STREAM;
+            if (getaddrinfo(host.c_str(), std::to_string(port).c_str(), &hints, &res) != 0)
+                throw RuntimeError("Cannot resolve host: " + host, 0);
+            int sock = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
+            if (sock < 0 || connect(sock, res->ai_addr, res->ai_addrlen) < 0) {
+                if (sock >= 0) close(sock);
+                freeaddrinfo(res);
+                throw RuntimeError("Cannot connect to " + host + ":" + std::to_string(port), 0);
+            }
+            freeaddrinfo(res);
+            return Value(static_cast<double>(sock));
+        }));
+
+    netMap->entries["listen"] = Value(makeNative("net.listen", 1,
+        [](const std::vector<Value>& args) -> Value {
+            if (!args[0].isNumber())
+                throw RuntimeError("net.listen() requires a port number", 0);
+            int port = static_cast<int>(args[0].asNumber());
+
+            int fd = socket(AF_INET, SOCK_STREAM, 0);
+            if (fd < 0)
+                throw RuntimeError("Cannot create socket", 0);
+            int opt = 1;
+            setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+
+            struct sockaddr_in addr = {};
+            addr.sin_family = AF_INET;
+            addr.sin_addr.s_addr = INADDR_ANY;
+            addr.sin_port = htons(port);
+
+            if (bind(fd, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
+                close(fd);
+                throw RuntimeError("Cannot bind to port " + std::to_string(port), 0);
+            }
+            if (::listen(fd, 64) < 0) {
+                close(fd);
+                throw RuntimeError("Cannot listen on port " + std::to_string(port), 0);
+            }
+            return Value(static_cast<double>(fd));
+        }));
+
+    netMap->entries["accept"] = Value(makeNative("net.accept", 1,
+        [](const std::vector<Value>& args) -> Value {
+            if (!args[0].isNumber())
+                throw RuntimeError("net.accept() requires a socket", 0);
+            int fd = static_cast<int>(args[0].asNumber());
+            struct sockaddr_in ca;
+            socklen_t cl = sizeof(ca);
+            int client = accept(fd, (struct sockaddr*)&ca, &cl);
+            if (client < 0)
+                throw RuntimeError("Accept failed", 0);
+            return Value(static_cast<double>(client));
+        }));
+
+    netMap->entries["send"] = Value(makeNative("net.send", 2,
+        [](const std::vector<Value>& args) -> Value {
+            if (!args[0].isNumber())
+                throw RuntimeError("net.send() requires a socket", 0);
+            if (!args[1].isString())
+                throw RuntimeError("net.send() requires a string", 0);
+            int fd = static_cast<int>(args[0].asNumber());
+            auto& data = args[1].asString();
+            ssize_t sent = ::send(fd, data.c_str(), data.size(), 0);
+            if (sent < 0)
+                throw RuntimeError("Send failed", 0);
+            return Value(static_cast<double>(sent));
+        }));
+
+    netMap->entries["recv"] = Value(makeNative("net.recv", -1,
+        [](const std::vector<Value>& args) -> Value {
+            if (args.empty() || !args[0].isNumber())
+                throw RuntimeError("net.recv() requires a socket", 0);
+            int fd = static_cast<int>(args[0].asNumber());
+            int maxBytes = 4096;
+            if (args.size() > 1 && args[1].isNumber())
+                maxBytes = static_cast<int>(args[1].asNumber());
+
+            std::vector<char> buf(maxBytes);
+            ssize_t n = ::recv(fd, buf.data(), buf.size(), 0);
+            if (n < 0)
+                throw RuntimeError("Recv failed", 0);
+            if (n == 0) return Value(std::string(""));
+            return Value(std::string(buf.data(), n));
+        }));
+
+    netMap->entries["recvAll"] = Value(makeNative("net.recvAll", 1,
+        [](const std::vector<Value>& args) -> Value {
+            if (!args[0].isNumber())
+                throw RuntimeError("net.recvAll() requires a socket", 0);
+            int fd = static_cast<int>(args[0].asNumber());
+            std::string data;
+            char buf[4096];
+            ssize_t n;
+            while ((n = ::recv(fd, buf, sizeof(buf), 0)) > 0)
+                data.append(buf, n);
+            return Value(std::move(data));
+        }));
+
+    netMap->entries["close"] = Value(makeNative("net.close", 1,
+        [](const std::vector<Value>& args) -> Value {
+            if (!args[0].isNumber())
+                throw RuntimeError("net.close() requires a socket", 0);
+            close(static_cast<int>(args[0].asNumber()));
+            return Value();
+        }));
+
+    globals->define("net", Value(netMap));
 }
 
 void Interpreter::setArgs(const std::vector<std::string>& args) {
