@@ -27,6 +27,7 @@ Praia is a dynamically typed, interpreted programming language built in C++.
 - [YAML](#yaml)
 - [Async / Await](#async--await)
 - [HTTP Networking](#http-networking)
+- [SQLite](#sqlite)
 - [TCP Sockets](#tcp-sockets)
 - [Grains (Modules)](#grains-modules)
 - [Comments](#comments)
@@ -1383,6 +1384,86 @@ server.listen(3000)
 #### Error handling
 
 If the handler throws an error, the server returns a 500 response and continues running.
+
+---
+
+## SQLite
+
+Built-in SQLite database support. `sqlite.open()` returns a database object with `query`, `run`, and `close` methods. Available when built on a system with libsqlite3.
+
+### Opening a database
+
+```
+let db = sqlite.open("myapp.db")       // file-based
+let db = sqlite.open(":memory:")       // in-memory
+```
+
+### Queries
+
+`db.query(sql, params?)` executes a SELECT and returns an array of maps (one map per row):
+
+```
+let users = db.query("SELECT * FROM users WHERE age > ?", [18])
+for (user in users) {
+    print(user.name, user.age)
+}
+```
+
+### Executing statements
+
+`db.run(sql, params?)` executes INSERT/UPDATE/DELETE and returns `{changes, lastId}`:
+
+```
+let result = db.run("INSERT INTO users (name, age) VALUES (?, ?)", ["Ada", 36])
+print(result.lastId)      // auto-increment id
+print(result.changes)     // rows affected
+```
+
+### Parameterized queries
+
+Always use `?` placeholders — they prevent SQL injection:
+
+```
+// Safe
+db.query("SELECT * FROM users WHERE name = ?", [name])
+
+// Unsafe — never do this
+db.query("SELECT * FROM users WHERE name = '" + name + "'")
+```
+
+Parameters are bound by type: strings, numbers, bools, and nil are all handled automatically.
+
+### Closing
+
+```
+db.close()
+```
+
+### Example: REST API with SQLite
+
+```
+let db = sqlite.open(":memory:")
+db.run("CREATE TABLE todos (id INTEGER PRIMARY KEY, title TEXT, done INT)")
+
+let server = http.createServer(lam{ req in
+    if (req.method == "GET" && req.path == "/todos") {
+        let todos = db.query("SELECT * FROM todos")
+        return {
+            status: 200,
+            body: json.stringify(todos),
+            headers: {"Content-Type": "application/json"}
+        }
+    }
+    if (req.method == "POST" && req.path == "/todos") {
+        let todo = json.parse(req.body)
+        db.run("INSERT INTO todos (title, done) VALUES (?, ?)", [todo.title, 0])
+        return {status: 201, body: json.stringify({ok: true})}
+    }
+    return {status: 404, body: "Not Found"}
+})
+
+server.listen(8080)
+```
 
 ---
 

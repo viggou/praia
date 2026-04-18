@@ -23,6 +23,14 @@ else
   LDLIBS =
 endif
 
+# Auto-detect SQLite
+HAVE_SQLITE := $(shell echo 'int main(){}' | $(CXX) -x c++ - -lsqlite3 -o /dev/null 2>/dev/null && echo 1)
+
+ifeq ($(HAVE_SQLITE),1)
+  CXXFLAGS += -DHAVE_SQLITE
+  LDLIBS += -lsqlite3
+endif
+
 $(TARGET): $(OBJECTS)
 	$(CXX) $(CXXFLAGS) -o $@ $^ $(LDLIBS)
 

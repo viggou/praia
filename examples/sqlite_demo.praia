@@ -1,0 +1,49 @@
+// Open an in-memory database
+let db = sqlite.open(":memory:")
+
+// Create table
+db.run("CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT, age INT, email TEXT)")
+
+// Insert data with parameterized queries (safe from SQL injection)
+db.run("INSERT INTO users (name, age, email) VALUES (?, ?, ?)", ["Alice", 30, "alice@example.com"])
+db.run("INSERT INTO users (name, age, email) VALUES (?, ?, ?)", ["Bob", 17, "bob@example.com"])
+db.run("INSERT INTO users (name, age, email) VALUES (?, ?, ?)", ["Charlie", 25, "charlie@example.com"])
+let result = db.run("INSERT INTO users (name, age, email) VALUES (?, ?, ?)", ["Diana", 42, "diana@example.com"])
+print("last insert id:", result.lastId)
+print("rows affected:", result.changes)
+
+// Query all users
+print("\nAll users:")
+let users = db.query("SELECT * FROM users")
+for (user in users) {
+    print("  %{user.name} (age %{user.age}) - %{user.email}")
+}
+
+// Query with parameters
+print("\nAdults:")
+let adults = db.query("SELECT name, age FROM users WHERE age >= ? ORDER BY age", [18])
+for (u in adults) {
+    print("  %{u.name}: %{u.age}")
+}
+
+// Use with pipes
+print("\nAdult names sorted:")
+let names = db.query("SELECT name FROM users WHERE age >= ?", [18])
+    |> map(lam{ row in row.name })
+    |> sort
+print(names)
+
+// Update
+db.run("UPDATE users SET age = ? WHERE name = ?", [18, "Bob"])
+
+// Verify
+let bob = db.query("SELECT * FROM users WHERE name = ?", ["Bob"])
+print("\nBob is now:", bob[0].age)
+
+// Count
+let count = db.query("SELECT COUNT(*) as total FROM users")
+print("Total users:", count[0].total)
+
+// Clean up
+db.close()
+print("\nDone!")
