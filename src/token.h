@@ -64,6 +64,12 @@ enum class TokenType {
     DECREMENT,  // --
     AND,        // &&
     OR,         // ||
+    BIT_AND,    // &
+    BIT_OR,     // | (single pipe, distinct from |>)
+    BIT_XOR,    // ^
+    BIT_NOT,    // ~
+    SHL,        // <<
+    SHR,        // >>
     DOT,        // .
     DOT_DOT,    // ..
     PIPE,       // |>
@@ -140,6 +146,12 @@ inline std::string tokenTypeToString(TokenType type) {
         case TokenType::DECREMENT:   return "DECREMENT";
         case TokenType::AND:         return "AND";
         case TokenType::OR:          return "OR";
+        case TokenType::BIT_AND:     return "BIT_AND";
+        case TokenType::BIT_OR:      return "BIT_OR";
+        case TokenType::BIT_XOR:     return "BIT_XOR";
+        case TokenType::BIT_NOT:     return "BIT_NOT";
+        case TokenType::SHL:         return "SHL";
+        case TokenType::SHR:         return "SHR";
         case TokenType::DOT:         return "DOT";
         case TokenType::DOT_DOT:     return "DOT_DOT";
         case TokenType::PIPE:        return "PIPE";

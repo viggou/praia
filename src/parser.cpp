@@ -416,7 +416,7 @@ ExprPtr Parser::logicOr() {
 }
 
 ExprPtr Parser::logicAnd() {
-    auto left = equality();
+    auto left = bitOr();
     while (match(TokenType::AND)) {
         int ln = previous().line;
         auto right = equality();
@@ -424,6 +424,51 @@ ExprPtr Parser::logicAnd() {
         expr->line = ln;
         expr->left = std::move(left);
         expr->op = TokenType::AND;
+        expr->right = std::move(right);
+        left = std::move(expr);
+    }
+    return left;
+}
+
+ExprPtr Parser::bitOr() {
+    auto left = bitXor();
+    while (match(TokenType::BIT_OR)) {
+        Token op = previous();
+        auto right = bitXor();
+        auto expr = std::make_unique<BinaryExpr>();
+        expr->line = op.line;
+        expr->left = std::move(left);
+        expr->op = op.type;
+        expr->right = std::move(right);
+        left = std::move(expr);
+    }
+    return left;
+}
+
+ExprPtr Parser::bitXor() {
+    auto left = bitAnd();
+    while (match(TokenType::BIT_XOR)) {
+        Token op = previous();
+        auto right = bitAnd();
+        auto expr = std::make_unique<BinaryExpr>();
+        expr->line = op.line;
+        expr->left = std::move(left);
+        expr->op = op.type;
+        expr->right = std::move(right);
+        left = std::move(expr);
+    }
+    return left;
+}
+
+ExprPtr Parser::bitAnd() {
+    auto left = equality();
+    while (match(TokenType::BIT_AND)) {
+        Token op = previous();
+        auto right = equality();
+        auto expr = std::make_unique<BinaryExpr>();
+        expr->line = op.line;
+        expr->left = std::move(left);
+        expr->op = op.type;
         expr->right = std::move(right);
         left = std::move(expr);
     }
@@ -446,9 +491,24 @@ ExprPtr Parser::equality() {
 }
 
 ExprPtr Parser::comparison() {
-    auto left = addition();
+    auto left = shift();
     while (match(TokenType::LT) || match(TokenType::GT) ||
            match(TokenType::LTE) || match(TokenType::GTE)) {
+        Token op = previous();
+        auto right = addition();
+        auto expr = std::make_unique<BinaryExpr>();
+        expr->line = op.line;
+        expr->left = std::move(left);
+        expr->op = op.type;
+        expr->right = std::move(right);
+        left = std::move(expr);
+    }
+    return left;
+}
+
+ExprPtr Parser::shift() {
+    auto left = addition();
+    while (match(TokenType::SHL) || match(TokenType::SHR)) {
         Token op = previous();
         auto right = addition();
         auto expr = std::make_unique<BinaryExpr>();
@@ -493,7 +553,7 @@ ExprPtr Parser::multiplication() {
 }
 
 ExprPtr Parser::unary() {
-    if (match(TokenType::NOT) || match(TokenType::MINUS)) {
+    if (match(TokenType::NOT) || match(TokenType::MINUS) || match(TokenType::BIT_NOT)) {
         Token op = previous();
         auto operand = unary(); // right-recursive for chaining: !!x, --x
         auto expr = std::make_unique<UnaryExpr>();

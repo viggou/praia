@@ -73,21 +73,24 @@ void Lexer::scanToken() {
             addToken(match('=') ? TokenType::EQ : TokenType::ASSIGN);
             break;
         case '<':
-            addToken(match('=') ? TokenType::LTE : TokenType::LT);
+            if (match('<')) addToken(TokenType::SHL);
+            else addToken(match('=') ? TokenType::LTE : TokenType::LT);
             break;
         case '>':
-            addToken(match('=') ? TokenType::GTE : TokenType::GT);
+            if (match('>')) addToken(TokenType::SHR);
+            else addToken(match('=') ? TokenType::GTE : TokenType::GT);
             break;
 
         case '&':
-            if (match('&')) addToken(TokenType::AND);
-            else error("Unexpected character '&'. Did you mean '&&'?");
+            addToken(match('&') ? TokenType::AND : TokenType::BIT_AND);
             break;
         case '|':
             if (match('|')) addToken(TokenType::OR);
             else if (match('>')) addToken(TokenType::PIPE);
-            else error("Unexpected character '|'. Did you mean '||' or '|>'?");
+            else addToken(TokenType::BIT_OR);
             break;
+        case '^': addToken(TokenType::BIT_XOR); break;
+        case '~': addToken(TokenType::BIT_NOT); break;
 
         case '/':
             if (match('/')) {

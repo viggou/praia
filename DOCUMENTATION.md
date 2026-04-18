@@ -28,6 +28,9 @@ Praia is a dynamically typed, interpreted programming language built in C++.
 - [Async / Await](#async--await)
 - [HTTP Networking](#http-networking)
 - [SQLite](#sqlite)
+- [Bitwise Operators](#bitwise-operators)
+- [Bytes](#bytes)
+- [Crypto](#crypto)
 - [TCP Sockets](#tcp-sockets)
 - [Grains (Modules)](#grains-modules)
 - [Comments](#comments)
@@ -1464,6 +1467,91 @@ let server = http.createServer(lam{ req in
 
 server.listen(8080)
 ```
+
+---
+
+## Bitwise Operators
+
+| Operator | Description |
+|----------|-------------|
+| `&` | Bitwise AND |
+| `\|` | Bitwise OR |
+| `^` | Bitwise XOR |
+| `~` | Bitwise NOT (unary) |
+| `<<` | Left shift |
+| `>>` | Right shift |
+
+```
+255 & 15        // 15
+240 | 15        // 255
+255 ^ 15        // 240
+~0              // -1
+1 << 8          // 256
+256 >> 4        // 16
+```
+
+All values are converted to 64-bit integers for bitwise operations.
+
+Note: `|` (single pipe) is bitwise OR. `|>` is the pipe operator. `||` is logical OR. The lexer distinguishes them by what follows the `|`.
+
+---
+
+## Bytes
+
+The `bytes` namespace provides binary data packing and unpacking for working with binary protocols.
+
+### bytes.pack(format, values)
+
+Packs an array of numbers into a binary string.
+
+```
+let data = bytes.pack("u32be", [256])      // 4-byte big-endian
+let msg = bytes.pack("u16be", [1234, 5678]) // two 16-bit values
+```
+
+### bytes.unpack(format, data)
+
+Unpacks a binary string into an array of numbers.
+
+```
+let vals = bytes.unpack("u32be", data)     // [256]
+```
+
+### Formats
+
+| Format | Size | Description |
+|--------|------|-------------|
+| `u8`, `i8` | 1 byte | Unsigned/signed 8-bit |
+| `u16be`, `u16le` | 2 bytes | Unsigned 16-bit big/little endian |
+| `i16be`, `i16le` | 2 bytes | Signed 16-bit big/little endian |
+| `u32be`, `u32le` | 4 bytes | Unsigned 32-bit big/little endian |
+| `i32be`, `i32le` | 4 bytes | Signed 32-bit big/little endian |
+
+### Character codes
+
+```
+"A".charCode()          // 65
+"hello".charCode(1)     // 101 (character 'e')
+fromCharCode(65)        // "A"
+```
+
+---
+
+## Crypto
+
+The `crypto` namespace provides cryptographic hash functions.
+
+| Function | Description |
+|----------|-------------|
+| `crypto.md5(string)` | MD5 hash (32-char hex string) |
+| `crypto.sha256(string)` | SHA-256 hash (64-char hex string) |
+
+```
+crypto.md5("hello")     // "5d41402abc4b2a76b9719d911017c592"
+crypto.sha256("hello")  // "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+```
+
+These are essential for implementing authentication protocols (PostgreSQL, MySQL, etc.) in grains.
 
 ---
 

@@ -42,8 +42,12 @@ private:
     ExprPtr pipe();
     ExprPtr logicOr();
     ExprPtr logicAnd();
+    ExprPtr bitOr();
+    ExprPtr bitXor();
+    ExprPtr bitAnd();
     ExprPtr equality();
     ExprPtr comparison();
+    ExprPtr shift();
     ExprPtr addition();
     ExprPtr multiplication();
     ExprPtr unary();
