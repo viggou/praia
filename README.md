@@ -40,6 +40,31 @@ make
 ./praia script.praia      # run a file
 ```
 
+## Testing
+
+```sh
+make test                 # run the test suite in tests/
+./praia test              # same thing
+./praia test path/to/dir  # point at a different directory
+```
+
+`praia test` discovers `test_*.praia` files in the given directory, runs each
+with a fresh interpreter, and reports pass/fail counts. Test files use the
+`testing` grain and end with `testing.done()`:
+
+```
+use "testing"
+
+testing.test("addition", lam{ in
+    testing.assertEqual(1 + 1, 2, nil)
+})
+
+testing.done()
+```
+
+See [tests/](tests/) for examples covering arithmetic, strings, collections,
+classes, control flow, error handling, pipes/closures, and JSON.
+
 ## Current features
 
 * Pipe operator (`|>`) with filter, map, each, sort, keys, values
@@ -78,6 +103,7 @@ Praia/
 │   └── main.cpp                 # entry point + REPL
 ├── grains/                      # standard library modules
 ├── examples/                    # example programs
+├── tests/                       # test suite (run via `make test`)
 ├── Makefile
 └── DOCUMENTATION.md             # full language reference
 ```

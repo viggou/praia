@@ -1,0 +1,52 @@
+use "testing"
+
+testing.test("parse primitives", lam{ in
+    testing.assertEqual(json.parse("42"), 42, nil)
+    testing.assertEqual(json.parse("\"hi\""), "hi", nil)
+    testing.assertEqual(json.parse("true"), true, nil)
+    testing.assertEqual(json.parse("false"), false, nil)
+    testing.assertEqual(json.parse("null"), nil, nil)
+})
+
+testing.test("parse array", lam{ in
+    let a = json.parse("[1, 2, 3]")
+    testing.assertEqual(len(a), 3, nil)
+    testing.assertEqual(a[0], 1, nil)
+    testing.assertEqual(a[2], 3, nil)
+})
+
+testing.test("parse object", lam{ in
+    let m = json.parse("{\"name\": \"Ada\", \"age\": 36}")
+    testing.assertEqual(m.name, "Ada", nil)
+    testing.assertEqual(m.age, 36, nil)
+})
+
+testing.test("parse nested", lam{ in
+    let data = json.parse("{\"users\": [{\"id\": 1}, {\"id\": 2}]}")
+    testing.assertEqual(len(data.users), 2, nil)
+    testing.assertEqual(data.users[0].id, 1, nil)
+    testing.assertEqual(data.users[1].id, 2, nil)
+})
+
+testing.test("stringify roundtrip", lam{ in
+    let original = {name: "Ada", age: 36, active: true}
+    let s = json.stringify(original)
+    let parsed = json.parse(s)
+    testing.assertEqual(parsed.name, "Ada", nil)
+    testing.assertEqual(parsed.age, 36, nil)
+    testing.assertEqual(parsed.active, true, nil)
+})
+
+testing.test("parse errors include context", lam{ in
+    let msg = nil
+    try {
+        json.parse("{\"foo\": 12x}")
+    } catch (err) {
+        msg = err
+    }
+    // Should include both the position and the surrounding text
+    testing.assert(msg.contains("position"), nil)
+    testing.assert(msg.contains("12"), nil)
+})
+
+testing.done()

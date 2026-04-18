@@ -1,0 +1,54 @@
+use "testing"
+
+class Animal {
+    init(name) {
+        this.name = name
+    }
+    speak() {
+        return "%{this.name} makes a noise"
+    }
+}
+
+class Dog extends Animal {
+    init(name, breed) {
+        super.init(name)
+        this.breed = breed
+    }
+    speak() {
+        return "%{this.name} barks"
+    }
+    describe() {
+        return super.speak() + " (it's a " + this.breed + ")"
+    }
+}
+
+testing.test("instance fields and methods", lam{ in
+    let a = Animal("Leo")
+    testing.assertEqual(a.name, "Leo", nil)
+    testing.assertEqual(a.speak(), "Leo makes a noise", nil)
+})
+
+testing.test("inheritance and override", lam{ in
+    let d = Dog("Rex", "husky")
+    testing.assertEqual(d.name, "Rex", nil)
+    testing.assertEqual(d.breed, "husky", nil)
+    testing.assertEqual(d.speak(), "Rex barks", nil)
+})
+
+testing.test("super", lam{ in
+    let d = Dog("Rex", "husky")
+    testing.assertEqual(d.describe(), "Rex makes a noise (it's a husky)", nil)
+})
+
+testing.test("field assignment", lam{ in
+    let a = Animal("Cat")
+    a.name = "Whiskers"
+    testing.assertEqual(a.name, "Whiskers", nil)
+})
+
+testing.test("isInstance-like type check", lam{ in
+    let a = Animal("X")
+    testing.assertEqual(type(a), "instance", nil)
+})
+
+testing.done()

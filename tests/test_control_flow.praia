@@ -1,0 +1,79 @@
+use "testing"
+
+testing.test("if/else", lam{ in
+    let x = 10
+    let result = ""
+    if (x > 5) { result = "big" } else { result = "small" }
+    testing.assertEqual(result, "big", nil)
+})
+
+testing.test("elif chain", lam{ in
+    func classify(n) {
+        if (n < 0) { return "negative" }
+        elif (n == 0) { return "zero" }
+        elif (n < 10) { return "small" }
+        else { return "large" }
+    }
+    testing.assertEqual(classify(-5), "negative", nil)
+    testing.assertEqual(classify(0), "zero", nil)
+    testing.assertEqual(classify(3), "small", nil)
+    testing.assertEqual(classify(100), "large", nil)
+})
+
+testing.test("while loop", lam{ in
+    let i = 0
+    let sum = 0
+    while (i < 5) {
+        sum = sum + i
+        i = i + 1
+    }
+    testing.assertEqual(sum, 10, nil)
+})
+
+testing.test("for range loop", lam{ in
+    let sum = 0
+    for (i in 1 .. 11) {
+        sum = sum + i
+    }
+    testing.assertEqual(sum, 55, nil)
+})
+
+testing.test("break", lam{ in
+    let found = -1
+    for (i in 0 .. 100) {
+        if (i == 42) {
+            found = i
+            break
+        }
+    }
+    testing.assertEqual(found, 42, nil)
+})
+
+testing.test("continue", lam{ in
+    let evens = []
+    for (i in 0 .. 10) {
+        if (i % 2 != 0) { continue }
+        evens.push(i)
+    }
+    testing.assertEqual(len(evens), 5, nil)
+    testing.assertEqual(evens[0], 0, nil)
+    testing.assertEqual(evens[4], 8, nil)
+})
+
+testing.test("truthiness", lam{ in
+    testing.assert(1, nil)
+    testing.assert("hello", nil)
+    testing.assert([1], nil)
+    testing.assert(!0, nil)
+    testing.assert(!nil, nil)
+    testing.assert(!false, nil)
+})
+
+testing.test("short-circuit or", lam{ in
+    let x = nil || "default"
+    testing.assertEqual(x, "default", nil)
+    let y = "set" || "default"
+    testing.assertEqual(y, "set", nil)
+})
+
+testing.done()

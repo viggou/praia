@@ -45,4 +45,7 @@ $(BUILD_DIR):
 clean:
 	rm -rf $(BUILD_DIR) $(TARGET)
 
-.PHONY: all clean
+test: $(TARGET)
+	./$(TARGET) test
+
+.PHONY: all clean test

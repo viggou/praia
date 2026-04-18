@@ -1,0 +1,67 @@
+use "testing"
+
+testing.test("array literals and indexing", lam{ in
+    let a = [10, 20, 30]
+    testing.assertEqual(len(a), 3, nil)
+    testing.assertEqual(a[0], 10, nil)
+    testing.assertEqual(a[-1], 30, nil)
+})
+
+testing.test("push and pop", lam{ in
+    let a = [1, 2]
+    push(a, 3)
+    testing.assertEqual(len(a), 3, nil)
+    testing.assertEqual(pop(a), 3, nil)
+    testing.assertEqual(len(a), 2, nil)
+})
+
+testing.test("array methods", lam{ in
+    let a = [1, 2, 3]
+    a.push(4)
+    testing.assertEqual(len(a), 4, nil)
+    testing.assert(a.contains(2), nil)
+    testing.assert(!a.contains(99), nil)
+    testing.assertEqual([1, 2, 3].join("-"), "1-2-3", nil)
+    let b = [1, 2, 3]
+    b.reverse()
+    testing.assertEqual(b[0], 3, nil)
+})
+
+testing.test("index assignment", lam{ in
+    let a = [1, 2, 3]
+    a[0] = 99
+    testing.assertEqual(a[0], 99, nil)
+})
+
+testing.test("pop on empty throws", lam{ in
+    testing.assertThrows(lam{ in pop([]) }, nil)
+})
+
+testing.test("index out of bounds throws", lam{ in
+    testing.assertThrows(lam{ in [1, 2][5] }, nil)
+})
+
+testing.test("maps", lam{ in
+    let m = {name: "Ada", age: 36}
+    testing.assertEqual(m.name, "Ada", nil)
+    testing.assertEqual(m["age"], 36, nil)
+    m.age = 37
+    testing.assertEqual(m.age, 37, nil)
+    testing.assertEqual(len(m), 2, nil)
+})
+
+testing.test("keys and values", lam{ in
+    let m = {a: 1, b: 2, c: 3}
+    testing.assertEqual(len(keys(m)), 3, nil)
+    testing.assertEqual(len(values(m)), 3, nil)
+})
+
+testing.test("for-in loops", lam{ in
+    let sum = 0
+    for (x in [1, 2, 3, 4, 5]) {
+        sum = sum + x
+    }
+    testing.assertEqual(sum, 15, nil)
+})
+
+testing.done()

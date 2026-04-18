@@ -1,0 +1,63 @@
+use "testing"
+
+testing.test("throw and catch", lam{ in
+    let caught = nil
+    try {
+        throw "boom"
+    } catch (err) {
+        caught = err
+    }
+    testing.assertEqual(caught, "boom", nil)
+})
+
+testing.test("throw with structured payload", lam{ in
+    let caught = nil
+    try {
+        throw {code: 404, message: "not found"}
+    } catch (err) {
+        caught = err
+    }
+    testing.assertEqual(caught.code, 404, nil)
+    testing.assertEqual(caught.message, "not found", nil)
+})
+
+testing.test("catch runtime error", lam{ in
+    let caught = nil
+    try {
+        let x = 1 / 0
+    } catch (err) {
+        caught = err
+    }
+    testing.assert(caught.contains("Division"), nil)
+})
+
+testing.test("ensure early exit", lam{ in
+    func check(x) {
+        ensure (x > 0) else { throw "must be positive" }
+        return x * 2
+    }
+    testing.assertEqual(check(5), 10, nil)
+    testing.assertThrows(lam{ in check(-1) }, nil)
+})
+
+testing.test("try in try", lam{ in
+    let outer = nil
+    try {
+        try {
+            throw "inner"
+        } catch (e) {
+            throw "rewrapped: " + e
+        }
+    } catch (e) {
+        outer = e
+    }
+    testing.assertEqual(outer, "rewrapped: inner", nil)
+})
+
+testing.test("assertThrows catches runtime errors too", lam{ in
+    testing.assertThrows(lam{ in num("not a number") }, nil)
+    testing.assertThrows(lam{ in pop([]) }, nil)
+    testing.assertThrows(lam{ in [1, 2][10] }, nil)
+})
+
+testing.done()

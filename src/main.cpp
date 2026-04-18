@@ -2,11 +2,14 @@
 #include "interpreter.h"
 #include "lexer.h"
 #include "parser.h"
+#include <algorithm>
 #include <cstdlib>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <optional>
 #include <sstream>
+#include <vector>
 #ifdef HAVE_READLINE
 #include <readline/readline.h>
 #include <readline/history.h>
@@ -321,11 +324,83 @@ static void repl(bool showTokens, bool showAst) {
     }
 }
 
+// Run a single test file in its own interpreter. Returns 0 if the file
+// called sys.exit(0) (convention: testing.done() when all asserts passed),
+// anything else counts as a failure. Errors are kept on stderr so the user
+// can see them in the run log.
+static int runTestFile(const std::string& path) {
+    std::string source = readFile(path);
+    auto program = compile(source, /*showTokens*/false, /*showAst*/false);
+    if (program.empty()) return 1; // parse/lex error
+    Interpreter interp;
+    interp.setCurrentFile(path);
+    try {
+        interp.interpret(program);
+    } catch (const ExitSignal& e) {
+        return e.code;
+    }
+    // No sys.exit means the file didn't call testing.done() — treat as fail
+    // so an incomplete test file doesn't silently pass.
+    return 2;
+}
+
+static int runTestsCommand(const std::string& dir) {
+    namespace fs = std::filesystem;
+    if (!fs::exists(dir)) {
+        std::cerr << "praia test: directory not found: " << dir << std::endl;
+        return 2;
+    }
+
+    std::vector<std::string> files;
+    for (auto& entry : fs::recursive_directory_iterator(dir)) {
+        if (!entry.is_regular_file()) continue;
+        auto& p = entry.path();
+        if (p.extension() == ".praia" &&
+            p.filename().string().rfind("test_", 0) == 0) {
+            files.push_back(p.string());
+        }
+    }
+    std::sort(files.begin(), files.end());
+
+    if (files.empty()) {
+        std::cerr << "praia test: no test_*.praia files in " << dir << std::endl;
+        return 1;
+    }
+
+    int passed = 0, failed = 0;
+    std::vector<std::string> failedFiles;
+    for (auto& file : files) {
+        std::cout << "── " << file << " ───────────────────────" << std::endl;
+        int code = runTestFile(file);
+        if (code == 0) {
+            passed++;
+        } else {
+            failed++;
+            failedFiles.push_back(file);
+        }
+        std::cout << std::endl;
+    }
+
+    std::cout << "═══ " << passed << "/" << files.size()
+              << " test files passed ═══" << std::endl;
+    if (!failedFiles.empty()) {
+        std::cout << "Failed:" << std::endl;
+        for (auto& f : failedFiles) std::cout << "  " << f << std::endl;
+    }
+    return failed == 0 ? 0 : 1;
+}
+
 int main(int argc, char* argv[]) {
     bool showTokens = false;
     bool showAst = false;
     std::string filename;
     int fileArgIndex = -1;
+
+    // `praia test [dir]` subcommand
+    if (argc >= 2 && std::string(argv[1]) == "test") {
+        std::string dir = (argc >= 3) ? argv[2] : "tests";
+        return runTestsCommand(dir);
+    }
 
     for (int i = 1; i < argc; i++) {
         std::string arg = argv[i];
