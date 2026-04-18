@@ -1,0 +1,36 @@
+// UUID v4 generator
+// Generates RFC 4122 compliant UUIDs using random numbers
+// Format: xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx
+
+func hexByte() {
+    let n = random.int(0, 255)
+    let hi = n >> 4
+    let lo = n & 15
+    let chars = "0123456789abcdef"
+    return chars[hi] + chars[lo]
+}
+
+func v4() {
+    // 8-4-4-4-12
+    let p1 = hexByte() + hexByte() + hexByte() + hexByte()
+    let p2 = hexByte() + hexByte()
+
+    // Version 4: first nibble is 4
+    let byte6 = (random.int(0, 255) & 15) | 64   // 0100xxxx
+    let hi6 = byte6 >> 4
+    let lo6 = byte6 & 15
+    let chars = "0123456789abcdef"
+    let p3 = chars[hi6] + chars[lo6] + hexByte()
+
+    // Variant 1: first two bits are 10
+    let byte8 = (random.int(0, 255) & 63) | 128  // 10xxxxxx
+    let hi8 = byte8 >> 4
+    let lo8 = byte8 & 15
+    let p4 = chars[hi8] + chars[lo8] + hexByte()
+
+    let p5 = hexByte() + hexByte() + hexByte() + hexByte() + hexByte() + hexByte()
+
+    return p1 + "-" + p2 + "-" + p3 + "-" + p4 + "-" + p5
+}
+
+export { v4 }

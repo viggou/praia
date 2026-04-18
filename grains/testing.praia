@@ -1,0 +1,84 @@
+let passed = 0
+let failed = 0
+let errors = []
+
+func assert(condition, message) {
+    if (condition) {
+        passed = passed + 1
+    } else {
+        failed = failed + 1
+        let msg = message || "Assertion failed"
+        errors.push(msg)
+        print("  FAIL:", msg)
+    }
+}
+
+func assertEqual(actual, expected, message) {
+    if (actual == expected) {
+        passed = passed + 1
+    } else {
+        failed = failed + 1
+        let msg = message || "Expected %{expected}, got %{actual}"
+        errors.push(msg)
+        print("  FAIL:", msg)
+    }
+}
+
+func assertNotEqual(actual, expected, message) {
+    if (actual != expected) {
+        passed = passed + 1
+    } else {
+        failed = failed + 1
+        let msg = message || "Expected not %{expected}, but got it"
+        errors.push(msg)
+        print("  FAIL:", msg)
+    }
+}
+
+func assertThrows(fn, message) {
+    let threw = false
+    try {
+        fn()
+    } catch (err) {
+        threw = true
+    }
+    if (threw) {
+        passed = passed + 1
+    } else {
+        failed = failed + 1
+        let msg = message || "Expected function to throw"
+        errors.push(msg)
+        print("  FAIL:", msg)
+    }
+}
+
+func test(name, fn) {
+    print("TEST:", name)
+    try {
+        fn()
+    } catch (err) {
+        failed = failed + 1
+        errors.push("%{name}: %{err}")
+        print("  ERROR:", err)
+    }
+}
+
+func summary() {
+    print("")
+    print("Results: %{passed} passed, %{failed} failed, %{passed + failed} total")
+    if (failed > 0) {
+        print("Failures:")
+        for (err in errors) {
+            print("  - %{err}")
+        }
+    }
+    return failed == 0
+}
+
+func reset() {
+    passed = 0
+    failed = 0
+    errors = []
+}
+
+export { assert, assertEqual, assertNotEqual, assertThrows, test, summary, reset }

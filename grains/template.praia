@@ -1,0 +1,95 @@
+// Simple HTML template engine
+// Supports {{ variable }} and {{# each items }} ... {{/ each }} blocks
+//
+// Usage:
+//   use "template"
+//   let html = template.render("<h1>{{ title }}</h1>", {title: "Hello"})
+
+func render(tmpl, data) {
+    let result = tmpl
+
+    // Replace {{ key }} with values from data
+    let ks = keys(data)
+    for (k in ks) {
+        let val = data[k]
+        // Skip arrays/maps — those are for block helpers
+        if (type(val) != "array" && type(val) != "map") {
+            let placeholder = "{{ " + k + " }}"
+            result = result.replace(placeholder, val.toString())
+            // Also without spaces
+            let placeholderNoSpace = "{{" + k + "}}"
+            result = result.replace(placeholderNoSpace, val.toString())
+        }
+    }
+
+    // Process {{# each arrayName }} ... {{/ each }} blocks
+    for (k in ks) {
+        let val = data[k]
+        if (type(val) == "array") {
+            let openTag = "{{# each " + k + " }}"
+            let closeTag = "{{/ each }}"
+            while (result.contains(openTag)) {
+                let startPos = 0
+                let before = ""
+                let block = ""
+                let after = ""
+                let found = false
+
+                // Find the block manually
+                let lines = result.split("\n")
+                let inBlock = false
+                let blockLines = []
+                let beforeLines = []
+                let afterLines = []
+                let blockKey = ""
+
+                for (line in lines) {
+                    if (!found && line.strip().contains(openTag)) {
+                        inBlock = true
+                        blockKey = k
+                    } elif (inBlock && line.strip().contains(closeTag)) {
+                        inBlock = false
+                        found = true
+                    } elif (inBlock) {
+                        blockLines.push(line)
+                    } elif (!found) {
+                        beforeLines.push(line)
+                    } else {
+                        afterLines.push(line)
+                    }
+                }
+
+                if (found) {
+                    let blockTemplate = blockLines.join("\n")
+                    let expanded = ""
+                    for (item in val) {
+                        let itemStr = blockTemplate
+                        if (type(item) == "map") {
+                            let itemKeys = keys(item)
+                            for (ik in itemKeys) {
+                                itemStr = itemStr.replace("{{ " + ik + " }}", item[ik].toString())
+                                itemStr = itemStr.replace("{{" + ik + "}}", item[ik].toString())
+                            }
+                        } else {
+                            itemStr = itemStr.replace("{{ this }}", item.toString())
+                            itemStr = itemStr.replace("{{this}}", item.toString())
+                        }
+                        expanded = expanded + itemStr + "\n"
+                    }
+                    result = beforeLines.join("\n") + "\n" + expanded + afterLines.join("\n")
+                } else {
+                    break
+                }
+            }
+        }
+    }
+
+    return result
+}
+
+func renderFile(path, data) {
+    let tmpl = sys.read(path)
+    return render(tmpl, data)
+}
+
+export { render, renderFile }

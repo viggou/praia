@@ -1,0 +1,143 @@
+// Stack — LIFO (last in, first out)
+class Stack {
+    init() {
+        this.items = []
+    }
+
+    push(val) {
+        this.items.push(val)
+    }
+
+    pop() {
+        ensure (len(this.items) > 0) else { throw "pop() on empty stack" }
+        return this.items.pop()
+    }
+
+    peek() {
+        ensure (len(this.items) > 0) else { throw "peek() on empty stack" }
+        return this.items[len(this.items) - 1]
+    }
+
+    size() {
+        return len(this.items)
+    }
+
+    isEmpty() {
+        return len(this.items) == 0
+    }
+
+    toArray() {
+        let result = []
+        for (item in this.items) {
+            result.push(item)
+        }
+        return result
+    }
+}
+
+// Queue — FIFO (first in, first out)
+class Queue {
+    init() {
+        this.items = []
+    }
+
+    enqueue(val) {
+        this.items.push(val)
+    }
+
+    dequeue() {
+        ensure (len(this.items) > 0) else { throw "dequeue() on empty queue" }
+        let first = this.items[0]
+        let newItems = []
+        for (i in 1..len(this.items)) {
+            newItems.push(this.items[i])
+        }
+        this.items = newItems
+        return first
+    }
+
+    peek() {
+        ensure (len(this.items) > 0) else { throw "peek() on empty queue" }
+        return this.items[0]
+    }
+
+    size() {
+        return len(this.items)
+    }
+
+    isEmpty() {
+        return len(this.items) == 0
+    }
+
+    toArray() {
+        let result = []
+        for (item in this.items) {
+            result.push(item)
+        }
+        return result
+    }
+}
+
+// Set — unique values only
+class Set {
+    init() {
+        this.items = []
+    }
+
+    add(val) {
+        if (!this.has(val)) {
+            this.items.push(val)
+        }
+    }
+
+    has(val) {
+        return this.items.contains(val)
+    }
+
+    remove(val) {
+        let newItems = []
+        for (item in this.items) {
+            if (item != val) {
+                newItems.push(item)
+            }
+        }
+        this.items = newItems
+    }
+
+    size() {
+        return len(this.items)
+    }
+
+    toArray() {
+        let result = []
+        for (item in this.items) {
+            result.push(item)
+        }
+        return result
+    }
+
+    union(other) {
+        let result = Set()
+        for (item in this.items) { result.add(item) }
+        for (item in other.items) { result.add(item) }
+        return result
+    }
+
+    intersect(other) {
+        let result = Set()
+        for (item in this.items) {
+            if (other.has(item)) { result.add(item) }
+        }
+        return result
+    }
+
+    difference(other) {
+        let result = Set()
+        for (item in this.items) {
+            if (!other.has(item)) { result.add(item) }
+        }
+        return result
+    }
+}
+
+export { Stack, Queue, Set }

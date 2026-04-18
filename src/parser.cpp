@@ -216,6 +216,8 @@ StmtPtr Parser::returnStatement() {
         case TokenType::LAM:
         case TokenType::ASYNC:
         case TokenType::AWAIT:
+        case TokenType::THIS:
+        case TokenType::SUPER:
         case TokenType::NOT:
         case TokenType::MINUS:
             stmt->value = expression();

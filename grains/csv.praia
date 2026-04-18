@@ -1,0 +1,122 @@
+// CSV parser and stringifier
+//
+// csv.parse(text) → array of maps (first row = headers)
+// csv.parseRaw(text) → array of arrays (no header handling)
+// csv.stringify(data, headers?) → CSV string
+
+func parseRow(line) {
+    let fields = []
+    let current = ""
+    let inQuotes = false
+    let i = 0
+
+    while (i < len(line)) {
+        let ch = line[i]
+        if (inQuotes) {
+            if (ch == "\"") {
+                if (i + 1 < len(line) && line[i + 1] == "\"") {
+                    // Escaped quote
+                    current = current + "\""
+                    i = i + 2
+                    continue
+                } else {
+                    inQuotes = false
+                }
+            } else {
+                current = current + ch
+            }
+        } else {
+            if (ch == "\"") {
+                inQuotes = true
+            } elif (ch == ",") {
+                fields.push(current.strip())
+                current = ""
+            } else {
+                current = current + ch
+            }
+        }
+        i = i + 1
+    }
+    fields.push(current.strip())
+    return fields
+}
+
+func parseRaw(text) {
+    let lines = text.strip().split("\n")
+    let rows = []
+    for (line in lines) {
+        if (len(line.strip()) > 0) {
+            rows.push(parseRow(line))
+        }
+    }
+    return rows
+}
+
+func parse(text) {
+    let rows = parseRaw(text)
+    ensure (len(rows) > 0) else { return [] }
+
+    let headers = rows[0]
+    let result = []
+
+    for (i in 1..len(rows)) {
+        let row = rows[i]
+        let obj = {}
+        for (j in 0..len(headers)) {
+            if (j < len(row)) {
+                // Try to parse numbers
+                let val = row[j]
+                let numVal = nil
+                try { numVal = val.toNum() } catch (e) {}
+                if (numVal != nil && val != "true" && val != "false") {
+                    obj[headers[j]] = numVal
+                } elif (val == "true") {
+                    obj[headers[j]] = true
+                } elif (val == "false") {
+                    obj[headers[j]] = false
+                } else {
+                    obj[headers[j]] = val
+                }
+            } else {
+                obj[headers[j]] = ""
+            }
+        }
+        result.push(obj)
+    }
+    return result
+}
+
+func stringify(data, headers) {
+    ensure (len(data) > 0) else { return "" }
+
+    // Auto-detect headers from first row if not provided
+    if (!headers) {
+        headers = keys(data[0])
+    }
+
+    let lines = []
+
+    // Header row
+    lines.push(headers.join(","))
+
+    // Data rows
+    for (row in data) {
+        let fields = []
+        for (h in headers) {
+            let val = ""
+            if (type(row) == "map" && row[h] != nil) {
+                val = row[h].toString()
+            }
+            // Quote if contains comma or quote
+            if (val.contains(",") || val.contains("\"")) {
+                val = "\"" + val.replace("\"", "\"\"") + "\""
+            }
+            fields.push(val)
+        }
+        lines.push(fields.join(","))
+    }
+
+    return lines.join("\n")
+}
+
+export { parse, parseRaw, parseRow, stringify }

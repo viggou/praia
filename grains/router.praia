@@ -1,0 +1,65 @@
+// HTTP Router with :param support
+// Usage:
+//   use "router"
+//   let app = router.create()
+//   app.get("/users/:id", lam{ req in ... })
+//   app.listen(8080)
+
+func matchRoute(pattern, path) {
+    let patternParts = pattern.split("/")
+    let pathParts = path.split("/")
+
+    if (len(patternParts) != len(pathParts)) {
+        return nil
+    }
+
+    let params = {}
+    for (i in 0..len(patternParts)) {
+        let pp = patternParts[i]
+        let rp = pathParts[i]
+
+        if (pp.startsWith(":")) {
+            // Parameter segment — capture it
+            let paramName = pp.replace(":", "")
+            params[paramName] = rp
+        } elif (pp != rp) {
+            return nil
+        }
+    }
+    return params
+}
+
+func create() {
+    let routes = []
+
+    func addRoute(method, pattern, handler) {
+        routes.push({method: method, pattern: pattern, handler: handler})
+    }
+
+    func handleRequest(req) {
+        for (route in routes) {
+            if (route.method != req.method) { continue }
+
+            let params = matchRoute(route.pattern, req.path)
+            if (params) {
+                req.params = params
+                return route.handler(req)
+            }
+        }
+        return {status: 404, body: "Not Found: %{req.path}"}
+    }
+
+    return {
+        get: lam{ pattern, handler in addRoute("GET", pattern, handler) },
+        post: lam{ pattern, handler in addRoute("POST", pattern, handler) },
+        put: lam{ pattern, handler in addRoute("PUT", pattern, handler) },
+        delete: lam{ pattern, handler in addRoute("DELETE", pattern, handler) },
+        handle: lam{ req in handleRequest(req) },
+        listen: lam{ port in
+            let server = http.createServer(lam{ req in handleRequest(req) })
+            server.listen(port)
+        }
+    }
+}
+
+export { create, matchRoute }
