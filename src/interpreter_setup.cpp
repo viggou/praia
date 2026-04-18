@@ -96,9 +96,20 @@ Interpreter::Interpreter() {
             if (args[0].isNumber()) return args[0];
             if (args[0].isString()) {
                 try { return Value(std::stod(args[0].asString())); }
-                catch (...) { throw RuntimeError("Cannot convert string to number", 0); }
+                catch (...) {
+                    throw RuntimeError("num(): cannot parse \"" + args[0].asString() +
+                                       "\" as a number", 0);
+                }
             }
-            throw RuntimeError("Cannot convert to number", 0);
+            throw RuntimeError("num(): cannot convert " + args[0].toString() +
+                               " (" + std::string(
+                                   args[0].isBool()     ? "bool"
+                                 : args[0].isNil()      ? "nil"
+                                 : args[0].isArray()    ? "array"
+                                 : args[0].isMap()      ? "map"
+                                 : args[0].isInstance() ? "instance"
+                                 : args[0].isCallable() ? "function"
+                                                        : "unknown") + ") to a number", 0);
         })));
 
     globals->define("fromCharCode", Value(makeNative("fromCharCode", 1,
@@ -263,7 +274,8 @@ Interpreter::Interpreter() {
                 throw RuntimeError("sys.exec() requires a string command", 0);
             FILE* pipe = popen(args[0].asString().c_str(), "r");
             if (!pipe)
-                throw RuntimeError("Failed to execute command", 0);
+                throw RuntimeError("sys.exec(): failed to launch `" +
+                                   args[0].asString() + "`", 0);
             std::string result;
             char buf[256];
             while (fgets(buf, sizeof(buf), pipe))

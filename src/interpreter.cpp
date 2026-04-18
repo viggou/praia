@@ -13,6 +13,28 @@
 
 namespace fs = std::filesystem;
 
+// Invoke a Callable with arity check + line-context for errors.
+// Native functions throw with line=0 because they don't know the caller;
+// we rewrite that to the current call-site line so the user sees a real location.
+static Value callWithContext(Interpreter& interp,
+                             const std::shared_ptr<Callable>& func,
+                             const std::vector<Value>& args,
+                             int line) {
+    int n = static_cast<int>(args.size());
+    int a = func->arity();
+    if (a != -1 && n != a) {
+        throw RuntimeError(func->name() + "() expected " + std::to_string(a) +
+                           " argument(s) but got " + std::to_string(n), line);
+    }
+    try {
+        return func->call(interp, args);
+    } catch (const RuntimeError& err) {
+        if (err.line == 0)
+            throw RuntimeError(err.what(), line);
+        throw;
+    }
+}
+
 // ── Grain (module) loading ───────────────────────────────────
 
 std::string Interpreter::resolveGrainPath(const std::string& path, int line) {
@@ -516,15 +538,7 @@ Value Interpreter::evaluate(const Expr* expr) {
         for (const auto& arg : e->args)
             args.push_back(evaluate(arg.get()));
 
-        auto func = callee.asCallable();
-        if (func->arity() != -1 &&
-            static_cast<int>(args.size()) != func->arity()) {
-            throw RuntimeError(
-                "Expected " + std::to_string(func->arity()) +
-                " argument(s) but got " + std::to_string(args.size()), e->line);
-        }
-
-        return func->call(*this, args);
+        return callWithContext(*this, callee.asCallable(), args, e->line);
     }
 
     // ── Array literal ──
@@ -552,13 +566,7 @@ Value Interpreter::evaluate(const Expr* expr) {
             for (const auto& arg : call->args)
                 args.push_back(evaluate(arg.get()));
 
-            auto func = callee.asCallable();
-            if (func->arity() != -1 &&
-                static_cast<int>(args.size()) != func->arity())
-                throw RuntimeError("Expected " + std::to_string(func->arity()) +
-                    " argument(s) but got " + std::to_string(args.size()), e->line);
-
-            return func->call(*this, args);
+            return callWithContext(*this, callee.asCallable(), args, e->line);
         }
 
         // Right side is just a function name: f → f(leftVal)
@@ -566,14 +574,7 @@ Value Interpreter::evaluate(const Expr* expr) {
         if (!callee.isCallable())
             throw RuntimeError("Pipe target must be a function", e->line);
 
-        std::vector<Value> args = {leftVal};
-        auto func = callee.asCallable();
-        if (func->arity() != -1 &&
-            static_cast<int>(args.size()) != func->arity())
-            throw RuntimeError("Expected " + std::to_string(func->arity()) +
-                " argument(s) but got " + std::to_string(args.size()), e->line);
-
-        return func->call(*this, args);
+        return callWithContext(*this, callee.asCallable(), {leftVal}, e->line);
     }
 
     // ── Async / Await ──
@@ -596,7 +597,7 @@ Value Interpreter::evaluate(const Expr* expr) {
         auto callable = callee.asCallable();
         int arity = callable->arity();
         if (arity != -1 && static_cast<int>(args.size()) != arity)
-            throw RuntimeError("Expected " + std::to_string(arity) +
+            throw RuntimeError(callable->name() + "() expected " + std::to_string(arity) +
                 " argument(s) but got " + std::to_string(args.size()), e->line);
 
         // Spawn the call in a background thread
@@ -751,9 +752,10 @@ Value Interpreter::evaluate(const Expr* expr) {
                             double d = std::stod(s, &pos);
                             if (pos == s.size()) return Value(d);
                         } catch (...) {}
-                        throw RuntimeError("Cannot convert '" + s + "' to number", 0);
+                        throw RuntimeError("toNum: cannot parse \"" + s + "\" as a number", 0);
                     }
-                    throw RuntimeError("Cannot convert this type to number", 0);
+                    throw RuntimeError("toNum: cannot convert " + captured.toString() +
+                                       " to a number", 0);
                 }));
         }
 

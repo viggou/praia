@@ -67,8 +67,23 @@ std::string readAll(int sock) {
 
 Value parseHttpResponse(const std::string& raw) {
     auto headerEnd = raw.find("\r\n\r\n");
-    if (headerEnd == std::string::npos)
-        throw RuntimeError("Invalid HTTP response", 0);
+    if (headerEnd == std::string::npos) {
+        if (raw.empty())
+            throw RuntimeError("Invalid HTTP response: empty response from server", 0);
+        std::string snippet = raw.substr(0, std::min<size_t>(raw.size(), 120));
+        // Escape control chars for readability
+        std::string shown;
+        for (char c : snippet) {
+            if (c == '\r') shown += "\\r";
+            else if (c == '\n') shown += "\\n";
+            else if (c == '\t') shown += "\\t";
+            else shown += c;
+        }
+        if (raw.size() > snippet.size()) shown += "...";
+        throw RuntimeError(
+            "Invalid HTTP response: missing header/body separator (got " +
+            std::to_string(raw.size()) + " bytes: \"" + shown + "\")", 0);
+    }
 
     std::string headerSection = raw.substr(0, headerEnd);
     std::string body = raw.substr(headerEnd + 4);

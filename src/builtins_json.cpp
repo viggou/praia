@@ -15,6 +15,26 @@ class JsonParser {
     char peek() { return pos < src.size() ? src[pos] : '\0'; }
     char advance() { return src[pos++]; }
 
+    // "at position 42, near 'foo|bar'" where | marks the current position
+    std::string context() const {
+        std::string s = " at position " + std::to_string(pos) + ", near '";
+        size_t start = pos > 10 ? pos - 10 : 0;
+        size_t end = std::min(src.size(), pos + 10);
+        for (size_t i = start; i < end; i++) {
+            char c = src[i];
+            if (i == pos) s += '|';
+            if (c == '\n') s += "\\n";
+            else if (c == '\t') s += "\\t";
+            else s += c;
+        }
+        if (pos >= src.size()) s += "|";
+        return s + "'";
+    }
+
+    [[noreturn]] void fail(const std::string& msg) const {
+        throw RuntimeError(msg + context(), 0);
+    }
+
     Value parseValue() {
         skipWhitespace();
         char c = peek();
@@ -24,7 +44,8 @@ class JsonParser {
         if (c == 't' || c == 'f') return parseBool();
         if (c == 'n') return parseNull();
         if (c == '-' || std::isdigit(c)) return parseNumber();
-        throw RuntimeError("Invalid JSON at position " + std::to_string(pos), 0);
+        if (c == '\0') fail("Unexpected end of JSON input");
+        fail(std::string("Unexpected character '") + c + "' in JSON");
     }
 
     Value parseString() {
@@ -92,17 +113,16 @@ class JsonParser {
         if (peek() == '}') { pos++; return Value(map); }
         while (true) {
             skipWhitespace();
-            if (peek() != '"')
-                throw RuntimeError("Expected string key in JSON object", 0);
+            if (peek() != '"') fail("Expected string key in JSON object");
             Value key = parseString();
             skipWhitespace();
-            if (advance() != ':')
-                throw RuntimeError("Expected ':' in JSON object", 0);
+            if (peek() != ':') fail("Expected ':' after key in JSON object");
+            advance();
             map->entries[key.asString()] = parseValue();
             skipWhitespace();
             if (peek() == '}') { pos++; break; }
-            if (advance() != ',')
-                throw RuntimeError("Expected ',' or '}' in JSON object", 0);
+            if (peek() != ',') fail("Expected ',' or '}' in JSON object");
+            advance();
         }
         return Value(map);
     }
@@ -116,8 +136,8 @@ class JsonParser {
             arr->elements.push_back(parseValue());
             skipWhitespace();
             if (peek() == ']') { pos++; break; }
-            if (advance() != ',')
-                throw RuntimeError("Expected ',' or ']' in JSON array", 0);
+            if (peek() != ',') fail("Expected ',' or ']' in JSON array");
+            advance();
         }
         return Value(arr);
     }
@@ -125,12 +145,12 @@ class JsonParser {
     Value parseBool() {
         if (src.compare(pos, 4, "true") == 0) { pos += 4; return Value(true); }
         if (src.compare(pos, 5, "false") == 0) { pos += 5; return Value(false); }
-        throw RuntimeError("Invalid JSON boolean", 0);
+        fail("Invalid JSON boolean (expected 'true' or 'false')");
     }
 
     Value parseNull() {
         if (src.compare(pos, 4, "null") == 0) { pos += 4; return Value(); }
-        throw RuntimeError("Invalid JSON null", 0);
+        fail("Invalid JSON null (expected 'null')");
     }
 
 public:
@@ -139,7 +159,7 @@ public:
         Value v = parseValue();
         skipWhitespace();
         if (pos != src.size())
-            throw RuntimeError("Unexpected content after JSON value", 0);
+            fail("Unexpected content after JSON value");
         return v;
     }
 };
