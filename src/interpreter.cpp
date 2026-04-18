@@ -2,13 +2,18 @@
 #include "lexer.h"
 #include "parser.h"
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <ctime>
 #include <filesystem>
 #include <fstream>
+#include <iomanip>
 #include <iostream>
+#include <random>
 #include <regex>
 #include <sstream>
+#include <thread>
 #ifdef HAVE_SQLITE
 #include <sqlite3.h>
 #endif
@@ -1805,6 +1810,197 @@ Interpreter::Interpreter() {
         }));
 
     globals->define("crypto", Value(cryptoMap));
+
+    // ── random namespace ──
+
+    auto randomMap = std::make_shared<PraiaMap>();
+    auto rng = std::make_shared<std::mt19937>(std::random_device{}());
+
+    randomMap->entries["int"] = Value(makeNative("random.int", 2,
+        [rng](const std::vector<Value>& args) -> Value {
+            if (!args[0].isNumber() || !args[1].isNumber())
+                throw RuntimeError("random.int() requires two numbers", 0);
+            int lo = static_cast<int>(args[0].asNumber());
+            int hi = static_cast<int>(args[1].asNumber());
+            std::uniform_int_distribution<int> dist(lo, hi);
+            return Value(static_cast<double>(dist(*rng)));
+        }));
+
+    randomMap->entries["float"] = Value(makeNative("random.float", 0,
+        [rng](const std::vector<Value>&) -> Value {
+            std::uniform_real_distribution<double> dist(0.0, 1.0);
+            return Value(dist(*rng));
+        }));
+
+    randomMap->entries["choice"] = Value(makeNative("random.choice", 1,
+        [rng](const std::vector<Value>& args) -> Value {
+            if (!args[0].isArray())
+                throw RuntimeError("random.choice() requires an array", 0);
+            auto& elems = args[0].asArray()->elements;
+            if (elems.empty())
+                throw RuntimeError("random.choice() on empty array", 0);
+            std::uniform_int_distribution<size_t> dist(0, elems.size() - 1);
+            return elems[dist(*rng)];
+        }));
+
+    randomMap->entries["shuffle"] = Value(makeNative("random.shuffle", 1,
+        [rng](const std::vector<Value>& args) -> Value {
+            if (!args[0].isArray())
+                throw RuntimeError("random.shuffle() requires an array", 0);
+            auto& elems = args[0].asArray()->elements;
+            std::shuffle(elems.begin(), elems.end(), *rng);
+            return args[0];
+        }));
+
+    randomMap->entries["seed"] = Value(makeNative("random.seed", 1,
+        [rng](const std::vector<Value>& args) -> Value {
+            if (!args[0].isNumber())
+                throw RuntimeError("random.seed() requires a number", 0);
+            rng->seed(static_cast<unsigned>(args[0].asNumber()));
+            return Value();
+        }));
+
+    globals->define("random", Value(randomMap));
+
+    // ── time namespace ──
+
+    auto timeMap = std::make_shared<PraiaMap>();
+
+    timeMap->entries["now"] = Value(makeNative("time.now", 0,
+        [](const std::vector<Value>&) -> Value {
+            auto now = std::chrono::system_clock::now();
+            auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                now.time_since_epoch()).count();
+            return Value(static_cast<double>(ms));
+        }));
+
+    timeMap->entries["sleep"] = Value(makeNative("time.sleep", 1,
+        [](const std::vector<Value>& args) -> Value {
+            if (!args[0].isNumber())
+                throw RuntimeError("time.sleep() requires milliseconds", 0);
+            std::this_thread::sleep_for(
+                std::chrono::milliseconds(static_cast<int>(args[0].asNumber())));
+            return Value();
+        }));
+
+    timeMap->entries["format"] = Value(makeNative("time.format", -1,
+        [](const std::vector<Value>& args) -> Value {
+            std::string fmt = "%Y-%m-%d %H:%M:%S";
+            double timestamp = 0;
+
+            if (!args.empty() && args[0].isString())
+                fmt = args[0].asString();
+            if (args.size() > 1 && args[1].isNumber())
+                timestamp = args[1].asNumber();
+
+            std::time_t t;
+            if (timestamp > 0) {
+                t = static_cast<std::time_t>(timestamp / 1000.0);
+            } else {
+                t = std::time(nullptr);
+            }
+            std::tm tm = *std::localtime(&t);
+            std::ostringstream oss;
+            oss << std::put_time(&tm, fmt.c_str());
+            return Value(oss.str());
+        }));
+
+    timeMap->entries["epoch"] = Value(makeNative("time.epoch", 0,
+        [](const std::vector<Value>&) -> Value {
+            return Value(static_cast<double>(std::time(nullptr)));
+        }));
+
+    globals->define("time", Value(timeMap));
+
+    // ── math namespace (built-in, replaces grains/math.praia for C++ math) ──
+
+    auto mathMap = std::make_shared<PraiaMap>();
+
+    mathMap->entries["PI"] = Value(3.14159265358979323846);
+    mathMap->entries["E"] = Value(2.71828182845904523536);
+    mathMap->entries["INF"] = Value(std::numeric_limits<double>::infinity());
+
+    auto mathFn1 = [&](const std::string& name, double(*fn)(double)) {
+        mathMap->entries[name] = Value(makeNative("math." + name, 1,
+            [fn](const std::vector<Value>& args) -> Value {
+                if (!args[0].isNumber())
+                    throw RuntimeError("math function requires a number", 0);
+                return Value(fn(args[0].asNumber()));
+            }));
+    };
+
+    mathFn1("sqrt", std::sqrt);
+    mathFn1("sin", std::sin);
+    mathFn1("cos", std::cos);
+    mathFn1("tan", std::tan);
+    mathFn1("asin", std::asin);
+    mathFn1("acos", std::acos);
+    mathFn1("atan", std::atan);
+    mathFn1("floor", std::floor);
+    mathFn1("ceil", std::ceil);
+    mathFn1("round", std::round);
+    mathFn1("abs", std::fabs);
+    mathFn1("log", std::log);
+    mathFn1("log2", std::log2);
+    mathFn1("log10", std::log10);
+    mathFn1("exp", std::exp);
+
+    mathMap->entries["pow"] = Value(makeNative("math.pow", 2,
+        [](const std::vector<Value>& args) -> Value {
+            if (!args[0].isNumber() || !args[1].isNumber())
+                throw RuntimeError("math.pow() requires two numbers", 0);
+            return Value(std::pow(args[0].asNumber(), args[1].asNumber()));
+        }));
+
+    mathMap->entries["min"] = Value(makeNative("math.min", 2,
+        [](const std::vector<Value>& args) -> Value {
+            if (!args[0].isNumber() || !args[1].isNumber())
+                throw RuntimeError("math.min() requires two numbers", 0);
+            return Value(std::fmin(args[0].asNumber(), args[1].asNumber()));
+        }));
+
+    mathMap->entries["max"] = Value(makeNative("math.max", 2,
+        [](const std::vector<Value>& args) -> Value {
+            if (!args[0].isNumber() || !args[1].isNumber())
+                throw RuntimeError("math.max() requires two numbers", 0);
+            return Value(std::fmax(args[0].asNumber(), args[1].asNumber()));
+        }));
+
+    mathMap->entries["clamp"] = Value(makeNative("math.clamp", 3,
+        [](const std::vector<Value>& args) -> Value {
+            if (!args[0].isNumber() || !args[1].isNumber() || !args[2].isNumber())
+                throw RuntimeError("math.clamp() requires three numbers", 0);
+            double x = args[0].asNumber(), lo = args[1].asNumber(), hi = args[2].asNumber();
+            return Value(std::fmax(lo, std::fmin(x, hi)));
+        }));
+
+    globals->define("math", Value(mathMap));
+
+    // ── OS extras on sys ──
+
+    sysMap->entries["env"] = Value(makeNative("sys.env", 1,
+        [](const std::vector<Value>& args) -> Value {
+            if (!args[0].isString())
+                throw RuntimeError("sys.env() requires a string", 0);
+            const char* val = std::getenv(args[0].asString().c_str());
+            if (!val) return Value();
+            return Value(std::string(val));
+        }));
+
+    sysMap->entries["cwd"] = Value(makeNative("sys.cwd", 0,
+        [](const std::vector<Value>&) -> Value {
+            return Value(fs::current_path().string());
+        }));
+
+#if defined(__APPLE__)
+    sysMap->entries["platform"] = Value("darwin");
+#elif defined(__linux__)
+    sysMap->entries["platform"] = Value("linux");
+#elif defined(_WIN32)
+    sysMap->entries["platform"] = Value("windows");
+#else
+    sysMap->entries["platform"] = Value("unknown");
+#endif
 
     // ── sqlite namespace ──
 

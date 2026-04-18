@@ -28,6 +28,9 @@ Praia is a dynamically typed, interpreted programming language built in C++.
 - [Async / Await](#async--await)
 - [HTTP Networking](#http-networking)
 - [SQLite](#sqlite)
+- [Math](#math)
+- [Random](#random)
+- [Time](#time)
 - [Bitwise Operators](#bitwise-operators)
 - [Bytes](#bytes)
 - [Crypto](#crypto)
@@ -1466,6 +1469,126 @@ let server = http.createServer(lam{ req in
 })
 
 server.listen(8080)
+```
+
+---
+
+## Math
+
+The `math` namespace provides mathematical constants and functions.
+
+### Constants
+
+| Name | Value |
+|------|-------|
+| `math.PI` | 3.14159265358979 |
+| `math.E` | 2.71828182845905 |
+| `math.INF` | Infinity |
+
+### Functions
+
+| Function | Description |
+|----------|-------------|
+| `math.sqrt(x)` | Square root |
+| `math.pow(x, y)` | x raised to power y |
+| `math.abs(x)` | Absolute value |
+| `math.floor(x)` | Round down |
+| `math.ceil(x)` | Round up |
+| `math.round(x)` | Round to nearest |
+| `math.min(a, b)` | Minimum |
+| `math.max(a, b)` | Maximum |
+| `math.clamp(x, lo, hi)` | Clamp x between lo and hi |
+| `math.sin(x)`, `cos`, `tan` | Trigonometry (radians) |
+| `math.asin(x)`, `acos`, `atan` | Inverse trig |
+| `math.log(x)` | Natural log |
+| `math.log2(x)`, `log10(x)` | Base-2 and base-10 log |
+| `math.exp(x)` | e^x |
+
+```
+print(math.sqrt(144))              // 12
+print(math.pow(2, 10))             // 1024
+print(math.sin(math.PI / 2))       // 1
+print(math.clamp(150, 0, 100))     // 100
+```
+
+---
+
+## Random
+
+The `random` namespace provides random number generation using a Mersenne Twister engine.
+
+| Function | Description |
+|----------|-------------|
+| `random.int(min, max)` | Random integer between min and max (inclusive) |
+| `random.float()` | Random float between 0.0 and 1.0 |
+| `random.choice(arr)` | Random element from an array |
+| `random.shuffle(arr)` | Shuffle an array in place |
+| `random.seed(n)` | Set the seed for reproducible results |
+
+```
+print(random.int(1, 100))          // e.g. 42
+print(random.float())              // e.g. 0.7312
+print(random.choice(["a", "b"]))   // "a" or "b"
+
+let deck = [1, 2, 3, 4, 5]
+random.shuffle(deck)
+print(deck)
+
+// Reproducible
+random.seed(42)
+print(random.int(0, 100))          // always 51
+```
+
+---
+
+## Time
+
+The `time` namespace provides timestamps, formatting, and sleep.
+
+| Function | Description |
+|----------|-------------|
+| `time.now()` | Current time as Unix milliseconds |
+| `time.epoch()` | Current time as Unix seconds |
+| `time.sleep(ms)` | Pause execution for ms milliseconds |
+| `time.format(fmt?, timestamp?)` | Format time as string (default: `"%Y-%m-%d %H:%M:%S"`) |
+
+```
+let start = time.now()
+time.sleep(100)
+print(time.now() - start)          // ~100
+
+print(time.format())               // "2026-04-18 13:00:00"
+print(time.format("%H:%M"))        // "13:00"
+print(time.epoch())                // 1776510000
+```
+
+### Benchmarking
+
+```
+let start = time.now()
+// ... code to measure ...
+print("took", time.now() - start, "ms")
+```
+
+---
+
+## OS extras (sys)
+
+In addition to file/directory operations, `sys` provides:
+
+| Field/Function | Description |
+|----------------|-------------|
+| `sys.env(name)` | Read environment variable (returns nil if not set) |
+| `sys.cwd()` | Current working directory |
+| `sys.platform` | `"darwin"`, `"linux"`, or `"windows"` |
+
+```
+print(sys.env("HOME"))             // "/Users/ada"
+print(sys.cwd())                   // "/path/to/project"
+print(sys.platform)                // "darwin"
+
+let dbUrl = sys.env("DATABASE_URL")
+ensure (dbUrl) else { throw "DATABASE_URL not set" }
 ```
 
 ---
