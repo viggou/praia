@@ -1,0 +1,17 @@
+// Interactive CLI demo — sys.input(prompt?) reads one line from stdin.
+// Returns nil on EOF (Ctrl-D / closed pipe).
+
+let name = sys.input("What's your name? ")
+if (name == nil) {
+    print("No input — goodbye.")
+    sys.exit(0)
+}
+
+print("Hello,", name + "!")
+
+let ans = sys.input("Continue? [y/N] ")
+if (ans != nil && ans.lower() == "y") {
+    print("Onwards.")
+} else {
+    print("Stopping.")
+}

@@ -45,7 +45,17 @@ $(BUILD_DIR):
 clean:
 	rm -rf $(BUILD_DIR) $(TARGET)
 
-test: $(TARGET)
+test: $(TARGET) test-input
 	./$(TARGET) test
 
-.PHONY: all clean test
+# Integration test for sys.input — needs piped stdin, so runs outside `praia test`.
+test-input: $(TARGET)
+	@out=$$(printf "Ada\ny\n" | ./$(TARGET) examples/input_demo.praia) && \
+	  echo "$$out" | grep -q "Hello, Ada!" && \
+	  echo "$$out" | grep -q "Onwards." && \
+	  echo "sys.input: ok"
+	@out=$$(./$(TARGET) examples/input_demo.praia < /dev/null) && \
+	  echo "$$out" | grep -q "No input" && \
+	  echo "sys.input EOF: ok"
+
+.PHONY: all clean test test-input

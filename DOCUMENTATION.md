@@ -998,6 +998,25 @@ sys.exit(0)             // exit with code 0
 sys.exit(1)             // exit with code 1
 ```
 
+### Reading from stdin
+
+`sys.input(prompt?)` reads one line from standard input and returns it as a
+string. The optional prompt is printed without a trailing newline before
+reading. Returns `nil` on EOF (Ctrl-D or a closed pipe).
+
+```
+let name = sys.input("What's your name? ")
+if (name == nil) { sys.exit(0) }        // user pressed Ctrl-D
+
+let ans = sys.input("Continue? [y/N] ")
+if (ans != nil && ans.lower() == "y") {
+    print("Onwards.")
+}
+```
+
+The line is returned without its trailing newline. Use `.strip()` if you
+want to also drop leading/trailing whitespace.
+
 ---
 
 ## Pipe Operator

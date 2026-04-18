@@ -295,6 +295,17 @@ Interpreter::Interpreter() {
             throw ExitSignal{code};
         }));
 
+    // sys.input(prompt?) — read a line from stdin. Returns nil on EOF.
+    sysMap->entries["input"] = Value(makeNative("sys.input", -1,
+        [](const std::vector<Value>& args) -> Value {
+            if (!args.empty() && args[0].isString()) {
+                std::cout << args[0].asString() << std::flush;
+            }
+            std::string line;
+            if (!std::getline(std::cin, line)) return Value(); // EOF
+            return Value(std::move(line));
+        }));
+
     // sys.args — defaults to empty, set via setArgs()
     auto emptyArgs = std::make_shared<PraiaArray>();
     sysMap->entries["args"] = Value(emptyArgs);
