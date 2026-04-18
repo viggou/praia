@@ -59,19 +59,27 @@ make
 
 ```
 Praia/
-├── src/                 # interpreter source
-│   ├── token.h          # token types
-│   ├── lexer.h/cpp      # tokenizer
-│   ├── ast.h            # AST node types
-│   ├── parser.h/cpp     # recursive descent parser
-│   ├── value.h          # runtime value types
-│   ├── environment.h    # variable scoping
-│   ├── interpreter.h/cpp # tree-walking interpreter
-│   └── main.cpp         # entry point + REPL
-├── grains/              # standard library modules
-├── examples/            # example programs
+├── src/                         # interpreter source
+│   ├── token.h                  # token types
+│   ├── lexer.h/cpp              # tokenizer
+│   ├── ast.h                    # AST node types
+│   ├── parser.h/cpp             # recursive descent parser
+│   ├── value.h                  # runtime value types
+│   ├── environment.h            # variable scoping
+│   ├── interpreter.h            # Interpreter class + Callable subtypes
+│   ├── interpreter.cpp          # grain loading, execute(), evaluate()
+│   ├── interpreter_setup.cpp    # constructor wiring up all builtins
+│   ├── interpreter_callables.cpp # PraiaFunction/Lambda/Method/Class::call
+│   ├── builtins.h               # shared helpers (makeNative, etc.)
+│   ├── builtins_http.cpp        # http client + server
+│   ├── builtins_json.cpp        # JSON parser + stringifier
+│   ├── builtins_yaml.cpp        # YAML parser + stringifier
+│   ├── builtins_methods.cpp     # string/array dot-methods
+│   └── main.cpp                 # entry point + REPL
+├── grains/                      # standard library modules
+├── examples/                    # example programs
 ├── Makefile
-└── DOCUMENTATION.md     # full language reference
+└── DOCUMENTATION.md             # full language reference
 ```
 
 ## Documentation
