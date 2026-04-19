@@ -469,20 +469,20 @@ VM::Result VM::execute(int baseFrameCount_) {
         }
 
         // ── Bitwise ──
-        case OpCode::OP_BIT_AND: { Value b=pop(),a=pop(); push(Value(static_cast<int64_t>(a.asNumber())&static_cast<int64_t>(b.asNumber()))); break; }
-        case OpCode::OP_BIT_OR:  { Value b=pop(),a=pop(); push(Value(static_cast<int64_t>(a.asNumber())|static_cast<int64_t>(b.asNumber()))); break; }
-        case OpCode::OP_BIT_XOR: { Value b=pop(),a=pop(); push(Value(static_cast<int64_t>(a.asNumber())^static_cast<int64_t>(b.asNumber()))); break; }
-        case OpCode::OP_BIT_NOT: { push(Value(~static_cast<int64_t>(pop().asNumber()))); break; }
-        case OpCode::OP_SHL: { Value b=pop(),a=pop(); push(Value(static_cast<int64_t>(a.asNumber())<<static_cast<int64_t>(b.asNumber()))); break; }
-        case OpCode::OP_SHR: { Value b=pop(),a=pop(); push(Value(static_cast<int64_t>(a.asNumber())>>static_cast<int64_t>(b.asNumber()))); break; }
+        case OpCode::OP_BIT_AND: { Value b=pop(),a=pop(); if(!a.isNumber()||!b.isNumber()){RUNTIME_ERR("Operands of '&' must be numbers");} push(Value(static_cast<int64_t>(a.asNumber())&static_cast<int64_t>(b.asNumber()))); break; }
+        case OpCode::OP_BIT_OR:  { Value b=pop(),a=pop(); if(!a.isNumber()||!b.isNumber()){RUNTIME_ERR("Operands of '|' must be numbers");} push(Value(static_cast<int64_t>(a.asNumber())|static_cast<int64_t>(b.asNumber()))); break; }
+        case OpCode::OP_BIT_XOR: { Value b=pop(),a=pop(); if(!a.isNumber()||!b.isNumber()){RUNTIME_ERR("Operands of '^' must be numbers");} push(Value(static_cast<int64_t>(a.asNumber())^static_cast<int64_t>(b.asNumber()))); break; }
+        case OpCode::OP_BIT_NOT: { if(!peek().isNumber()){RUNTIME_ERR("Operand of '~' must be a number");} push(Value(~static_cast<int64_t>(pop().asNumber()))); break; }
+        case OpCode::OP_SHL: { Value b=pop(),a=pop(); if(!a.isNumber()||!b.isNumber()){RUNTIME_ERR("Operands of '<<' must be numbers");} push(Value(static_cast<int64_t>(a.asNumber())<<static_cast<int64_t>(b.asNumber()))); break; }
+        case OpCode::OP_SHR: { Value b=pop(),a=pop(); if(!a.isNumber()||!b.isNumber()){RUNTIME_ERR("Operands of '>>' must be numbers");} push(Value(static_cast<int64_t>(a.asNumber())>>static_cast<int64_t>(b.asNumber()))); break; }
 
         // ── Comparison ──
         case OpCode::OP_EQUAL:         { Value b=pop(),a=pop(); push(Value(a==b)); break; }
         case OpCode::OP_NOT_EQUAL:     { Value b=pop(),a=pop(); push(Value(a!=b)); break; }
-        case OpCode::OP_LESS:          { Value b=pop(),a=pop(); push(Value(a.asNumber()<b.asNumber())); break; }
-        case OpCode::OP_GREATER:       { Value b=pop(),a=pop(); push(Value(a.asNumber()>b.asNumber())); break; }
-        case OpCode::OP_LESS_EQUAL:    { Value b=pop(),a=pop(); push(Value(a.asNumber()<=b.asNumber())); break; }
-        case OpCode::OP_GREATER_EQUAL: { Value b=pop(),a=pop(); push(Value(a.asNumber()>=b.asNumber())); break; }
+        case OpCode::OP_LESS:          { Value b=pop(),a=pop(); if(!a.isNumber()||!b.isNumber()){RUNTIME_ERR("Operands of '<' must be numbers");} push(Value(a.asNumber()<b.asNumber())); break; }
+        case OpCode::OP_GREATER:       { Value b=pop(),a=pop(); if(!a.isNumber()||!b.isNumber()){RUNTIME_ERR("Operands of '>' must be numbers");} push(Value(a.asNumber()>b.asNumber())); break; }
+        case OpCode::OP_LESS_EQUAL:    { Value b=pop(),a=pop(); if(!a.isNumber()||!b.isNumber()){RUNTIME_ERR("Operands of '<=' must be numbers");} push(Value(a.asNumber()<=b.asNumber())); break; }
+        case OpCode::OP_GREATER_EQUAL: { Value b=pop(),a=pop(); if(!a.isNumber()||!b.isNumber()){RUNTIME_ERR("Operands of '>=' must be numbers");} push(Value(a.asNumber()>=b.asNumber())); break; }
         case OpCode::OP_NOT: { push(Value(!pop().isTruthy())); break; }
 
         // ── Variables ──
@@ -506,6 +506,7 @@ VM::Result VM::execute(int baseFrameCount_) {
         case OpCode::OP_POST_INC_LOCAL: {
             uint16_t slot = READ_U16();
             Value& val = stack[FRAME.baseSlot + slot];
+            if (!val.isNumber()) { RUNTIME_ERR("Postfix operator requires a number"); }
             push(val);
             if (val.isInt()) val = Value(val.asInt() + 1); else val = Value(val.asNumber() + 1);
             break;
@@ -513,6 +514,7 @@ VM::Result VM::execute(int baseFrameCount_) {
         case OpCode::OP_POST_DEC_LOCAL: {
             uint16_t slot = READ_U16();
             Value& val = stack[FRAME.baseSlot + slot];
+            if (!val.isNumber()) { RUNTIME_ERR("Postfix operator requires a number"); }
             push(val);
             if (val.isInt()) val = Value(val.asInt() - 1); else val = Value(val.asNumber() - 1);
             break;
@@ -522,6 +524,7 @@ VM::Result VM::execute(int baseFrameCount_) {
             std::string n = READ_STRING();
             auto it = globals.find(n);
             if (it == globals.end()) { RUNTIME_ERR("Undefined variable '" + n + "'"); }
+            if (!it->second.isNumber()) { RUNTIME_ERR("Postfix operator requires a number"); }
             push(it->second);
             bool inc = static_cast<OpCode>(instruction) == OpCode::OP_POST_INC_GLOBAL;
             if (it->second.isInt()) it->second = Value(it->second.asInt() + (inc ? 1 : -1));
@@ -826,6 +829,7 @@ VM::Result VM::execute(int baseFrameCount_) {
             for (int i = count - 1; i >= 0; i--) {
                 Value val = pop();
                 Value key = pop();
+                if (!key.isString()) { RUNTIME_ERR("Map key must be a string"); }
                 pairs[i] = {key.asString(), std::move(val)};
             }
             for (auto& [k, v] : pairs) map->entries[k] = std::move(v);
@@ -867,6 +871,7 @@ VM::Result VM::execute(int baseFrameCount_) {
             Value idx = pop();
             Value obj = pop();
             if (obj.isArray()) {
+                if (!idx.isNumber()) { RUNTIME_ERR("Array index must be a number"); }
                 auto& elems = obj.asArray()->elements;
                 int i = static_cast<int>(idx.asNumber());
                 if (i < 0) i += static_cast<int>(elems.size());
@@ -874,6 +879,7 @@ VM::Result VM::execute(int baseFrameCount_) {
                 elems[i] = val;
                 push(val);
             } else if (obj.isMap()) {
+                if (!idx.isString()) { RUNTIME_ERR("Map key must be a string"); }
                 obj.asMap()->entries[idx.asString()] = val;
                 push(val);
             } else {
