@@ -1,0 +1,87 @@
+// Cookie grain — parse and build HTTP cookie headers
+//
+// Usage:
+//   use "cookie"
+//   let cookies = cookie.parse(req.headers["cookie"])
+//   let header = cookie.build("session", "abc123", {httpOnly: true, maxAge: 3600})
+
+func hasKey(m, k) {
+    return keys(m).contains(k)
+}
+
+// Parse a Cookie header string into a map
+// "name=value; name2=value2" → {name: "value", name2: "value2"}
+func parse(header) {
+    let result = {}
+    if (!header || len(header) == 0) { return result }
+
+    let pairs = header.split(";")
+    for (pair in pairs) {
+        let stripped = pair.strip()
+        if (len(stripped) == 0) { continue }
+        let eqPos = 0
+        let found = false
+        for (i in 0..len(stripped)) {
+            if (stripped[i] == "=") {
+                eqPos = i
+                found = true
+                break
+            }
+        }
+        if (found) {
+            let name = ""
+            for (i in 0..eqPos) { name = name + stripped[i] }
+            let value = ""
+            for (i in eqPos + 1..len(stripped)) { value = value + stripped[i] }
+            result[name.strip()] = http.decodeURI(value.strip())
+        }
+    }
+    return result
+}
+
+// Build a Set-Cookie header string
+// Options: httpOnly, secure, sameSite, maxAge, path, domain
+func build(name, value, options) {
+    let cookie = name + "=" + http.encodeURI(value)
+
+    if (options) {
+        if (hasKey(options, "maxAge")) {
+            cookie = cookie + "; Max-Age=" + options.maxAge.toString()
+        }
+        if (hasKey(options, "path")) {
+            cookie = cookie + "; Path=" + options.path
+        } else {
+            cookie = cookie + "; Path=/"
+        }
+        if (hasKey(options, "domain")) {
+            cookie = cookie + "; Domain=" + options.domain
+        }
+        if (hasKey(options, "httpOnly") && options.httpOnly) {
+            cookie = cookie + "; HttpOnly"
+        }
+        if (hasKey(options, "secure") && options.secure) {
+            cookie = cookie + "; Secure"
+        }
+        if (hasKey(options, "sameSite")) {
+            cookie = cookie + "; SameSite=" + options.sameSite
+        } else {
+            cookie = cookie + "; SameSite=Lax"
+        }
+    } else {
+        cookie = cookie + "; Path=/; HttpOnly; SameSite=Lax"
+    }
+
+    return cookie
+}
+
+// Build a Set-Cookie header that expires the cookie
+func clear(name, options) {
+    let opts = {maxAge: 0, path: "/"}
+    if (options) {
+        if (hasKey(options, "path")) { opts.path = options.path }
+        if (hasKey(options, "domain")) { opts.domain = options.domain }
+    }
+    return build(name, "", opts)
+}
+
+export { parse, build, clear }

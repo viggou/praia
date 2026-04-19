@@ -1,0 +1,154 @@
+// Session grain — server-side session middleware
+//
+// Usage:
+//   use "session"
+//   let sessions = session.create()
+//   app.use(sessions.middleware())
+//
+// In handlers:
+//   req.session.set("user", {name: "Ada"})
+//   let user = req.session.get("user")
+//   req.session.destroy()
+
+func hasKey(m, k) {
+    return keys(m).contains(k)
+}
+
+func generateId() {
+    let raw = time.now().toString() + random.float().toString() + random.float().toString()
+    return crypto.sha256(raw)
+}
+
+func create(options) {
+    let cookieName = "praia.sid"
+    let maxAge = 86400  // 1 day in seconds
+    let cookieOptions = {
+        httpOnly: true,
+        sameSite: "Lax",
+        path: "/"
+    }
+
+    if (options) {
+        if (hasKey(options, "cookieName")) { cookieName = options.cookieName }
+        if (hasKey(options, "maxAge")) { maxAge = options.maxAge }
+        if (hasKey(options, "secure")) { cookieOptions.secure = options.secure }
+        if (hasKey(options, "sameSite")) { cookieOptions.sameSite = options.sameSite }
+    }
+    cookieOptions.maxAge = maxAge
+
+    // In-memory session store: sessionId → data map
+    let store = {}
+
+    func getSession(id) {
+        if (hasKey(store, id)) {
+            return store[id]
+        }
+        return nil
+    }
+
+    func createSession() {
+        let id = generateId()
+        store[id] = {}
+        return id
+    }
+
+    func sessionMiddleware() {
+        use "cookie"
+
+        return lam{ req, next in
+            // Parse session ID from cookies
+            let cookieHeader = ""
+            if (hasKey(req, "headers") && hasKey(req.headers, "cookie")) {
+                cookieHeader = req.headers["cookie"]
+            }
+            let cookies = cookie.parse(cookieHeader)
+
+            let sid = ""
+            let isNew = false
+            if (hasKey(cookies, cookieName)) {
+                sid = cookies[cookieName]
+            }
+
+            // Validate session exists in store
+            let data = nil
+            if (len(sid) > 0) {
+                data = getSession(sid)
+            }
+            if (!data) {
+                sid = createSession()
+                data = store[sid]
+                isNew = true
+            }
+
+            // Attach session API to request
+            let sessionId = sid
+            let sessionData = data
+            req.session = {
+                id: sessionId,
+                get: lam{ key in
+                    if (hasKey(sessionData, key)) {
+                        return sessionData[key]
+                    }
+                    return nil
+                },
+                set: lam{ key, value in
+                    sessionData[key] = value
+                },
+                has: lam{ key in hasKey(sessionData, key) },
+                delete: lam{ key in
+                    // Rebuild without the key
+                    let newData = {}
+                    let ks = keys(sessionData)
+                    for (k in ks) {
+                        if (k != key) { newData[k] = sessionData[k] }
+                    }
+                    // Copy back
+                    let oldKeys = keys(sessionData)
+                    for (k in oldKeys) {
+                        if (k == key) {
+                            // Can't delete from map, so we replace store entry
+                        }
+                    }
+                    store[sessionId] = newData
+                    sessionData = newData
+                },
+                destroy: lam{ in
+                    // Remove session from store
+                    let newStore = {}
+                    let ks = keys(store)
+                    for (k in ks) {
+                        if (k != sessionId) { newStore[k] = store[k] }
+                    }
+                    store = newStore
+                    isNew = true
+                    sessionId = ""
+                }
+            }
+
+            // Call next middleware/handler
+            let res = next(req)
+
+            // Set cookie on response
+            if (type(res) == "map" && len(sessionId) > 0) {
+                if (!hasKey(res, "headers")) { res.headers = {} }
+                res.headers["Set-Cookie"] = cookie.build(cookieName, sessionId, cookieOptions)
+            }
+
+            // Clear cookie if session was destroyed
+            if (type(res) == "map" && len(sessionId) == 0) {
+                if (!hasKey(res, "headers")) { res.headers = {} }
+                res.headers["Set-Cookie"] = cookie.clear(cookieName, cookieOptions)
+            }
+
+            return res
+        }
+    }
+
+    return {
+        middleware: lam{ in sessionMiddleware() },
+        // Manual access to the store (for debugging/admin)
+        count: lam{ in len(keys(store)) }
+    }
+}
+
+export { create }

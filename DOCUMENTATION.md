@@ -30,6 +30,8 @@ Praia is a dynamically typed, interpreted programming language built in C++.
 - [Router](#router)
 - [Middleware](#middleware)
 - [Logger](#logger)
+- [Cookies](#cookies)
+- [Sessions](#sessions)
 - [SQLite](#sqlite)
 - [Math](#math)
 - [Random](#random)
@@ -1686,6 +1688,127 @@ let app = router.create()
 app.use(logger.middleware(log))
 // Logs: [timestamp] INFO [API] GET /users/42 200 12ms
 ```
+
+---
+
+## Cookies
+
+The `cookie` grain parses and builds HTTP cookie headers.
+
+### Parsing cookies
+
+```
+use "cookie"
+
+// Parse a Cookie header into a map
+let cookies = cookie.parse(req.headers["cookie"])
+print(cookies.sessionId)
+print(cookies.theme)
+```
+
+### Building Set-Cookie headers
+
+```
+// Simple cookie with secure defaults (HttpOnly, SameSite=Lax, Path=/)
+let header = cookie.build("theme", "dark")
+
+// With options
+let header = cookie.build("session", token, {
+    httpOnly: true,
+    secure: true,
+    sameSite: "Strict",
+    maxAge: 3600,        // 1 hour in seconds
+    path: "/",
+    domain: "example.com"
+})
+```
+
+### Clearing cookies
+
+```
+let header = cookie.clear("session")   // sets Max-Age=0
+```
+
+### Default options
+
+If no options are passed, `cookie.build` uses safe defaults:
+- `HttpOnly` — not accessible from JavaScript
+- `SameSite=Lax` — prevents CSRF
+- `Path=/` — available on all paths
+
+---
+
+## Sessions
+
+The `session` grain provides server-side session management as router middleware.
+
+### Setup
+
+```
+use "router"
+use "session"
+
+let app = router.create()
+let sessions = session.create()
+app.use(sessions.middleware())
+```
+
+### Using sessions in handlers
+
+```
+// Store data
+app.post("/login", lam{ req, params in
+    req.session.set("user", {name: "Ada", role: "admin"})
+    return http.json({message: "logged in"})
+})
+
+// Read data
+app.get("/profile", lam{ req, params in
+    let user = req.session.get("user")
+    if (!user) {
+        return http.json({error: "not logged in"}, 401)
+    }
+    return http.json({user: user})
+})
+
+// Destroy session (logout)
+app.post("/logout", lam{ req, params in
+    req.session.destroy()
+    return http.json({message: "logged out"})
+})
+```
+
+### Session API
+
+| Method | Description |
+|--------|-------------|
+| `req.session.get(key)` | Get a value (returns nil if not set) |
+| `req.session.set(key, value)` | Store a value |
+| `req.session.has(key)` | Check if key exists |
+| `req.session.delete(key)` | Remove a key |
+| `req.session.destroy()` | Delete the entire session |
+| `req.session.id` | The session ID string |
+
+### Options
+
+```
+let sessions = session.create({
+    cookieName: "myapp.sid",    // default: "praia.sid"
+    maxAge: 7200,               // 2 hours (default: 86400 = 1 day)
+    secure: true,               // HTTPS only
+    sameSite: "Strict"          // default: "Lax"
+})
+```
+
+### How it works
+
+1. On each request, the middleware reads the session cookie
+2. If valid, loads session data from an in-memory store
+3. If missing or invalid, creates a new session
+4. Attaches `req.session` with get/set/destroy methods
+5. After the handler runs, sets the `Set-Cookie` header on the response
+
+Sessions are stored in memory — they're lost when the server restarts. For persistent sessions, store session data in SQLite.
 
 ---
 
