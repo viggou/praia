@@ -31,6 +31,21 @@ ifeq ($(HAVE_SQLITE),1)
   LDLIBS += -lsqlite3
 endif
 
+# Auto-detect OpenSSL (check standard path, then Homebrew)
+HAVE_OPENSSL := $(shell echo 'int main(){}' | $(CXX) -x c++ - -lssl -lcrypto -o /dev/null 2>/dev/null && echo 1)
+ifeq ($(HAVE_OPENSSL),1)
+  CXXFLAGS += -DHAVE_OPENSSL
+  LDLIBS += -lssl -lcrypto
+else
+  # Try Homebrew OpenSSL paths (macOS)
+  OPENSSL_PREFIX := $(shell brew --prefix openssl 2>/dev/null)
+  ifneq ($(OPENSSL_PREFIX),)
+    HAVE_OPENSSL := 1
+    CXXFLAGS += -DHAVE_OPENSSL -I$(OPENSSL_PREFIX)/include
+    LDLIBS += -L$(OPENSSL_PREFIX)/lib -lssl -lcrypto
+  endif
+endif
+
 $(TARGET): $(OBJECTS)
 	$(CXX) $(CXXFLAGS) -o $@ $^ $(LDLIBS)
 

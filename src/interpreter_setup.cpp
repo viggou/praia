@@ -681,6 +681,152 @@ Interpreter::Interpreter() {
 
     globals->define("yaml", Value(yamlMap));
 
+    // ── base64 namespace ──
+
+    auto base64Map = std::make_shared<PraiaMap>();
+
+    base64Map->entries["encode"] = Value(makeNative("base64.encode", 1,
+        [](const std::vector<Value>& args) -> Value {
+            if (!args[0].isString())
+                throw RuntimeError("base64.encode() requires a string", 0);
+            auto& input = args[0].asString();
+            static const char table[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+            std::string result;
+            int val = 0, valb = -6;
+            for (unsigned char c : input) {
+                val = (val << 8) + c;
+                valb += 8;
+                while (valb >= 0) {
+                    result += table[(val >> valb) & 0x3F];
+                    valb -= 6;
+                }
+            }
+            if (valb > -6) result += table[((val << 8) >> (valb + 8)) & 0x3F];
+            while (result.size() % 4) result += '=';
+            return Value(std::move(result));
+        }));
+
+    base64Map->entries["decode"] = Value(makeNative("base64.decode", 1,
+        [](const std::vector<Value>& args) -> Value {
+            if (!args[0].isString())
+                throw RuntimeError("base64.decode() requires a string", 0);
+            auto& input = args[0].asString();
+            auto decodeChar = [](char c) -> int {
+                if (c >= 'A' && c <= 'Z') return c - 'A';
+                if (c >= 'a' && c <= 'z') return c - 'a' + 26;
+                if (c >= '0' && c <= '9') return c - '0' + 52;
+                if (c == '+') return 62;
+                if (c == '/') return 63;
+                return -1;
+            };
+            std::string result;
+            int val = 0, valb = -8;
+            for (unsigned char c : input) {
+                if (c == '=') break;
+                int d = decodeChar(c);
+                if (d < 0) continue;
+                val = (val << 6) + d;
+                valb += 6;
+                if (valb >= 0) {
+                    result += static_cast<char>((val >> valb) & 0xFF);
+                    valb -= 8;
+                }
+            }
+            return Value(std::move(result));
+        }));
+
+    globals->define("base64", Value(base64Map));
+
+    // ── path namespace ──
+
+    auto pathMap = std::make_shared<PraiaMap>();
+
+    pathMap->entries["join"] = Value(makeNative("path.join", -1,
+        [](const std::vector<Value>& args) -> Value {
+            if (args.empty()) return Value(std::string(""));
+            fs::path result;
+            for (auto& a : args) {
+                if (!a.isString())
+                    throw RuntimeError("path.join() requires string arguments", 0);
+                if (result.empty()) result = a.asString();
+                else result /= a.asString();
+            }
+            return Value(result.string());
+        }));
+
+    pathMap->entries["dirname"] = Value(makeNative("path.dirname", 1,
+        [](const std::vector<Value>& args) -> Value {
+            if (!args[0].isString()) throw RuntimeError("path.dirname() requires a string", 0);
+            return Value(fs::path(args[0].asString()).parent_path().string());
+        }));
+
+    pathMap->entries["basename"] = Value(makeNative("path.basename", 1,
+        [](const std::vector<Value>& args) -> Value {
+            if (!args[0].isString()) throw RuntimeError("path.basename() requires a string", 0);
+            return Value(fs::path(args[0].asString()).filename().string());
+        }));
+
+    pathMap->entries["ext"] = Value(makeNative("path.ext", 1,
+        [](const std::vector<Value>& args) -> Value {
+            if (!args[0].isString()) throw RuntimeError("path.ext() requires a string", 0);
+            return Value(fs::path(args[0].asString()).extension().string());
+        }));
+
+    pathMap->entries["resolve"] = Value(makeNative("path.resolve", 1,
+        [](const std::vector<Value>& args) -> Value {
+            if (!args[0].isString()) throw RuntimeError("path.resolve() requires a string", 0);
+            return Value(fs::absolute(args[0].asString()).string());
+        }));
+
+    globals->define("path", Value(pathMap));
+
+    // ── url namespace ──
+
+    auto urlMap = std::make_shared<PraiaMap>();
+
+    urlMap->entries["parse"] = Value(makeNative("url.parse", 1,
+        [](const std::vector<Value>& args) -> Value {
+            if (!args[0].isString()) throw RuntimeError("url.parse() requires a string", 0);
+            auto& input = args[0].asString();
+            auto result = std::make_shared<PraiaMap>();
+            std::string rest = input;
+
+            auto schemeEnd = rest.find("://");
+            if (schemeEnd != std::string::npos) {
+                result->entries["scheme"] = Value(rest.substr(0, schemeEnd));
+                rest = rest.substr(schemeEnd + 3);
+            } else {
+                result->entries["scheme"] = Value(std::string(""));
+            }
+
+            auto slashPos = rest.find('/');
+            std::string hostPort = (slashPos != std::string::npos) ? rest.substr(0, slashPos) : rest;
+            std::string pathAndQuery = (slashPos != std::string::npos) ? rest.substr(slashPos) : "/";
+
+            auto colonPos = hostPort.find(':');
+            if (colonPos != std::string::npos) {
+                result->entries["host"] = Value(hostPort.substr(0, colonPos));
+                try { result->entries["port"] = Value(static_cast<double>(std::stoi(hostPort.substr(colonPos + 1)))); }
+                catch (...) { result->entries["port"] = Value(0.0); }
+            } else {
+                result->entries["host"] = Value(hostPort);
+                result->entries["port"] = Value(0.0);
+            }
+
+            auto queryPos = pathAndQuery.find('?');
+            if (queryPos != std::string::npos) {
+                result->entries["path"] = Value(pathAndQuery.substr(0, queryPos));
+                result->entries["query"] = Value(pathAndQuery.substr(queryPos + 1));
+            } else {
+                result->entries["path"] = Value(pathAndQuery);
+                result->entries["query"] = Value(std::string(""));
+            }
+
+            return Value(result);
+        }));
+
+    globals->define("url", Value(urlMap));
+
     // ── net namespace (TCP sockets) ──
 
     auto netMap = std::make_shared<PraiaMap>();

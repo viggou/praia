@@ -34,11 +34,18 @@ static Value callWithContext(Interpreter& interp,
                                " argument(s) but got " + std::to_string(n), line);
         }
     }
+    interp.callStack.push_back({func->name(), line});
     try {
-        return func->call(interp, args);
+        Value result = func->call(interp, args);
+        interp.callStack.pop_back(); // pop only on success
+        return result;
     } catch (const RuntimeError& err) {
+        // Leave frame on stack for trace, but fix line 0
         if (err.line == 0)
             throw RuntimeError(err.what(), line);
+        throw;
+    } catch (...) {
+        // Leave frame on stack for trace
         throw;
     }
 }
@@ -149,6 +156,18 @@ Value Interpreter::loadGrain(const std::string& importPath, int line) {
     return exports;
 }
 
+std::string Interpreter::formatStackTrace() const {
+    if (callStack.empty()) return "";
+    std::string trace;
+    for (int i = static_cast<int>(callStack.size()) - 1; i >= 0; --i) {
+        auto& f = callStack[i];
+        trace += "  at " + f.name + "()";
+        if (f.line > 0) trace += " line " + std::to_string(f.line);
+        trace += "\n";
+    }
+    return trace;
+}
+
 void Interpreter::interpret(const std::vector<StmtPtr>& program) {
     std::lock_guard<std::recursive_mutex> lock(interpMutex);
     try {
@@ -157,8 +176,12 @@ void Interpreter::interpret(const std::vector<StmtPtr>& program) {
     } catch (const ThrowSignal& t) {
         std::cerr << "[line " << t.line << "] Uncaught error: "
                   << t.value.toString() << std::endl;
+        std::cerr << formatStackTrace();
+        callStack.clear();
     } catch (const RuntimeError& e) {
         std::cerr << "[line " << e.line << "] Runtime error: " << e.what() << std::endl;
+        std::cerr << formatStackTrace();
+        callStack.clear();
     }
 }
 
@@ -177,8 +200,12 @@ void Interpreter::interpretRepl(const std::vector<StmtPtr>& program) {
     } catch (const ThrowSignal& t) {
         std::cerr << "[line " << t.line << "] Uncaught error: "
                   << t.value.toString() << std::endl;
+        std::cerr << formatStackTrace();
+        callStack.clear();
     } catch (const RuntimeError& e) {
         std::cerr << "[line " << e.line << "] Runtime error: " << e.what() << std::endl;
+        std::cerr << formatStackTrace();
+        callStack.clear();
     }
 }
 
@@ -801,7 +828,7 @@ Value Interpreter::evaluate(const Expr* expr) {
         if (obj.isString())
             return getStringMethod(obj.asString(), e->field, e->line);
         if (obj.isArray())
-            return getArrayMethod(obj.asArray(), e->field, e->line);
+            return getArrayMethod(obj.asArray(), e->field, e->line, this);
 
         throw RuntimeError("Cannot access field '" + e->field + "' on this type", e->line);
     }

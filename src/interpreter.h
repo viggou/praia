@@ -99,6 +99,22 @@ struct ExportSignal {
     std::shared_ptr<PraiaMap> exports;
 };
 
+// Stack trace support
+struct CallFrame {
+    std::string name;
+    int line;
+};
+
+class CallFrameGuard {
+    std::vector<CallFrame>& stack_;
+public:
+    CallFrameGuard(std::vector<CallFrame>& s, const std::string& name, int line)
+        : stack_(s) { stack_.push_back({name, line}); }
+    ~CallFrameGuard() { if (!stack_.empty()) stack_.pop_back(); }
+    CallFrameGuard(const CallFrameGuard&) = delete;
+    CallFrameGuard& operator=(const CallFrameGuard&) = delete;
+};
+
 class Interpreter {
     friend struct PraiaLambda;
     friend struct PraiaMethod;
@@ -134,4 +150,9 @@ private:
 
     // Thread safety for async/await
     std::recursive_mutex interpMutex;
+
+    // Call stack for error traces
+public:
+    std::vector<CallFrame> callStack;
+    std::string formatStackTrace() const;
 };

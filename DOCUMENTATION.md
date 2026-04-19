@@ -25,6 +25,9 @@ Praia is a dynamically typed, interpreted programming language built in C++.
 - [Pipe Operator](#pipe-operator)
 - [JSON](#json)
 - [YAML](#yaml)
+- [Base64](#base64)
+- [Path](#path)
+- [URL](#url)
 - [Concurrency](#concurrency)
 - [Async / Await](#async--await)
 - [HTTP Networking](#http-networking)
@@ -815,6 +818,14 @@ Methods are called with dot notation on string values.
 | `.title()` | Capitalize first letter of each word, lowercase the rest |
 | `.capitalize()` | Capitalize first letter, lowercase the rest |
 | `.capitalizeFirst()` | Capitalize first letter, leave the rest intact |
+| `.slice(start, end?)` | Extract substring (negative indices supported) |
+| `.indexOf(substr, start?)` | Find first position (-1 if not found) |
+| `.lastIndexOf(substr)` | Find last position (-1 if not found) |
+| `.repeat(count)` | Repeat string N times |
+| `.padStart(len, char?)` | Left-pad to width (default: space) |
+| `.padEnd(len, char?)` | Right-pad to width (default: space) |
+| `.trimStart()` | Remove leading whitespace |
+| `.trimEnd()` | Remove trailing whitespace |
 
 ```
 "hello".upper()                  // "HELLO"
@@ -933,6 +944,11 @@ Methods are called with dot notation on array values.
 | `.contains(value)` | Check if value is in the array |
 | `.join(separator)` | Join elements into a string |
 | `.reverse()` | Reverse the array in place |
+| `.shift()` | Remove and return the first element |
+| `.unshift(val)` | Add element to the beginning |
+| `.slice(start, end?)` | Extract subarray (negative indices supported) |
+| `.indexOf(val)` | Find index of element (-1 if not found) |
+| `.find(fn)` | First element where fn returns truthy (nil if not found) |
 
 ```
 let arr = [1, 2, 3]
@@ -1209,6 +1225,59 @@ print("Listening on port %{config.server.port}")
 
 ---
 
+## Base64
+
+| Function | Description |
+|----------|-------------|
+| `base64.encode(str)` | Encode string to base64 |
+| `base64.decode(str)` | Decode base64 to string |
+
+```
+base64.encode("hello")         // "aGVsbG8="
+base64.decode("aGVsbG8=")     // "hello"
+```
+
+---
+
+## Path
+
+Path manipulation using `<filesystem>`. All functions work with strings.
+
+| Function | Description |
+|----------|-------------|
+| `path.join(parts...)` | Join path segments |
+| `path.dirname(p)` | Parent directory |
+| `path.basename(p)` | Filename component |
+| `path.ext(p)` | File extension (including dot) |
+| `path.resolve(p)` | Absolute path |
+
+```
+path.join("src", "main.cpp")       // "src/main.cpp"
+path.dirname("/usr/local/bin/p")   // "/usr/local/bin"
+path.basename("/usr/local/bin/p")  // "p"
+path.ext("script.praia")          // ".praia"
+path.resolve("src")               // "/full/path/to/src"
+```
+
+---
+
+## URL
+
+| Function | Description |
+|----------|-------------|
+| `url.parse(str)` | Parse URL into components |
+
+```
+let u = url.parse("https://example.com:8080/api?key=val")
+print(u.scheme)    // "https"
+print(u.host)      // "example.com"
+print(u.port)      // 8080
+print(u.path)      // "/api"
+print(u.query)     // "key=val"
+```
+
+---
+
 ## Concurrency
 
 ### How the HTTP server works
@@ -1346,7 +1415,7 @@ let results = parallel.all([
 
 ## HTTP Networking
 
-The `http` namespace provides an HTTP client and server. Supports HTTP only (not HTTPS).
+The `http` namespace provides an HTTP/HTTPS client and server. HTTPS requires OpenSSL (auto-detected at build time).
 
 ### HTTP Client
 
@@ -2393,6 +2462,21 @@ Parentheses can override precedence:
 print(2 + 3 * 4)       // 14
 print((2 + 3) * 4)     // 20
 ```
+
+---
+
+## Error Stack Traces
+
+When an error occurs inside nested function calls, Praia prints the full call stack:
+
+```
+[line 3] Runtime error: Division by zero
+  at divide() line 7
+  at calculate() line 11
+  at main() line 14
+```
+
+Stack traces work for all error types: runtime errors, `throw`, and uncaught exceptions. Caught errors (via `try/catch`) do not print a trace — only uncaught errors that terminate execution.
 
 ---
 

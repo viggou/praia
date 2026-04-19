@@ -35,4 +35,5 @@ std::string yamlStringify(const Value& val, int depth = 0);
 
 // ── String / Array dot-method dispatch (builtins_methods.cpp) ─
 Value getStringMethod(const std::string& str, const std::string& name, int line);
-Value getArrayMethod(std::shared_ptr<PraiaArray> arr, const std::string& name, int line);
+Value getArrayMethod(std::shared_ptr<PraiaArray> arr, const std::string& name, int line,
+                     Interpreter* interp = nullptr);

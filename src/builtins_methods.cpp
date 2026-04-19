@@ -200,11 +200,102 @@ Value getStringMethod(const std::string& str,
             }
         }));
     }
+    if (name == "slice") {
+        return Value(makeNative("slice", -1, [str](const std::vector<Value>& args) -> Value {
+            if (args.empty() || !args[0].isNumber())
+                throw RuntimeError("slice() requires a start index", 0);
+            int len = static_cast<int>(str.size());
+            int start = static_cast<int>(args[0].asNumber());
+            if (start < 0) start += len;
+            if (start < 0) start = 0;
+            if (start >= len) return Value(std::string(""));
+            if (args.size() > 1 && args[1].isNumber()) {
+                int end = static_cast<int>(args[1].asNumber());
+                if (end < 0) end += len;
+                if (end <= start) return Value(std::string(""));
+                if (end > len) end = len;
+                return Value(str.substr(start, end - start));
+            }
+            return Value(str.substr(start));
+        }));
+    }
+    if (name == "indexOf") {
+        return Value(makeNative("indexOf", -1, [str](const std::vector<Value>& args) -> Value {
+            if (args.empty() || !args[0].isString())
+                throw RuntimeError("indexOf() requires a string argument", 0);
+            size_t startPos = 0;
+            if (args.size() > 1 && args[1].isNumber())
+                startPos = static_cast<size_t>(args[1].asNumber());
+            auto pos = str.find(args[0].asString(), startPos);
+            return Value(pos == std::string::npos ? -1.0 : static_cast<double>(pos));
+        }));
+    }
+    if (name == "lastIndexOf") {
+        return Value(makeNative("lastIndexOf", 1, [str](const std::vector<Value>& args) -> Value {
+            if (!args[0].isString())
+                throw RuntimeError("lastIndexOf() requires a string argument", 0);
+            auto pos = str.rfind(args[0].asString());
+            return Value(pos == std::string::npos ? -1.0 : static_cast<double>(pos));
+        }));
+    }
+    if (name == "repeat") {
+        return Value(makeNative("repeat", 1, [str](const std::vector<Value>& args) -> Value {
+            if (!args[0].isNumber())
+                throw RuntimeError("repeat() requires a number", 0);
+            int count = static_cast<int>(args[0].asNumber());
+            if (count < 0) throw RuntimeError("repeat() count cannot be negative", 0);
+            std::string result;
+            result.reserve(str.size() * count);
+            for (int i = 0; i < count; i++) result += str;
+            return Value(std::move(result));
+        }));
+    }
+    if (name == "padStart") {
+        return Value(makeNative("padStart", -1, [str](const std::vector<Value>& args) -> Value {
+            if (args.empty() || !args[0].isNumber())
+                throw RuntimeError("padStart() requires a length", 0);
+            int target = static_cast<int>(args[0].asNumber());
+            std::string pad = " ";
+            if (args.size() > 1 && args[1].isString()) pad = args[1].asString();
+            std::string result = str;
+            while (static_cast<int>(result.size()) < target)
+                result = pad + result;
+            return Value(std::move(result));
+        }));
+    }
+    if (name == "padEnd") {
+        return Value(makeNative("padEnd", -1, [str](const std::vector<Value>& args) -> Value {
+            if (args.empty() || !args[0].isNumber())
+                throw RuntimeError("padEnd() requires a length", 0);
+            int target = static_cast<int>(args[0].asNumber());
+            std::string pad = " ";
+            if (args.size() > 1 && args[1].isString()) pad = args[1].asString();
+            std::string result = str;
+            while (static_cast<int>(result.size()) < target)
+                result += pad;
+            return Value(std::move(result));
+        }));
+    }
+    if (name == "trimStart") {
+        return Value(makeNative("trimStart", 0, [str](const std::vector<Value>&) -> Value {
+            size_t start = str.find_first_not_of(" \t\n\r");
+            if (start == std::string::npos) return Value(std::string(""));
+            return Value(str.substr(start));
+        }));
+    }
+    if (name == "trimEnd") {
+        return Value(makeNative("trimEnd", 0, [str](const std::vector<Value>&) -> Value {
+            size_t end = str.find_last_not_of(" \t\n\r");
+            if (end == std::string::npos) return Value(std::string(""));
+            return Value(str.substr(0, end + 1));
+        }));
+    }
     throw RuntimeError("String has no method '" + name + "'", line);
 }
 
 Value getArrayMethod(std::shared_ptr<PraiaArray> arr,
-                     const std::string& name, int line) {
+                     const std::string& name, int line,
+                     Interpreter* interp) {
     if (name == "push") {
         return Value(makeNative("push", 1, [arr](const std::vector<Value>& args) -> Value {
             arr->elements.push_back(args[0]);
@@ -243,6 +334,63 @@ Value getArrayMethod(std::shared_ptr<PraiaArray> arr,
     if (name == "reverse") {
         return Value(makeNative("reverse", 0, [arr](const std::vector<Value>&) -> Value {
             std::reverse(arr->elements.begin(), arr->elements.end());
+            return Value();
+        }));
+    }
+    if (name == "shift") {
+        return Value(makeNative("shift", 0, [arr](const std::vector<Value>&) -> Value {
+            if (arr->elements.empty())
+                throw RuntimeError("shift() on empty array", 0);
+            Value first = arr->elements.front();
+            arr->elements.erase(arr->elements.begin());
+            return first;
+        }));
+    }
+    if (name == "unshift") {
+        return Value(makeNative("unshift", 1, [arr](const std::vector<Value>& args) -> Value {
+            arr->elements.insert(arr->elements.begin(), args[0]);
+            return Value();
+        }));
+    }
+    if (name == "slice") {
+        return Value(makeNative("slice", -1, [arr](const std::vector<Value>& args) -> Value {
+            if (args.empty() || !args[0].isNumber())
+                throw RuntimeError("slice() requires a start index", 0);
+            int len = static_cast<int>(arr->elements.size());
+            int start = static_cast<int>(args[0].asNumber());
+            if (start < 0) start += len;
+            if (start < 0) start = 0;
+            int end = len;
+            if (args.size() > 1 && args[1].isNumber()) {
+                end = static_cast<int>(args[1].asNumber());
+                if (end < 0) end += len;
+            }
+            if (start >= len || end <= start)
+                return Value(std::make_shared<PraiaArray>());
+            if (end > len) end = len;
+            auto result = std::make_shared<PraiaArray>();
+            result->elements.assign(arr->elements.begin() + start, arr->elements.begin() + end);
+            return Value(result);
+        }));
+    }
+    if (name == "indexOf") {
+        return Value(makeNative("indexOf", 1, [arr](const std::vector<Value>& args) -> Value {
+            for (size_t i = 0; i < arr->elements.size(); i++)
+                if (arr->elements[i] == args[0]) return Value(static_cast<double>(i));
+            return Value(-1.0);
+        }));
+    }
+    if (name == "find") {
+        return Value(makeNative("find", 1, [arr, interp](const std::vector<Value>& args) -> Value {
+            if (!args[0].isCallable())
+                throw RuntimeError("find() requires a function", 0);
+            if (!interp)
+                throw RuntimeError("find() not available in this context", 0);
+            auto pred = args[0].asCallable();
+            for (auto& elem : arr->elements) {
+                Value result = pred->call(*interp, {elem});
+                if (result.isTruthy()) return elem;
+            }
             return Value();
         }));
     }

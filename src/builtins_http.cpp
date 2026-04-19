@@ -11,8 +11,55 @@
 #include <netinet/in.h>
 #include <netdb.h>
 #include <unistd.h>
+#ifdef HAVE_OPENSSL
+#include <openssl/ssl.h>
+#include <openssl/err.h>
+#endif
 
 namespace {
+
+// Socket abstraction — wraps a plain fd or an SSL connection
+struct SocketConn {
+    int fd = -1;
+#ifdef HAVE_OPENSSL
+    SSL* ssl = nullptr;
+    SSL_CTX* ctx = nullptr;
+#endif
+
+    ssize_t write(const void* buf, size_t len) {
+#ifdef HAVE_OPENSSL
+        if (ssl) return SSL_write(ssl, buf, static_cast<int>(len));
+#endif
+        return ::send(fd, buf, len, 0);
+    }
+
+    ssize_t read(void* buf, size_t len) {
+#ifdef HAVE_OPENSSL
+        if (ssl) return SSL_read(ssl, buf, static_cast<int>(len));
+#endif
+        return ::recv(fd, buf, len, 0);
+    }
+
+    void shutdown_close() {
+#ifdef HAVE_OPENSSL
+        if (ssl) { SSL_shutdown(ssl); SSL_free(ssl); ssl = nullptr; }
+        if (ctx) { SSL_CTX_free(ctx); ctx = nullptr; }
+#endif
+        if (fd >= 0) { ::close(fd); fd = -1; }
+    }
+};
+
+#ifdef HAVE_OPENSSL
+static bool sslInitDone = false;
+static void ensureSSLInit() {
+    if (!sslInitDone) {
+        SSL_library_init();
+        SSL_load_error_strings();
+        OpenSSL_add_all_algorithms();
+        sslInitDone = true;
+    }
+}
+#endif
 
 // Global server fd for signal handler to interrupt accept()
 static std::atomic<int> g_serverFd{-1};
@@ -78,6 +125,7 @@ struct ParsedUrl {
     std::string host;
     int port = 80;
     std::string path = "/";
+    bool tls = false;
 };
 
 ParsedUrl parseUrl(const std::string& url) {
@@ -85,8 +133,14 @@ ParsedUrl parseUrl(const std::string& url) {
     std::string rest = url;
     auto scheme = rest.find("://");
     if (scheme != std::string::npos) {
-        if (rest.substr(0, scheme) == "https")
-            throw RuntimeError("HTTPS not supported (use http:// or sys.exec with curl)", 0);
+        if (rest.substr(0, scheme) == "https") {
+#ifdef HAVE_OPENSSL
+            r.tls = true;
+            r.port = 443;
+#else
+            throw RuntimeError("HTTPS not supported (build with OpenSSL for TLS)", 0);
+#endif
+        }
         rest = rest.substr(scheme + 3);
     }
     auto slash = rest.find('/');
@@ -118,11 +172,11 @@ int connectToHost(const std::string& host, int port) {
     return sock;
 }
 
-std::string readAll(int sock) {
+std::string readAll(SocketConn& conn) {
     std::string data;
     char buf[8192];
     ssize_t n;
-    while ((n = recv(sock, buf, sizeof(buf), 0)) > 0)
+    while ((n = conn.read(buf, sizeof(buf))) > 0)
         data.append(buf, n);
     return data;
 }
@@ -256,7 +310,23 @@ Value doHttpRequest(const std::string& method, const std::string& url,
                     const std::string& body,
                     const std::unordered_map<std::string, std::string>& extraHeaders) {
     auto p = parseUrl(url);
-    int sock = connectToHost(p.host, p.port);
+    SocketConn conn;
+    conn.fd = connectToHost(p.host, p.port);
+
+#ifdef HAVE_OPENSSL
+    if (p.tls) {
+        ensureSSLInit();
+        conn.ctx = SSL_CTX_new(TLS_client_method());
+        if (!conn.ctx) { conn.shutdown_close(); throw RuntimeError("Failed to create SSL context", 0); }
+        conn.ssl = SSL_new(conn.ctx);
+        SSL_set_fd(conn.ssl, conn.fd);
+        SSL_set_tlsext_host_name(conn.ssl, p.host.c_str());
+        if (SSL_connect(conn.ssl) <= 0) {
+            conn.shutdown_close();
+            throw RuntimeError("SSL handshake failed for " + p.host, 0);
+        }
+    }
+#endif
 
     std::string req = method + " " + p.path + " HTTP/1.1\r\n";
     req += "Host: " + p.host + "\r\n";
@@ -268,12 +338,12 @@ Value doHttpRequest(const std::string& method, const std::string& url,
         req += "Content-Length: " + std::to_string(body.size()) + "\r\n";
     req += "\r\n" + body;
 
-    if (send(sock, req.c_str(), req.size(), 0) < 0) {
-        close(sock);
+    if (conn.write(req.c_str(), req.size()) < 0) {
+        conn.shutdown_close();
         throw RuntimeError("Failed to send HTTP request", 0);
     }
-    std::string raw = readAll(sock);
-    close(sock);
+    std::string raw = readAll(conn);
+    conn.shutdown_close();
     return parseHttpResponse(raw);
 }
 
