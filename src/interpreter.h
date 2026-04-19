@@ -123,7 +123,7 @@ class Interpreter {
     friend struct PraiaMethod;
 public:
     Interpreter();
-    void interpret(const std::vector<StmtPtr>& program);
+    bool interpret(const std::vector<StmtPtr>& program);
     void interpretRepl(const std::vector<StmtPtr>& program);
     void setArgs(const std::vector<std::string>& args);
     void setCurrentFile(const std::string& path);

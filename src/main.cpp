@@ -247,9 +247,13 @@ static std::string readFile(const std::string& path) {
     return ss.str();
 }
 
-// Lex + parse source into an AST. Returns empty vector on error.
+// Lex + parse source into an AST. Returns empty vector on error or
+// when --tokens/--ast consumed the output. Sets hadError on failures.
 static std::vector<StmtPtr> compile(const std::string& source,
-                                     bool showTokens, bool showAst) {
+                                     bool showTokens, bool showAst,
+                                     bool& hadError) {
+    hadError = false;
+
     Lexer lexer(source);
     auto tokens = lexer.tokenize();
 
@@ -259,12 +263,12 @@ static std::vector<StmtPtr> compile(const std::string& source,
         return {};
     }
 
-    if (lexer.hasError()) return {};
+    if (lexer.hasError()) { hadError = true; return {}; }
 
     Parser parser(tokens);
     auto program = parser.parse();
 
-    if (parser.hasError()) return {};
+    if (parser.hasError()) { hadError = true; return {}; }
 
     if (showAst) {
         printAst(program);
@@ -354,7 +358,8 @@ static void repl(bool showTokens, bool showAst) {
 
         addHistory(line);
 
-        auto program = compile(line, showTokens, showAst);
+        bool hadError = false;
+        auto program = compile(line, showTokens, showAst, hadError);
         if (!program.empty()) {
             interpreter.interpretRepl(program);
             astStore.push_back(std::move(program));
@@ -368,7 +373,8 @@ static void repl(bool showTokens, bool showAst) {
 // can see them in the run log.
 static int runTestFile(const std::string& path) {
     std::string source = readFile(path);
-    auto program = compile(source, /*showTokens*/false, /*showAst*/false);
+    bool hadError = false;
+    auto program = compile(source, /*showTokens*/false, /*showAst*/false, hadError);
     if (program.empty()) return 1; // parse/lex error
     Interpreter interp;
     interp.setCurrentFile(path);
@@ -462,7 +468,9 @@ int main(int argc, char* argv[]) {
 
     // `praia [-vm] -c "code"` — run a one-liner
     if (hasCFlag) {
-        auto program = compile(cCode, showTokens, showAst);
+        bool hadError = false;
+        auto program = compile(cCode, showTokens, showAst, hadError);
+        if (hadError) return 1;
         if (!program.empty()) {
             if (useVm) {
                 Compiler compiler;
@@ -479,7 +487,9 @@ int main(int argc, char* argv[]) {
                 for (int i = cArgStart; i < argc; i++)
                     scriptArgs.push_back(argv[i]);
                 interpreter.setArgs(scriptArgs);
-                try { interpreter.interpret(program); }
+                try {
+                    if (!interpreter.interpret(program)) return 1;
+                }
                 catch (const ExitSignal& e) { return e.code; }
             }
         }
@@ -498,7 +508,9 @@ int main(int argc, char* argv[]) {
         scriptArgs.push_back(argv[i]);
 
     std::string source = readFile(filename);
-    auto program = compile(source, showTokens, showAst);
+    bool hadError = false;
+    auto program = compile(source, showTokens, showAst, hadError);
+    if (hadError) return 1;
     if (!program.empty()) {
         if (useVm) {
             // Bytecode VM path
@@ -519,7 +531,9 @@ int main(int argc, char* argv[]) {
             Interpreter interpreter;
             interpreter.setArgs(scriptArgs);
             interpreter.setCurrentFile(filename);
-            try { interpreter.interpret(program); }
+            try {
+                if (!interpreter.interpret(program)) return 1;
+            }
             catch (const ExitSignal& e) { return e.code; }
         }
     }

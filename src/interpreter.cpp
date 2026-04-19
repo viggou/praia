@@ -169,20 +169,23 @@ std::string Interpreter::formatStackTrace() const {
     return trace;
 }
 
-void Interpreter::interpret(const std::vector<StmtPtr>& program) {
+bool Interpreter::interpret(const std::vector<StmtPtr>& program) {
     std::lock_guard<std::recursive_mutex> lock(interpMutex);
     try {
         for (const auto& stmt : program)
             execute(stmt.get());
+        return true;
     } catch (const ThrowSignal& t) {
         std::cerr << "[line " << t.line << "] Uncaught error: "
                   << t.value.toString() << std::endl;
         std::cerr << formatStackTrace();
         callStack.clear();
+        return false;
     } catch (const RuntimeError& e) {
         std::cerr << "[line " << e.line << "] Runtime error: " << e.what() << std::endl;
         std::cerr << formatStackTrace();
         callStack.clear();
+        return false;
     }
 }
 
