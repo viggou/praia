@@ -416,13 +416,16 @@ void Interpreter::execute(const Stmt* stmt) {
         throw ThrowSignal{std::move(val), s->line};
 
     } else if (auto* s = dynamic_cast<const TryCatchStmt*>(stmt)) {
+        size_t savedStackSize = callStack.size();
         try {
             execute(s->tryBody.get());
         } catch (const ThrowSignal& ts) {
+            callStack.resize(savedStackSize);
             auto catchEnv = std::make_shared<Environment>(env);
             catchEnv->define(s->errorVar, ts.value);
             executeBlock(static_cast<const BlockStmt*>(s->catchBody.get()), catchEnv);
         } catch (const RuntimeError& re) {
+            callStack.resize(savedStackSize);
             auto catchEnv = std::make_shared<Environment>(env);
             catchEnv->define(s->errorVar, Value(std::string(re.what())));
             executeBlock(static_cast<const BlockStmt*>(s->catchBody.get()), catchEnv);
