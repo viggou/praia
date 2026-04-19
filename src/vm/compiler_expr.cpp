@@ -1,4 +1,5 @@
 #include "compiler.h"
+#include "vm.h"
 
 void Compiler::compileExpr(const Expr* expr) {
     if (auto* e = dynamic_cast<const NumberExpr*>(expr)) compileNumberExpr(e);
@@ -193,7 +194,46 @@ void Compiler::compilePipeExpr(const PipeExpr* expr) {
 
 // ── Phase 3+ stubs ──────────────────────────────────────────
 
-void Compiler::compileLambdaExpr(const LambdaExpr* expr) { error("lam not yet in VM", expr->line); }
+void Compiler::compileLambdaExpr(const LambdaExpr* expr) {
+    auto fn = std::make_shared<CompiledFunction>();
+    fn->name = "<lambda>";
+    fn->arity = static_cast<int>(expr->params.size());
+
+    CompilerState lamState;
+    lamState.enclosing = current;
+    lamState.function = fn;
+    lamState.scopeDepth = current->scopeDepth + 1;
+    current = &lamState;
+
+    addLocal(""); // slot 0
+
+    for (auto& param : expr->params) {
+        addLocal(param);
+    }
+
+    for (auto& s : expr->body) {
+        compileStmt(s.get());
+    }
+
+    emit(OpCode::OP_NIL, expr->line);
+    emit(OpCode::OP_RETURN, expr->line);
+
+    current = lamState.enclosing;
+    fn->upvalueCount = static_cast<int>(lamState.upvalues.size());
+
+    auto* proto = new ObjClosure(fn);
+    auto wrapper = std::make_shared<VMClosureCallable>(proto);
+    uint16_t fnIdx = currentChunk().addConstant(
+        Value(std::static_pointer_cast<Callable>(wrapper)));
+
+    emit(OpCode::OP_CLOSURE, expr->line);
+    emitU16(fnIdx, expr->line);
+
+    for (auto& uv : lamState.upvalues) {
+        emit(uv.isLocal ? 1 : 0, expr->line);
+        emitU16(uv.index, expr->line);
+    }
+}
 void Compiler::compileArrayLiteralExpr(const ArrayLiteralExpr* expr) { error("arrays not yet in VM", expr->line); }
 void Compiler::compileMapLiteralExpr(const MapLiteralExpr* expr) { error("maps not yet in VM", expr->line); }
 void Compiler::compileIndexExpr(const IndexExpr* expr) { error("indexing not yet in VM", expr->line); }

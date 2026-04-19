@@ -1,4 +1,5 @@
 #include "compiler.h"
+#include "vm.h"
 #include <iostream>
 
 // ── Helpers ──────────────────────────────────────────────────
@@ -279,8 +280,65 @@ void Compiler::compileForInStmt(const ForInStmt* stmt) {
 }
 
 void Compiler::compileFuncStmt(const FuncStmt* stmt) {
-    // TODO: Phase 3
-    error("func not yet implemented in VM", stmt->line);
+    // Compile the function body into a new CompiledFunction
+    auto fn = std::make_shared<CompiledFunction>();
+    fn->name = stmt->name;
+    fn->arity = static_cast<int>(stmt->params.size());
+
+    CompilerState funcState;
+    funcState.enclosing = current;
+    funcState.function = fn;
+    funcState.scopeDepth = current->scopeDepth + 1;
+    current = &funcState;
+
+    // Slot 0 = the function itself (convention)
+    addLocal(stmt->name);
+
+    // Parameters become locals
+    for (auto& param : stmt->params) {
+        addLocal(param);
+    }
+
+    // Compile body
+    auto* body = dynamic_cast<const BlockStmt*>(stmt->body.get());
+    if (body) {
+        for (auto& s : body->statements) compileStmt(s.get());
+    }
+
+    // Implicit nil return
+    emit(OpCode::OP_NIL, stmt->line);
+    emit(OpCode::OP_RETURN, stmt->line);
+
+    current = funcState.enclosing;
+    fn->upvalueCount = static_cast<int>(funcState.upvalues.size());
+
+    // Create a prototype closure to store in the constant pool
+    auto* proto = new ObjClosure(fn);
+    // We need the VM to own this... store via a VMClosureCallable
+    auto wrapper = std::make_shared<VMClosureCallable>(proto);
+    // Note: this proto leaks unless the VM tracks it. For now, acceptable.
+
+    uint16_t fnIdx = currentChunk().addConstant(
+        Value(std::static_pointer_cast<Callable>(wrapper)));
+
+    // Emit OP_CLOSURE
+    emit(OpCode::OP_CLOSURE, stmt->line);
+    emitU16(fnIdx, stmt->line);
+
+    // Emit upvalue descriptors
+    for (auto& uv : funcState.upvalues) {
+        emit(uv.isLocal ? 1 : 0, stmt->line);
+        emitU16(uv.index, stmt->line);
+    }
+
+    // Define in current scope
+    if (current->scopeDepth > 0) {
+        addLocal(stmt->name);
+    } else {
+        uint16_t nameIdx = identifierConstant(stmt->name);
+        emit(OpCode::OP_DEFINE_GLOBAL, stmt->line);
+        emitU16(nameIdx, stmt->line);
+    }
 }
 
 void Compiler::compileReturnStmt(const ReturnStmt* stmt) {
