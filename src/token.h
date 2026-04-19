@@ -35,6 +35,7 @@ enum class TokenType {
     ENSURE,
     ASYNC,
     AWAIT,
+    ENUM,
     CLASS,
     EXTENDS,
     THIS,
@@ -120,6 +121,7 @@ inline std::string tokenTypeToString(TokenType type) {
         case TokenType::ENSURE:      return "ENSURE";
         case TokenType::ASYNC:       return "ASYNC";
         case TokenType::AWAIT:       return "AWAIT";
+        case TokenType::ENUM:        return "ENUM";
         case TokenType::CLASS:       return "CLASS";
         case TokenType::EXTENDS:     return "EXTENDS";
         case TokenType::THIS:        return "THIS";

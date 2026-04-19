@@ -20,6 +20,7 @@ static const std::unordered_map<std::string, TokenType> keywords = {
     {"ensure", TokenType::ENSURE},
     {"async",   TokenType::ASYNC},
     {"await",   TokenType::AWAIT},
+    {"enum",    TokenType::ENUM},
     {"class",   TokenType::CLASS},
     {"extends", TokenType::EXTENDS},
     {"this",    TokenType::THIS},

@@ -13,6 +13,7 @@ Praia is a dynamically typed, interpreted programming language built in C++.
 - [Strings](#strings)
 - [Arrays](#arrays)
 - [Maps](#maps)
+- [Enums](#enums)
 - [Control Flow](#control-flow)
 - [Error Handling](#error-handling)
 - [Loops](#loops)
@@ -162,7 +163,8 @@ Praia has 7 types:
 |------|---------|-------|
 | `nil` | `nil` | The absence of a value |
 | `bool` | `true`, `false` | |
-| `number` | `42`, `3.14`, `0` | Double-precision float |
+| `int` | `42`, `0`, `-7` | 64-bit integer (exact up to 2^63) |
+| `number` | `3.14`, `0.5` | Double-precision float |
 | `string` | `"hello"` | Supports interpolation and escape sequences |
 | `array` | `[1, 2, 3]` | Ordered, mixed-type, reference semantics |
 | `map` | `{name: "Ada"}` | String keys, reference semantics |
@@ -370,6 +372,76 @@ let b = a
 b.y = 2
 print(a)            // {x: 1, y: 2}
 ```
+
+---
+
+## Integers and Numbers
+
+Praia has two numeric types: 64-bit integers (`int`) and double-precision floats (`number`). Integer literals (no decimal point) create ints; decimal literals create doubles.
+
+```
+type(42)        // "int"
+type(3.14)      // "number"
+```
+
+### Arithmetic rules
+
+- `int + int`, `int - int`, `int * int`, `int % int` → int
+- Anything involving a double → double
+- `/` always returns double: `7 / 2` → `3.5` (like Python 3)
+
+```
+42 + 8          // 50 (int)
+42 + 0.5        // 42.5 (number)
+7 / 2           // 3.5 (always double)
+7 % 2           // 1 (int)
+```
+
+### Large integers
+
+Integers are 64-bit, so they're exact up to 2^63. No precision loss like doubles above 2^53:
+
+```
+let big = 9007199254740993
+print(big + 1)     // 9007199254740994 (exact)
+```
+
+### Comparison
+
+Ints and doubles compare by value: `42 == 42.0` is `true`.
+
+---
+
+## Enums
+
+Enums create named constants with auto-incrementing integer values.
+
+```
+enum Color { Red, Green, Blue }
+print(Color.Red)      // 0
+print(Color.Green)    // 1
+print(Color.Blue)     // 2
+```
+
+### Custom values
+
+```
+enum Status { Active = 1, Inactive = 0, Pending = 2 }
+
+if (status == Status.Active) {
+    print("active")
+}
+```
+
+### Auto-increment continues from the last value
+
+```
+enum Level { Low = 10, Medium, High }
+print(Level.Medium)   // 11
+print(Level.High)     // 12
+```
+
+Enums are maps — you can pass them around, iterate their keys, etc.
 
 ---
 

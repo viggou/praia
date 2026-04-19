@@ -18,7 +18,9 @@ struct Expr {
 };
 
 struct NumberExpr : Expr {
-    double value;
+    double floatValue = 0;
+    int64_t intValue = 0;
+    bool isInt = false;
 };
 
 struct StringExpr : Expr {
@@ -216,6 +218,13 @@ struct ClassStmt : Stmt {
     std::string name;
     std::string superclass; // empty if no superclass
     std::vector<ClassMethod> methods;
+};
+
+// enum Name { A, B = 5, C }
+struct EnumStmt : Stmt {
+    std::string name;
+    std::vector<std::string> members;
+    std::vector<ExprPtr> values; // nullptr = auto-increment
 };
 
 struct BreakStmt : Stmt {};

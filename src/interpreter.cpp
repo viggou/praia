@@ -348,6 +348,21 @@ void Interpreter::execute(const Stmt* stmt) {
         func->closure = env;
         env->define(s->name, Value(func));
 
+    } else if (auto* s = dynamic_cast<const EnumStmt*>(stmt)) {
+        auto enumMap = std::make_shared<PraiaMap>();
+        int64_t nextVal = 0;
+        for (size_t i = 0; i < s->members.size(); i++) {
+            if (s->values[i]) {
+                Value v = evaluate(s->values[i].get());
+                if (!v.isNumber())
+                    throw RuntimeError("Enum value must be a number", s->line);
+                nextVal = v.isInt() ? v.asInt() : static_cast<int64_t>(v.asNumber());
+            }
+            enumMap->entries[s->members[i]] = Value(nextVal);
+            nextVal++;
+        }
+        env->define(s->name, Value(enumMap));
+
     } else if (auto* s = dynamic_cast<const ClassStmt*>(stmt)) {
         std::shared_ptr<PraiaClass> superclass;
         if (!s->superclass.empty()) {
@@ -419,7 +434,7 @@ Value Interpreter::evaluate(const Expr* expr) {
     // ── Literals ──
 
     if (auto* e = dynamic_cast<const NumberExpr*>(expr))
-        return Value(e->value);
+        return e->isInt ? Value(e->intValue) : Value(e->floatValue);
 
     if (auto* e = dynamic_cast<const StringExpr*>(expr))
         return Value(e->value);
@@ -491,6 +506,7 @@ Value Interpreter::evaluate(const Expr* expr) {
         if (e->op == TokenType::MINUS) {
             if (!operand.isNumber())
                 throw RuntimeError("Operand of '-' must be a number", e->line);
+            if (operand.isInt()) return Value(-operand.asInt());
             return Value(-operand.asNumber());
         }
         if (e->op == TokenType::NOT)
@@ -514,6 +530,12 @@ Value Interpreter::evaluate(const Expr* expr) {
         if (!cur.isNumber())
             throw RuntimeError("Postfix operator requires a number", e->line);
 
+        if (cur.isInt()) {
+            int64_t old = cur.asInt();
+            int64_t next = (e->op == TokenType::INCREMENT) ? old + 1 : old - 1;
+            env->set(ident->name, Value(next), e->line);
+            return Value(old);
+        }
         double old = cur.asNumber();
         double next = (e->op == TokenType::INCREMENT) ? old + 1 : old - 1;
         env->set(ident->name, Value(next), e->line);
@@ -537,20 +559,27 @@ Value Interpreter::evaluate(const Expr* expr) {
 
         switch (e->op) {
         case TokenType::PLUS:
+            if (left.isInt() && right.isInt())
+                return Value(left.asInt() + right.asInt());
             if (left.isNumber() && right.isNumber())
                 return Value(left.asNumber() + right.asNumber());
             if (left.isString() || right.isString())
                 return Value(left.toString() + right.toString());
             throw RuntimeError("Operands of '+' must be numbers or strings", e->line);
         case TokenType::MINUS:
+            if (left.isInt() && right.isInt())
+                return Value(left.asInt() - right.asInt());
             if (left.isNumber() && right.isNumber())
                 return Value(left.asNumber() - right.asNumber());
             throw RuntimeError("Operands of '-' must be numbers", e->line);
         case TokenType::STAR:
+            if (left.isInt() && right.isInt())
+                return Value(left.asInt() * right.asInt());
             if (left.isNumber() && right.isNumber())
                 return Value(left.asNumber() * right.asNumber());
             throw RuntimeError("Operands of '*' must be numbers", e->line);
         case TokenType::SLASH:
+            // Division always returns double (like Python 3)
             if (left.isNumber() && right.isNumber()) {
                 if (right.asNumber() == 0)
                     throw RuntimeError("Division by zero", e->line);
@@ -558,6 +587,11 @@ Value Interpreter::evaluate(const Expr* expr) {
             }
             throw RuntimeError("Operands of '/' must be numbers", e->line);
         case TokenType::PERCENT:
+            if (left.isInt() && right.isInt()) {
+                if (right.asInt() == 0)
+                    throw RuntimeError("Modulo by zero", e->line);
+                return Value(left.asInt() % right.asInt());
+            }
             if (left.isNumber() && right.isNumber()) {
                 if (right.asNumber() == 0)
                     throw RuntimeError("Modulo by zero", e->line);

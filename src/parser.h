@@ -22,6 +22,7 @@ private:
     StmtPtr letStatement();
     StmtPtr funcStatement();
     StmtPtr classStatement();
+    StmtPtr enumStatement();
     StmtPtr ifStatement();
     StmtPtr whileStatement();
     StmtPtr forStatement();

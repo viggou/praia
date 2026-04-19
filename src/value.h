@@ -29,6 +29,7 @@ struct Value {
     using Data = std::variant<
         std::nullptr_t,
         bool,
+        int64_t,
         double,
         std::string,
         std::shared_ptr<Callable>,
@@ -43,8 +44,9 @@ struct Value {
     Value() : data(nullptr) {}
     Value(std::nullptr_t) : data(nullptr) {}
     Value(bool b) : data(b) {}
+    Value(int64_t i) : data(i) {}
+    Value(int i) : data(static_cast<int64_t>(i)) {}
     Value(double d) : data(d) {}
-    Value(int i) : data(static_cast<double>(i)) {}
     Value(const std::string& s) : data(s) {}
     Value(std::string&& s) : data(std::move(s)) {}
     Value(const char* s) : data(std::string(s)) {}
@@ -56,7 +58,9 @@ struct Value {
 
     bool isNil()      const { return std::holds_alternative<std::nullptr_t>(data); }
     bool isBool()     const { return std::holds_alternative<bool>(data); }
-    bool isNumber()   const { return std::holds_alternative<double>(data); }
+    bool isInt()      const { return std::holds_alternative<int64_t>(data); }
+    bool isDouble()   const { return std::holds_alternative<double>(data); }
+    bool isNumber()   const { return isInt() || isDouble(); }
     bool isString()   const { return std::holds_alternative<std::string>(data); }
     bool isCallable() const { return std::holds_alternative<std::shared_ptr<Callable>>(data); }
     bool isArray()    const { return std::holds_alternative<std::shared_ptr<PraiaArray>>(data); }
@@ -65,7 +69,12 @@ struct Value {
     bool isFuture()   const { return std::holds_alternative<std::shared_ptr<PraiaFuture>>(data); }
 
     bool                        asBool()     const { return std::get<bool>(data); }
-    double                      asNumber()   const { return std::get<double>(data); }
+    int64_t                     asInt()      const { return std::get<int64_t>(data); }
+    // asNumber() returns double regardless of int/double storage
+    double                      asNumber()   const {
+        if (isInt()) return static_cast<double>(std::get<int64_t>(data));
+        return std::get<double>(data);
+    }
     const std::string&          asString()   const { return std::get<std::string>(data); }
     std::shared_ptr<Callable>   asCallable() const { return std::get<std::shared_ptr<Callable>>(data); }
     std::shared_ptr<PraiaArray> asArray()    const { return std::get<std::shared_ptr<PraiaArray>>(data); }
@@ -76,7 +85,8 @@ struct Value {
     bool isTruthy() const {
         if (isNil()) return false;
         if (isBool()) return asBool();
-        if (isNumber()) return asNumber() != 0;
+        if (isInt()) return asInt() != 0;
+        if (isDouble()) return asNumber() != 0;
         return true;
     }
 
@@ -111,7 +121,8 @@ struct PraiaInstance {
 inline std::string Value::toString() const {
     if (isNil())    return "nil";
     if (isBool())   return asBool() ? "true" : "false";
-    if (isNumber()) { std::ostringstream o; o << asNumber(); return o.str(); }
+    if (isInt())    return std::to_string(asInt());
+    if (isDouble()) { std::ostringstream o; o << asNumber(); return o.str(); }
     if (isString()) return asString();
     if (isCallable()) return "<function>";
     if (isInstance()) return "<instance>";

@@ -79,7 +79,8 @@ Interpreter::Interpreter() {
             auto& v = args[0];
             if (v.isNil())      return Value("nil");
             if (v.isBool())     return Value("bool");
-            if (v.isNumber())   return Value("number");
+            if (v.isInt())      return Value("int");
+            if (v.isDouble())   return Value("number");
             if (v.isString())   return Value("string");
             if (v.isArray())    return Value("array");
             if (v.isMap())      return Value("map");

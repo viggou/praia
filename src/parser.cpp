@@ -21,6 +21,7 @@ StmtPtr Parser::statement() {
     if (match(TokenType::LET))    return letStatement();
     if (match(TokenType::FUNC))   return funcStatement();
     if (match(TokenType::CLASS))  return classStatement();
+    if (match(TokenType::ENUM))   return enumStatement();
     if (match(TokenType::IF))     return ifStatement();
     if (match(TokenType::WHILE))  return whileStatement();
     if (match(TokenType::FOR))    return forStatement();
@@ -185,6 +186,31 @@ StmtPtr Parser::classStatement() {
     stmt->name = name.lexeme;
     stmt->superclass = superclass;
     stmt->methods = std::move(methods);
+    return stmt;
+}
+
+StmtPtr Parser::enumStatement() {
+    int ln = previous().line;
+    Token name = consume(TokenType::IDENTIFIER, "Expected enum name");
+    consume(TokenType::LBRACE, "Expected '{' after enum name");
+
+    auto stmt = std::make_unique<EnumStmt>();
+    stmt->line = ln;
+    stmt->name = name.lexeme;
+
+    if (!check(TokenType::RBRACE)) {
+        do {
+            if (!isNameToken(peek().type))
+                throw error(peek(), "Expected enum member name");
+            stmt->members.push_back(advance().lexeme);
+            if (match(TokenType::ASSIGN)) {
+                stmt->values.push_back(expression());
+            } else {
+                stmt->values.push_back(nullptr);
+            }
+        } while (match(TokenType::COMMA));
+    }
+    consume(TokenType::RBRACE, "Expected '}' after enum body");
     return stmt;
 }
 
@@ -709,7 +735,14 @@ ExprPtr Parser::primary() {
     if (match(TokenType::NUMBER)) {
         auto e = std::make_unique<NumberExpr>();
         e->line = previous().line;
-        e->value = std::stod(previous().lexeme);
+        std::string lex = previous().lexeme;
+        if (lex.find('.') == std::string::npos) {
+            e->isInt = true;
+            e->intValue = std::stoll(lex);
+        } else {
+            e->isInt = false;
+            e->floatValue = std::stod(lex);
+        }
         return e;
     }
 
@@ -972,7 +1005,7 @@ Parser::ParseError Parser::error(const Token& token, const std::string& message)
 
 bool Parser::isNameToken(TokenType t) const {
     return t == TokenType::IDENTIFIER ||
-           t == TokenType::LET || t == TokenType::FUNC || t == TokenType::CLASS ||
+           t == TokenType::LET || t == TokenType::FUNC || t == TokenType::CLASS || t == TokenType::ENUM ||
            t == TokenType::IF || t == TokenType::ELSE || t == TokenType::ELIF ||
            t == TokenType::WHILE || t == TokenType::FOR || t == TokenType::IN ||
            t == TokenType::RETURN || t == TokenType::BREAK || t == TokenType::CONTINUE ||
@@ -991,6 +1024,7 @@ void Parser::synchronize() {
             case TokenType::LET:
             case TokenType::FUNC:
             case TokenType::CLASS:
+            case TokenType::ENUM:
             case TokenType::IF:
             case TokenType::WHILE:
             case TokenType::FOR:

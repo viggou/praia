@@ -28,7 +28,9 @@ static void printExpr(const Expr* expr, int level) {
     if (!expr) { printIndent(level); std::cout << "<null>\n"; return; }
 
     if (auto* e = dynamic_cast<const NumberExpr*>(expr)) {
-        printIndent(level); std::cout << "Number(" << e->value << ")\n";
+        printIndent(level);
+        if (e->isInt) std::cout << "Int(" << e->intValue << ")\n";
+        else std::cout << "Float(" << e->floatValue << ")\n";
     } else if (auto* e = dynamic_cast<const StringExpr*>(expr)) {
         printIndent(level); std::cout << "String(\"" << e->value << "\")\n";
     } else if (auto* e = dynamic_cast<const BoolExpr*>(expr)) {
@@ -171,6 +173,8 @@ static void printStmt(const Stmt* stmt, int level) {
         }
         std::cout << "\n";
         printStmt(s->body.get(), level + 1);
+    } else if (auto* s = dynamic_cast<const EnumStmt*>(stmt)) {
+        printIndent(level); std::cout << "Enum(" << s->name << ")\n";
     } else if (auto* s = dynamic_cast<const ClassStmt*>(stmt)) {
         printIndent(level); std::cout << "Class(" << s->name << ")";
         if (!s->superclass.empty()) std::cout << " extends " << s->superclass;
