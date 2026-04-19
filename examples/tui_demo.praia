@@ -1,0 +1,58 @@
+// Simple TUI demo — move a cursor with arrow keys, q to quit
+// Run: ./praia examples/tui_demo.praia
+
+let ESC = "\x1b"
+let size = sys.termSize()
+
+// Use sys.stdout for raw output (no trailing newline)
+func write(s) { sys.stdout(s) }
+func clearScreen() { write(ESC + "[2J" + ESC + "[H") }
+func moveTo(row, col) { write(ESC + "[%{row};%{col}H") }
+func hideCursor() { write(ESC + "[?25l") }
+func showCursor() { write(ESC + "[?25h") }
+
+let x = size.cols / 2
+let y = size.rows / 2
+let running = true
+
+// Convert to int (division returns double)
+x = math.floor(x)
+y = math.floor(y)
+
+sys.rawMode(true)
+hideCursor()
+clearScreen()
+
+while (running) {
+    // Draw header
+    moveTo(1, 1)
+    write(ESC + "[36mTUI Demo" + ESC + "[0m — arrows to move, q to quit")
+
+    // Draw cursor
+    moveTo(y, x)
+    write(ESC + "[33m@" + ESC + "[0m")
+
+    // Read key
+    let key = sys.readKey()
+
+    // Erase old position
+    moveTo(y, x)
+    write(" ")
+
+    if (key == "q") {
+        running = false
+    } elif (key == ESC + "[A") {
+        if (y > 2) { y -= 1 }
+    } elif (key == ESC + "[B") {
+        if (y < size.rows) { y += 1 }
+    } elif (key == ESC + "[C") {
+        if (x < size.cols) { x += 1 }
+    } elif (key == ESC + "[D") {
+        if (x > 1) { x -= 1 }
+    }
+}
+
+sys.rawMode(false)
+showCursor()
+clearScreen()
+print("Bye!")

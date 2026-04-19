@@ -249,10 +249,29 @@ void Lexer::string(char quote) {
             switch (escaped) {
                 case 'n':  value += '\n'; break;
                 case 't':  value += '\t'; break;
+                case 'r':  value += '\r'; break;
+                case '0':  value += '\0'; break;
                 case '\\': value += '\\'; break;
                 case '"':  value += '"';  break;
                 case '\'': value += '\''; break;
                 case '%':  value += '%';  break;
+                case 'x': {
+                    // \xHH — hex escape
+                    if (current + 2 > static_cast<int>(source.size())) {
+                        error("Incomplete \\x escape"); break;
+                    }
+                    auto hexVal = [](char c) -> int {
+                        if (c >= '0' && c <= '9') return c - '0';
+                        if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+                        if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+                        return -1;
+                    };
+                    int hi = hexVal(peek()), lo = hexVal(peekNext());
+                    if (hi < 0 || lo < 0) { error("Invalid \\x escape"); break; }
+                    value += static_cast<char>((hi << 4) | lo);
+                    advance(); advance();
+                    break;
+                }
                 default:
                     error(std::string("Unknown escape sequence '\\") + escaped + "'");
                     value += escaped;
@@ -339,10 +358,28 @@ void Lexer::tripleString(char quote) {
             switch (escaped) {
                 case 'n':  value += '\n'; break;
                 case 't':  value += '\t'; break;
+                case 'r':  value += '\r'; break;
+                case '0':  value += '\0'; break;
                 case '\\': value += '\\'; break;
                 case '"':  value += '"';  break;
                 case '\'': value += '\''; break;
                 case '%':  value += '%';  break;
+                case 'x': {
+                    if (current + 2 > static_cast<int>(source.size())) {
+                        error("Incomplete \\x escape"); break;
+                    }
+                    auto hexVal = [](char c) -> int {
+                        if (c >= '0' && c <= '9') return c - '0';
+                        if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+                        if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+                        return -1;
+                    };
+                    int hi = hexVal(peek()), lo = hexVal(peekNext());
+                    if (hi < 0 || lo < 0) { error("Invalid \\x escape"); break; }
+                    value += static_cast<char>((hi << 4) | lo);
+                    advance(); advance();
+                    break;
+                }
                 default: value += escaped; break;
             }
             continue;

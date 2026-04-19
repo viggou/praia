@@ -20,6 +20,8 @@
 #include <sqlite3.h>
 #endif
 #include <sys/socket.h>
+#include <sys/ioctl.h>
+#include <termios.h>
 #include <netinet/in.h>
 #include <netdb.h>
 #include <unistd.h>
@@ -1361,6 +1363,93 @@ Interpreter::Interpreter() {
 #else
     sysMap->entries["platform"] = Value("unknown");
 #endif
+
+    sysMap->entries["stdout"] = Value(makeNative("sys.stdout", 1,
+        [](const std::vector<Value>& args) -> Value {
+            if (!args[0].isString())
+                throw RuntimeError("sys.stdout() requires a string", 0);
+            std::cout << args[0].asString() << std::flush;
+            return Value();
+        }));
+
+    // ── Terminal I/O ──
+
+    // Store the original terminal settings so we can restore them
+    auto origTermios = std::make_shared<struct termios>();
+    auto rawModeActive = std::make_shared<bool>(false);
+    tcgetattr(STDIN_FILENO, origTermios.get());
+
+    sysMap->entries["rawMode"] = Value(makeNative("sys.rawMode", 1,
+        [origTermios, rawModeActive](const std::vector<Value>& args) -> Value {
+            if (!args[0].isBool())
+                throw RuntimeError("sys.rawMode() requires a boolean", 0);
+            if (args[0].asBool()) {
+                struct termios raw = *origTermios;
+                raw.c_lflag &= ~(ECHO | ICANON | ISIG);
+                raw.c_iflag &= ~(IXON | ICRNL);
+                raw.c_cc[VMIN] = 0;
+                raw.c_cc[VTIME] = 0;
+                tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw);
+                *rawModeActive = true;
+            } else {
+                tcsetattr(STDIN_FILENO, TCSAFLUSH, origTermios.get());
+                *rawModeActive = false;
+            }
+            return Value();
+        }));
+
+    sysMap->entries["readKey"] = Value(makeNative("sys.readKey", 0,
+        [](const std::vector<Value>&) -> Value {
+            // Block until at least one byte
+            struct termios prev;
+            tcgetattr(STDIN_FILENO, &prev);
+            struct termios t = prev;
+            t.c_cc[VMIN] = 1;
+            t.c_cc[VTIME] = 0;
+            tcsetattr(STDIN_FILENO, TCSANOW, &t);
+
+            char c;
+            ssize_t n = read(STDIN_FILENO, &c, 1);
+            if (n <= 0) { tcsetattr(STDIN_FILENO, TCSANOW, &prev); return Value(); }
+
+            // If it's an ESC, try to read the rest of the escape sequence
+            if (c == '\x1b') {
+                // Switch to non-blocking with short timeout to grab remaining bytes
+                t.c_cc[VMIN] = 0;
+                t.c_cc[VTIME] = 1; // 100ms timeout
+                tcsetattr(STDIN_FILENO, TCSANOW, &t);
+
+                char seq[7] = {};
+                ssize_t seqLen = read(STDIN_FILENO, seq, sizeof(seq) - 1);
+                tcsetattr(STDIN_FILENO, TCSANOW, &prev);
+
+                if (seqLen > 0) {
+                    std::string result(1, c);
+                    result.append(seq, seqLen);
+                    return Value(std::move(result));
+                }
+                // Bare ESC
+                return Value(std::string(1, c));
+            }
+
+            tcsetattr(STDIN_FILENO, TCSANOW, &prev);
+            return Value(std::string(1, c));
+        }));
+
+    sysMap->entries["termSize"] = Value(makeNative("sys.termSize", 0,
+        [](const std::vector<Value>&) -> Value {
+            struct winsize ws;
+            if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) < 0) {
+                auto result = std::make_shared<PraiaMap>();
+                result->entries["rows"] = Value(static_cast<int64_t>(24));
+                result->entries["cols"] = Value(static_cast<int64_t>(80));
+                return Value(result);
+            }
+            auto result = std::make_shared<PraiaMap>();
+            result->entries["rows"] = Value(static_cast<int64_t>(ws.ws_row));
+            result->entries["cols"] = Value(static_cast<int64_t>(ws.ws_col));
+            return Value(result);
+        }));
 
     // ── sqlite namespace ──
 

@@ -1247,6 +1247,61 @@ want to also drop leading/trailing whitespace.
 
 ---
 
+## Terminal I/O
+
+Praia supports raw terminal mode for building TUI applications.
+
+### Raw mode
+
+```
+sys.rawMode(true)      // disable line buffering, echo
+// ... read keypresses ...
+sys.rawMode(false)     // restore normal terminal
+```
+
+### Reading keys
+
+```
+sys.rawMode(true)
+let key = sys.readKey()     // blocks until a key is pressed
+sys.rawMode(false)
+print("You pressed:", key)
+```
+
+Arrow keys return escape sequences: `"\x1b[A"` (up), `"\x1b[B"` (down), `"\x1b[C"` (right), `"\x1b[D"` (left).
+
+### Terminal size
+
+```
+let size = sys.termSize()
+print(size.rows, size.cols)     // e.g. 24 80
+```
+
+### ANSI escape codes
+
+Use `\x1b` (hex escape) to send ANSI codes:
+
+```
+let ESC = "\x1b"
+print(ESC + "[2J")           // clear screen
+print(ESC + "[10;20H")       // move cursor to row 10, col 20
+print(ESC + "[31mRed" + ESC + "[0m")    // colored text
+print(ESC + "[?25l")         // hide cursor
+print(ESC + "[?25h")         // show cursor
+```
+
+### Hex escapes in strings
+
+`\xHH` produces a byte from a two-digit hex value:
+
+```
+"\x1b"     // ESC (27)
+"\x00"     // null byte
+"\x41"     // 'A' (65)
+```
+
+---
+
 ## Pipe Operator
 
 The pipe operator `|>` passes the left side as the first argument to the right side. It turns nested calls into readable top-to-bottom chains.
@@ -2380,6 +2435,10 @@ In addition to file/directory operations, `sys` provides:
 | `sys.env(name)` | Read environment variable (returns nil if not set) |
 | `sys.cwd()` | Current working directory |
 | `sys.platform` | `"darwin"`, `"linux"`, or `"windows"` |
+| `sys.stdout(str)` | Write to stdout without a trailing newline |
+| `sys.rawMode(bool)` | Enable/disable raw terminal mode (no line buffering) |
+| `sys.readKey()` | Read a single keypress (returns string, handles escape sequences) |
+| `sys.termSize()` | Returns `{rows, cols}` of the terminal |
 
 ```
 print(sys.env("HOME"))             // "/Users/ada"
