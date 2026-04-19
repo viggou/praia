@@ -641,8 +641,55 @@ void Compiler::compileEnumStmt(const EnumStmt* stmt) {
         emitU16(identifierConstant(stmt->name), stmt->line);
     }
 }
-void Compiler::compileThrowStmt(const ThrowStmt* stmt) { error("throw not yet in VM", stmt->line); }
-void Compiler::compileTryCatchStmt(const TryCatchStmt* stmt) { error("try/catch not yet in VM", stmt->line); }
-void Compiler::compileEnsureStmt(const EnsureStmt* stmt) { error("ensure not yet in VM", stmt->line); }
+void Compiler::compileThrowStmt(const ThrowStmt* stmt) {
+    compileExpr(stmt->value.get());
+    emit(OpCode::OP_THROW, stmt->line);
+}
+
+void Compiler::compileTryCatchStmt(const TryCatchStmt* stmt) {
+    // OP_TRY_BEGIN [catch_offset]
+    // <try body>
+    // OP_TRY_END
+    // OP_JUMP [end_offset]  -- skip catch if try succeeded
+    // catch:
+    //   <error value is on stack>
+    //   define error variable as local
+    //   <catch body>
+    // end:
+
+    int tryBegin = emitJump(OpCode::OP_TRY_BEGIN, stmt->line);
+
+    // Try body
+    compileStmt(stmt->tryBody.get());
+
+    emit(OpCode::OP_TRY_END, stmt->line);
+    int endJump = emitJump(OpCode::OP_JUMP, stmt->line);
+
+    // Patch TRY_BEGIN to jump here on exception
+    patchJump(tryBegin);
+
+    // Catch: error value is on top of stack
+    beginScope();
+    addLocal(stmt->errorVar); // the error value becomes a local
+
+    compileStmt(stmt->catchBody.get());
+
+    endScope(stmt->line);
+
+    patchJump(endJump);
+}
+
+void Compiler::compileEnsureStmt(const EnsureStmt* stmt) {
+    // ensure (condition) else { body }
+    // Compiled as: if (!condition) { body }
+    compileExpr(stmt->condition.get());
+    int elseJump = emitJump(OpCode::OP_POP_JUMP_IF_FALSE, stmt->line);
+    int endJump = emitJump(OpCode::OP_JUMP, stmt->line);
+    patchJump(elseJump);
+
+    compileStmt(stmt->elseBody.get());
+
+    patchJump(endJump);
+}
 void Compiler::compileUseStmt(const UseStmt* stmt) { error("use not yet in VM", stmt->line); }
 void Compiler::compileExportStmt(const ExportStmt* stmt) { error("export not yet in VM", stmt->line); }

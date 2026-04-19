@@ -101,6 +101,14 @@ private:
     ObjUpvalue* captureUpvalue(Value* local);
     void closeUpvalues(Value* last);
 
+    // Exception handlers
+    struct ExceptionHandler {
+        const uint8_t* catchIp;  // where to jump on exception
+        int frameIndex;          // which call frame installed this
+        int stackTop;            // stack depth to restore
+    };
+    std::vector<ExceptionHandler> exceptionHandlers;
+
     // Closures created during execution (for cleanup)
     std::vector<ObjClosure*> allClosures;
     std::vector<ObjUpvalue*> allUpvalues;

@@ -704,9 +704,50 @@ VM::Result VM::execute() {
             push(Value(std::move(result)));
             break;
         }
-        case OpCode::OP_TRY_BEGIN:
-        case OpCode::OP_TRY_END:
-        case OpCode::OP_THROW:
+        case OpCode::OP_TRY_BEGIN: {
+            uint16_t catchOffset = READ_U16();
+            ExceptionHandler handler;
+            handler.catchIp = FRAME.ip + catchOffset;
+            handler.frameIndex = frameCount - 1;
+            handler.stackTop = stackTop;
+            exceptionHandlers.push_back(handler);
+            break;
+        }
+
+        case OpCode::OP_TRY_END: {
+            if (!exceptionHandlers.empty()) {
+                exceptionHandlers.pop_back();
+            }
+            break;
+        }
+
+        case OpCode::OP_THROW: {
+            Value error = pop();
+
+            if (!exceptionHandlers.empty()) {
+                auto handler = exceptionHandlers.back();
+                exceptionHandlers.pop_back();
+
+                // Unwind call frames back to the handler's frame
+                while (frameCount - 1 > handler.frameIndex) {
+                    closeUpvalues(&stack[FRAME.baseSlot]);
+                    frameCount--;
+                }
+
+                // Restore stack and jump to catch
+                stackTop = handler.stackTop;
+                push(error); // push error value for catch block
+                FRAME.ip = handler.catchIp;
+                break; // continue execution from catch
+            }
+
+            // No handler — uncaught error
+            int line = CURRENT_LINE();
+            std::cerr << "[line " << line << "] Uncaught error: " << error.toString() << std::endl;
+            std::cerr << formatStackTrace();
+            resetStack();
+            return Result::RUNTIME_ERROR;
+        }
         case OpCode::OP_ASYNC:
         case OpCode::OP_AWAIT:
         case OpCode::OP_IMPORT:
