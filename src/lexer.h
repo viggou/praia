@@ -20,7 +20,7 @@ private:
     bool isAtEnd() const;
 
     void number();
-    void string();
+    void string(char quote);
     void identifier();
     void blockComment();
 

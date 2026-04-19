@@ -110,7 +110,8 @@ void Lexer::scanToken() {
             line++;
             break;
 
-        case '"': string(); break;
+        case '"': string('"'); break;
+        case '\'': string('\''); break;
 
         default:
             if (std::isdigit(c)) {
@@ -163,15 +164,15 @@ void Lexer::number() {
     addToken(TokenType::NUMBER);
 }
 
-void Lexer::string() {
+void Lexer::string(char quote) {
     std::string value;
     bool hasInterp = false;
     bool firstInterp = true;
 
-    while (peek() != '"' && !isAtEnd()) {
+    while (peek() != quote && !isAtEnd()) {
         if (peek() == '\n') line++;
 
-        // String interpolation: %{expr}
+        // String interpolation: %{expr} (works in both quote styles)
         if (peek() == '%' && peekNext() == '{') {
             hasInterp = true;
             advance(); // consume %
@@ -224,6 +225,7 @@ void Lexer::string() {
                 case 't':  value += '\t'; break;
                 case '\\': value += '\\'; break;
                 case '"':  value += '"';  break;
+                case '\'': value += '\''; break;
                 case '%':  value += '%';  break;
                 default:
                     error(std::string("Unknown escape sequence '\\") + escaped + "'");
@@ -241,7 +243,7 @@ void Lexer::string() {
         return;
     }
 
-    advance(); // consume closing "
+    advance(); // consume closing quote
 
     if (hasInterp) {
         tokens.push_back({TokenType::INTERP_END, value, line});

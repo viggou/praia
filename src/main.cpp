@@ -302,7 +302,7 @@ static void repl(bool showTokens, bool showAst) {
         // Tracks braces correctly by skipping strings and comments.
         auto countBraces = [](const std::string& s) -> int {
             int depth = 0;
-            bool inString = false;
+            char stringQuote = 0;  // tracks which quote opened the string
             bool inLineComment = false;
             bool inBlockComment = false;
             for (size_t i = 0; i < s.size(); i++) {
@@ -317,15 +317,15 @@ static void repl(bool showTokens, bool showAst) {
                     if (c == '*' && next == '/') { inBlockComment = false; i++; }
                     continue;
                 }
-                if (inString) {
+                if (stringQuote) {
                     if (c == '\\') { i++; continue; } // skip escaped char
-                    if (c == '"') inString = false;
+                    if (c == stringQuote) stringQuote = 0;
                     continue;
                 }
 
                 if (c == '/' && next == '/') { inLineComment = true; i++; continue; }
                 if (c == '/' && next == '*') { inBlockComment = true; i++; continue; }
-                if (c == '"') { inString = true; continue; }
+                if (c == '"' || c == '\'') { stringQuote = c; continue; }
                 if (c == '{') depth++;
                 if (c == '}') depth--;
             }
