@@ -7,7 +7,7 @@
 //   log.error("something broke", {code: 500})
 //
 // As router middleware:
-//   app.use(logger.middleware(log))
+//   server.use(logger.middleware(log))
 
 let LEVELS = {
     debug: 0,

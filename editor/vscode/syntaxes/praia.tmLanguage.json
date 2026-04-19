@@ -1,0 +1,267 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Praia",
+  "scopeName": "source.praia",
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#strings" },
+    { "include": "#numbers" },
+    { "include": "#keywords" },
+    { "include": "#constants" },
+    { "include": "#builtins" },
+    { "include": "#namespaces" },
+    { "include": "#operators" },
+    { "include": "#classes" },
+    { "include": "#functions" },
+    { "include": "#punctuation" }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.double-slash.praia",
+          "match": "//.*$"
+        },
+        {
+          "name": "comment.block.praia",
+          "begin": "/\\*",
+          "end": "\\*/",
+          "patterns": [
+            {
+              "name": "comment.block.praia",
+              "begin": "/\\*",
+              "end": "\\*/"
+            }
+          ]
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.praia",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            {
+              "name": "constant.character.escape.praia",
+              "match": "\\\\[ntr\\\\\"'/%]"
+            },
+            {
+              "name": "meta.interpolation.praia",
+              "begin": "%\\{",
+              "end": "\\}",
+              "beginCaptures": { "0": { "name": "punctuation.section.interpolation.begin.praia" } },
+              "endCaptures": { "0": { "name": "punctuation.section.interpolation.end.praia" } },
+              "patterns": [{ "include": "source.praia" }]
+            }
+          ]
+        },
+        {
+          "name": "string.quoted.single.praia",
+          "begin": "'",
+          "end": "'",
+          "patterns": [
+            {
+              "name": "constant.character.escape.praia",
+              "match": "\\\\[ntr\\\\\"'/%]"
+            },
+            {
+              "name": "meta.interpolation.praia",
+              "begin": "%\\{",
+              "end": "\\}",
+              "beginCaptures": { "0": { "name": "punctuation.section.interpolation.begin.praia" } },
+              "endCaptures": { "0": { "name": "punctuation.section.interpolation.end.praia" } },
+              "patterns": [{ "include": "source.praia" }]
+            }
+          ]
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.float.praia",
+          "match": "\\b\\d+\\.\\d+\\b"
+        },
+        {
+          "name": "constant.numeric.integer.praia",
+          "match": "\\b\\d+\\b"
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "storage.type.praia",
+          "match": "\\b(let)\\b"
+        },
+        {
+          "name": "storage.type.function.praia",
+          "match": "\\b(func)\\b"
+        },
+        {
+          "name": "storage.type.class.praia",
+          "match": "\\b(class)\\b"
+        },
+        {
+          "name": "storage.modifier.praia",
+          "match": "\\b(extends)\\b"
+        },
+        {
+          "name": "keyword.control.praia",
+          "match": "\\b(if|elif|else|while|for|in|break|continue)\\b"
+        },
+        {
+          "name": "keyword.control.flow.praia",
+          "match": "\\b(return)\\b"
+        },
+        {
+          "name": "keyword.control.exception.praia",
+          "match": "\\b(try|catch|throw|ensure)\\b"
+        },
+        {
+          "name": "keyword.control.async.praia",
+          "match": "\\b(async|await)\\b"
+        },
+        {
+          "name": "keyword.control.import.praia",
+          "match": "\\b(use|export)\\b"
+        },
+        {
+          "name": "storage.type.function.lambda.praia",
+          "match": "\\b(lam)\\b"
+        },
+        {
+          "name": "variable.language.praia",
+          "match": "\\b(this|super)\\b"
+        }
+      ]
+    },
+    "constants": {
+      "patterns": [
+        {
+          "name": "constant.language.boolean.praia",
+          "match": "\\b(true|false)\\b"
+        },
+        {
+          "name": "constant.language.null.praia",
+          "match": "\\b(nil)\\b"
+        }
+      ]
+    },
+    "builtins": {
+      "patterns": [
+        {
+          "name": "support.function.praia",
+          "match": "\\b(print|len|push|pop|type|str|num|fromCharCode|sort|filter|map|each|keys|values|Lock)\\b"
+        }
+      ]
+    },
+    "namespaces": {
+      "patterns": [
+        {
+          "name": "support.class.praia",
+          "match": "\\b(sys|http|json|yaml|net|bytes|crypto|random|time|math|sqlite)\\b"
+        }
+      ]
+    },
+    "operators": {
+      "patterns": [
+        {
+          "name": "keyword.operator.pipe.praia",
+          "match": "\\|>"
+        },
+        {
+          "name": "keyword.operator.logical.praia",
+          "match": "&&|\\|\\|"
+        },
+        {
+          "name": "keyword.operator.bitwise.shift.praia",
+          "match": "<<|>>"
+        },
+        {
+          "name": "keyword.operator.comparison.praia",
+          "match": "==|!=|<=|>=|<|>"
+        },
+        {
+          "name": "keyword.operator.increment.praia",
+          "match": "\\+\\+|--"
+        },
+        {
+          "name": "keyword.operator.arithmetic.praia",
+          "match": "[-+*/%]"
+        },
+        {
+          "name": "keyword.operator.bitwise.praia",
+          "match": "[&|^~]"
+        },
+        {
+          "name": "keyword.operator.logical.not.praia",
+          "match": "!"
+        },
+        {
+          "name": "keyword.operator.assignment.praia",
+          "match": "="
+        },
+        {
+          "name": "keyword.operator.range.praia",
+          "match": "\\.\\."
+        }
+      ]
+    },
+    "classes": {
+      "patterns": [
+        {
+          "match": "\\b(class)\\s+([a-zA-Z_]\\w*)",
+          "captures": {
+            "1": { "name": "storage.type.class.praia" },
+            "2": { "name": "entity.name.class.praia" }
+          }
+        },
+        {
+          "match": "\\b(extends)\\s+([a-zA-Z_]\\w*)",
+          "captures": {
+            "1": { "name": "storage.modifier.praia" },
+            "2": { "name": "entity.other.inherited-class.praia" }
+          }
+        }
+      ]
+    },
+    "functions": {
+      "patterns": [
+        {
+          "match": "\\b(init)\\s*(?=\\()",
+          "captures": {
+            "1": { "name": "entity.name.function.constructor.praia" }
+          }
+        },
+        {
+          "match": "\\b(func)\\s+([a-zA-Z_]\\w*)",
+          "captures": {
+            "1": { "name": "storage.type.function.praia" },
+            "2": { "name": "entity.name.function.praia" }
+          }
+        },
+        {
+          "match": "\\b([a-zA-Z_]\\w*)\\s*(?=\\()",
+          "captures": {
+            "1": { "name": "variable.function.praia" }
+          }
+        }
+      ]
+    },
+    "punctuation": {
+      "patterns": [
+        {
+          "name": "punctuation.praia",
+          "match": "[{}()\\[\\],;:]"
+        },
+        {
+          "name": "punctuation.accessor.praia",
+          "match": "\\."
+        }
+      ]
+    }
+  }
+}

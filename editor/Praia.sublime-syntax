@@ -43,7 +43,25 @@ contexts:
         - match: '"'
           scope: punctuation.definition.string.end.praia
           pop: true
-        - match: \\[ntr\\"/%]
+        - match: \\[ntr\\\"'/%]
+          scope: constant.character.escape.praia
+        - match: '%\{'
+          scope: punctuation.section.interpolation.begin.praia
+          push:
+            - clear_scopes: 1
+            - meta_scope: meta.interpolation.praia
+            - match: '\}'
+              scope: punctuation.section.interpolation.end.praia
+              pop: true
+            - include: main
+    - match: "'"
+      scope: punctuation.definition.string.begin.praia
+      push:
+        - meta_scope: string.quoted.single.praia
+        - match: "'"
+          scope: punctuation.definition.string.end.praia
+          pop: true
+        - match: \\[ntr\\\"'/%]
           scope: constant.character.escape.praia
         - match: '%\{'
           scope: punctuation.section.interpolation.begin.praia

@@ -1,0 +1,28 @@
+{
+  "name": "praia-lang",
+  "displayName": "Praia",
+  "description": "Syntax highlighting for the Praia programming language",
+  "version": "0.1.0",
+  "publisher": "praia-lang",
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": ["Programming Languages"],
+  "contributes": {
+    "languages": [
+      {
+        "id": "praia",
+        "aliases": ["Praia", "praia"],
+        "extensions": [".praia"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "praia",
+        "scopeName": "source.praia",
+        "path": "./syntaxes/praia.tmLanguage.json"
+      }
+    ]
+  }
+}
