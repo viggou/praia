@@ -4,6 +4,7 @@
 #include "chunk.h"
 #include "compiler.h"
 #include <memory>
+#include <set>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -74,6 +75,7 @@ public:
 
     // Setup
     void defineNative(const std::string& name, Value value);
+    void setCurrentFile(const std::string& path) { currentFile = path; }
 
 private:
     Result execute();
@@ -112,6 +114,15 @@ private:
     // Closures created during execution (for cleanup)
     std::vector<ObjClosure*> allClosures;
     std::vector<ObjUpvalue*> allUpvalues;
+
+    // Module system
+    std::string currentFile;
+    std::unordered_map<std::string, Value> grainCache;
+    std::set<std::string> importedInCurrentFile;
+    std::vector<std::vector<StmtPtr>> grainAsts;
+
+    Value loadGrain(const std::string& path, int line);
+    std::string resolveGrainPath(const std::string& path, int line);
 
     // Helpers
     uint8_t readByte();

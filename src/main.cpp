@@ -508,6 +508,7 @@ int main(int argc, char* argv[]) {
             extern void vmRegisterNatives(VM& vm);
             VM vm;
             vmRegisterNatives(vm);
+            vm.setCurrentFile(filename);
             auto result = vm.run(script);
             return result == VM::Result::OK ? 0 : 1;
         } else {

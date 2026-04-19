@@ -691,5 +691,42 @@ void Compiler::compileEnsureStmt(const EnsureStmt* stmt) {
 
     patchJump(endJump);
 }
-void Compiler::compileUseStmt(const UseStmt* stmt) { error("use not yet in VM", stmt->line); }
-void Compiler::compileExportStmt(const ExportStmt* stmt) { error("export not yet in VM", stmt->line); }
+void Compiler::compileUseStmt(const UseStmt* stmt) {
+    // OP_IMPORT [path_idx] [alias_idx]
+    // VM resolves, compiles, and executes the grain, pushes the exports map
+    uint16_t pathIdx = identifierConstant(stmt->path);
+    uint16_t aliasIdx = identifierConstant(stmt->alias);
+    emit(OpCode::OP_IMPORT, stmt->line);
+    emitU16(pathIdx, stmt->line);
+    emitU16(aliasIdx, stmt->line);
+
+    // The import pushes the exports map — define as a variable
+    if (current->scopeDepth > 0) {
+        addLocal(stmt->alias);
+    } else {
+        emit(OpCode::OP_DEFINE_GLOBAL, stmt->line);
+        emitU16(identifierConstant(stmt->alias), stmt->line);
+    }
+}
+
+void Compiler::compileExportStmt(const ExportStmt* stmt) {
+    // Build a map from exported names, then signal export
+    // Push each name as key and its value
+    for (auto& name : stmt->names) {
+        emitConstant(Value(name), stmt->line); // key
+
+        // Look up the name
+        int slot = resolveLocal(current, name);
+        if (slot != -1) {
+            emit(OpCode::OP_GET_LOCAL, stmt->line);
+            emitU16(static_cast<uint16_t>(slot), stmt->line);
+        } else {
+            emit(OpCode::OP_GET_GLOBAL, stmt->line);
+            emitU16(identifierConstant(name), stmt->line);
+        }
+    }
+    emit(OpCode::OP_BUILD_MAP, stmt->line);
+    emitU16(static_cast<uint16_t>(stmt->names.size()), stmt->line);
+    emit(OpCode::OP_EXPORT, stmt->line);
+    emit(static_cast<uint8_t>(0), stmt->line); // unused count byte
+}

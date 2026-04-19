@@ -130,6 +130,7 @@ public:
 
     // Public so PraiaFunction::call can use it
     void executeBlock(const BlockStmt* block, std::shared_ptr<Environment> env);
+    std::shared_ptr<Environment> getGlobals() { return globals; }
 
 private:
     Value evaluate(const Expr* expr);

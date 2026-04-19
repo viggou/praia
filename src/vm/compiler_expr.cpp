@@ -352,5 +352,18 @@ void Compiler::compileSuperExpr(const SuperExpr* expr) {
     emit(OpCode::OP_GET_SUPER, expr->line);
     emitU16(nameIdx, expr->line);
 }
-void Compiler::compileAsyncExpr(const AsyncExpr* expr) { error("async not yet in VM", expr->line); }
-void Compiler::compileAwaitExpr(const AwaitExpr* expr) { error("await not yet in VM", expr->line); }
+void Compiler::compileAsyncExpr(const AsyncExpr* expr) {
+    // async funcCall(args) — compile the call normally, but use OP_ASYNC instead of OP_CALL
+    auto* call = dynamic_cast<const CallExpr*>(expr->expr.get());
+    if (!call) { error("async requires a function call", expr->line); return; }
+
+    compileExpr(call->callee.get());
+    for (auto& arg : call->args) compileExpr(arg.get());
+    emit(OpCode::OP_ASYNC, expr->line);
+    emit(static_cast<uint8_t>(call->args.size()), expr->line);
+}
+
+void Compiler::compileAwaitExpr(const AwaitExpr* expr) {
+    compileExpr(expr->expr.get());
+    emit(OpCode::OP_AWAIT, expr->line);
+}
