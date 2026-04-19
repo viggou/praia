@@ -110,8 +110,22 @@ void Lexer::scanToken() {
             line++;
             break;
 
-        case '"': string('"'); break;
-        case '\'': string('\''); break;
+        case '"':
+            if (peek() == '"' && peekNext() == '"') {
+                advance(); advance(); // consume the other two quotes
+                tripleString('"');
+            } else {
+                string('"');
+            }
+            break;
+        case '\'':
+            if (peek() == '\'' && peekNext() == '\'') {
+                advance(); advance();
+                tripleString('\'');
+            } else {
+                string('\'');
+            }
+            break;
 
         default:
             if (std::isdigit(c)) {
@@ -244,6 +258,86 @@ void Lexer::string(char quote) {
     }
 
     advance(); // consume closing quote
+
+    if (hasInterp) {
+        tokens.push_back({TokenType::INTERP_END, value, line});
+    } else {
+        tokens.push_back({TokenType::STRING, value, line});
+    }
+}
+
+void Lexer::tripleString(char quote) {
+    // Skip the first newline after opening triple-quote
+    if (peek() == '\n') { advance(); line++; }
+
+    std::string value;
+    bool hasInterp = false;
+    bool firstInterp = true;
+
+    while (!isAtEnd()) {
+        // Check for closing triple-quote
+        if (peek() == quote && peekNext() == quote &&
+            current + 2 < static_cast<int>(source.size()) && source[current + 2] == quote) {
+            advance(); advance(); advance(); // consume closing triple
+            break;
+        }
+
+        if (peek() == '\n') line++;
+
+        // String interpolation
+        if (peek() == '%' && peekNext() == '{') {
+            hasInterp = true;
+            advance(); advance();
+            TokenType partType = firstInterp ? TokenType::INTERP_START : TokenType::INTERP_MID;
+            tokens.push_back({partType, value, line});
+            value.clear();
+            firstInterp = false;
+
+            std::string expr;
+            int depth = 1;
+            while (depth > 0 && !isAtEnd()) {
+                char ch = peek();
+                if (ch == '{') depth++;
+                if (ch == '}') depth--;
+                if (depth > 0) {
+                    if (ch == '\n') line++;
+                    expr += advance();
+                } else {
+                    advance();
+                }
+            }
+
+            Lexer subLexer(expr);
+            auto exprTokens = subLexer.tokenize();
+            for (auto& t : exprTokens) {
+                if (t.type != TokenType::EOF_TOKEN) {
+                    t.line = line;
+                    tokens.push_back(t);
+                }
+            }
+            if (subLexer.hasError()) hadError = true;
+            continue;
+        }
+
+        // Escape sequences
+        if (peek() == '\\') {
+            advance();
+            if (isAtEnd()) { error("Unterminated escape sequence"); return; }
+            char escaped = advance();
+            switch (escaped) {
+                case 'n':  value += '\n'; break;
+                case 't':  value += '\t'; break;
+                case '\\': value += '\\'; break;
+                case '"':  value += '"';  break;
+                case '\'': value += '\''; break;
+                case '%':  value += '%';  break;
+                default: value += escaped; break;
+            }
+            continue;
+        }
+
+        value += advance();
+    }
 
     if (hasInterp) {
         tokens.push_back({TokenType::INTERP_END, value, line});

@@ -48,8 +48,15 @@ Value PraiaMethod::call(Interpreter& interp, const std::vector<Value>& args) {
             std::static_pointer_cast<Callable>(definingClass->superclass)));
     }
 
-    for (size_t i = 0; i < params.size(); i++)
-        methodEnv->define(params[i], i < args.size() ? args[i] : Value());
+    for (size_t i = 0; i < params.size(); i++) {
+        if (i < args.size()) {
+            methodEnv->define(params[i], args[i]);
+        } else if (decl && i < decl->defaults.size() && decl->defaults[i]) {
+            methodEnv->define(params[i], interp.evaluate(decl->defaults[i].get()));
+        } else {
+            methodEnv->define(params[i], Value());
+        }
+    }
 
     auto prevEnv = interp.env;
     interp.env = methodEnv;
@@ -71,8 +78,15 @@ Value PraiaMethod::call(Interpreter& interp, const std::vector<Value>& args) {
 
 Value PraiaLambda::call(Interpreter& interp, const std::vector<Value>& args) {
     auto lambdaEnv = std::make_shared<Environment>(closure);
-    for (size_t i = 0; i < params.size(); i++)
-        lambdaEnv->define(params[i], i < args.size() ? args[i] : Value());
+    for (size_t i = 0; i < params.size(); i++) {
+        if (i < args.size()) {
+            lambdaEnv->define(params[i], args[i]);
+        } else if (i < expr->defaults.size() && expr->defaults[i]) {
+            lambdaEnv->define(params[i], interp.evaluate(expr->defaults[i].get()));
+        } else {
+            lambdaEnv->define(params[i], Value());
+        }
+    }
 
     auto prevEnv = interp.env;
     interp.env = lambdaEnv;
@@ -92,8 +106,15 @@ Value PraiaLambda::call(Interpreter& interp, const std::vector<Value>& args) {
 
 Value PraiaFunction::call(Interpreter& interp, const std::vector<Value>& args) {
     auto funcEnv = std::make_shared<Environment>(closure);
-    for (size_t i = 0; i < params.size(); i++)
-        funcEnv->define(params[i], i < args.size() ? args[i] : Value());
+    for (size_t i = 0; i < params.size(); i++) {
+        if (i < args.size()) {
+            funcEnv->define(params[i], args[i]);
+        } else if (defaults && i < defaults->size() && (*defaults)[i]) {
+            funcEnv->define(params[i], interp.evaluate((*defaults)[i].get()));
+        } else {
+            funcEnv->define(params[i], Value());
+        }
+    }
 
     try {
         interp.executeBlock(body, funcEnv);

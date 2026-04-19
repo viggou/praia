@@ -69,7 +69,8 @@ struct InterpolatedStringExpr : Expr {
 // lam{ params in body }
 struct LambdaExpr : Expr {
     std::vector<std::string> params;
-    std::vector<StmtPtr> body; // statements inside the lambda
+    std::vector<ExprPtr> defaults; // parallel to params, nullptr if no default
+    std::vector<StmtPtr> body;
 };
 
 struct ArrayLiteralExpr : Expr {
@@ -179,6 +180,7 @@ struct ForInStmt : Stmt {
 struct FuncStmt : Stmt {
     std::string name;
     std::vector<std::string> params;
+    std::vector<ExprPtr> defaults; // parallel to params, nullptr if no default
     StmtPtr body;
 };
 
@@ -189,6 +191,7 @@ struct ReturnStmt : Stmt {
 struct ClassMethod {
     std::string name;
     std::vector<std::string> params;
+    std::vector<ExprPtr> defaults; // parallel to params, nullptr if no default
     std::vector<StmtPtr> body;
     int line = 0;
 };

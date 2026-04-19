@@ -203,6 +203,22 @@ print("2 + 2 = %{2 + 2}")
 // 2 + 2 = 4
 ```
 
+### Multiline Strings
+
+Triple-quoted strings (`"""` or `'''`) span multiple lines. The first newline after the opening quotes is stripped.
+
+```
+let html = """
+<html>
+  <body>
+    <h1>%{title}</h1>
+  </body>
+</html>
+"""
+```
+
+Interpolation and escape sequences work inside triple-quoted strings.
+
 ### String Indexing
 
 ```
@@ -482,6 +498,33 @@ func add(a, b) {
 }
 
 print(add(2, 3))    // 5
+```
+
+### Default parameters
+
+Parameters can have default values. Non-default parameters must come before default ones.
+
+```
+func greet(name, greeting = "Hello") {
+    print("%{greeting}, %{name}!")
+}
+
+greet("Ada")              // Hello, Ada!
+greet("Ada", "Welcome")   // Welcome, Ada!
+```
+
+Defaults also work in lambdas and class methods:
+
+```
+let inc = lam{ x, step = 1 in x + step }
+print(inc(10))       // 11
+print(inc(10, 5))    // 15
+
+class Server {
+    init(port = 8080) {
+        this.port = port
+    }
+}
 ```
 
 ### Implicit nil Return

@@ -54,10 +54,20 @@ StmtPtr Parser::funcStatement() {
     consume(TokenType::LPAREN, "Expected '(' after function name");
 
     std::vector<std::string> params;
+    std::vector<ExprPtr> defaults;
+    bool seenDefault = false;
     if (!check(TokenType::RPAREN)) {
         do {
             params.push_back(
                 consume(TokenType::IDENTIFIER, "Expected parameter name").lexeme);
+            if (match(TokenType::ASSIGN)) {
+                defaults.push_back(expression());
+                seenDefault = true;
+            } else {
+                if (seenDefault)
+                    throw error(previous(), "Non-default parameter after default parameter");
+                defaults.push_back(nullptr);
+            }
         } while (match(TokenType::COMMA));
     }
     consume(TokenType::RPAREN, "Expected ')' after parameters");
@@ -67,6 +77,7 @@ StmtPtr Parser::funcStatement() {
     stmt->line = name.line;
     stmt->name = name.lexeme;
     stmt->params = std::move(params);
+    stmt->defaults = std::move(defaults);
     stmt->body = block();
     return stmt;
 }
@@ -89,10 +100,19 @@ StmtPtr Parser::classStatement() {
         method.name = consume(TokenType::IDENTIFIER, "Expected method name").lexeme;
         consume(TokenType::LPAREN, "Expected '(' after method name");
 
+        bool seenMethodDefault = false;
         if (!check(TokenType::RPAREN)) {
             do {
                 method.params.push_back(
                     consume(TokenType::IDENTIFIER, "Expected parameter name").lexeme);
+                if (match(TokenType::ASSIGN)) {
+                    method.defaults.push_back(expression());
+                    seenMethodDefault = true;
+                } else {
+                    if (seenMethodDefault)
+                        throw error(previous(), "Non-default parameter after default parameter");
+                    method.defaults.push_back(nullptr);
+                }
             } while (match(TokenType::COMMA));
         }
         consume(TokenType::RPAREN, "Expected ')' after parameters");
@@ -737,10 +757,20 @@ ExprPtr Parser::primary() {
 
         // Parse optional params before 'in'
         std::vector<std::string> params;
+        std::vector<ExprPtr> defaults;
+        bool seenLamDefault = false;
         if (!check(TokenType::IN)) {
             do {
                 params.push_back(
                     consume(TokenType::IDENTIFIER, "Expected parameter name").lexeme);
+                if (match(TokenType::ASSIGN)) {
+                    defaults.push_back(expression());
+                    seenLamDefault = true;
+                } else {
+                    if (seenLamDefault)
+                        throw error(previous(), "Non-default parameter after default parameter");
+                    defaults.push_back(nullptr);
+                }
             } while (match(TokenType::COMMA));
         }
         consume(TokenType::IN, "Expected 'in' in lambda");
@@ -749,6 +779,7 @@ ExprPtr Parser::primary() {
         auto lam = std::make_unique<LambdaExpr>();
         lam->line = ln;
         lam->params = std::move(params);
+        lam->defaults = std::move(defaults);
         while (!check(TokenType::RBRACE) && !isAtEnd()) {
             lam->body.push_back(statement());
         }

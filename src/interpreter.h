@@ -31,6 +31,7 @@ struct ThrowSignal {
 struct PraiaFunction : Callable {
     std::string funcName;
     std::vector<std::string> params;
+    const std::vector<ExprPtr>* defaults = nullptr; // from FuncStmt, nullptr entries = no default
     const BlockStmt* body;
     std::shared_ptr<Environment> closure;
 
@@ -116,6 +117,7 @@ public:
 };
 
 class Interpreter {
+    friend struct PraiaFunction;
     friend struct PraiaLambda;
     friend struct PraiaMethod;
 public:

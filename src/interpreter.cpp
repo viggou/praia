@@ -299,6 +299,7 @@ void Interpreter::execute(const Stmt* stmt) {
         auto func = std::make_shared<PraiaFunction>();
         func->funcName = s->name;
         func->params = s->params;
+        func->defaults = &s->defaults;
         func->body = static_cast<const BlockStmt*>(s->body.get());
         func->closure = env;
         env->define(s->name, Value(func));

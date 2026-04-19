@@ -21,6 +21,7 @@ private:
 
     void number();
     void string(char quote);
+    void tripleString(char quote);
     void identifier();
     void blockComment();
 
