@@ -73,4 +73,6 @@ private:
     std::vector<Token> tokens;
     int current = 0;
     bool hadError = false;
+    int loopDepth = 0;
+    int functionDepth = 0;
 };

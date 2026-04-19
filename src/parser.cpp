@@ -131,7 +131,9 @@ StmtPtr Parser::funcStatement() {
     stmt->name = name.lexeme;
     stmt->params = std::move(params);
     stmt->defaults = std::move(defaults);
+    functionDepth++;
     stmt->body = block();
+    functionDepth--;
     return stmt;
 }
 
@@ -171,9 +173,11 @@ StmtPtr Parser::classStatement() {
         consume(TokenType::RPAREN, "Expected ')' after parameters");
         consume(TokenType::LBRACE, "Expected '{' before method body");
 
+        functionDepth++;
         while (!check(TokenType::RBRACE) && !isAtEnd()) {
             method.body.push_back(statement());
         }
+        functionDepth--;
         consume(TokenType::RBRACE, "Expected '}' after method body");
 
         methods.push_back(std::move(method));
@@ -258,7 +262,9 @@ StmtPtr Parser::whileStatement() {
     auto stmt = std::make_unique<WhileStmt>();
     stmt->line = ln;
     stmt->condition = std::move(condition);
+    loopDepth++;
     stmt->body = block();
+    loopDepth--;
     return stmt;
 }
 
@@ -279,7 +285,9 @@ StmtPtr Parser::forStatement() {
         stmt->varName = var.lexeme;
         stmt->start = std::move(iterExpr);
         stmt->end = std::move(endExpr);
+        loopDepth++;
         stmt->body = block();
+        loopDepth--;
         return stmt;
     }
 
@@ -290,12 +298,17 @@ StmtPtr Parser::forStatement() {
     stmt->line = ln;
     stmt->varName = var.lexeme;
     stmt->iterable = std::move(iterExpr);
+    loopDepth++;
     stmt->body = block();
+    loopDepth--;
     return stmt;
 }
 
 StmtPtr Parser::returnStatement() {
-    int ln = previous().line;
+    Token tok = previous();
+    if (functionDepth == 0)
+        throw error(tok, "'return' outside of function");
+    int ln = tok.line;
     auto stmt = std::make_unique<ReturnStmt>();
     stmt->line = ln;
 
@@ -328,14 +341,20 @@ StmtPtr Parser::returnStatement() {
 }
 
 StmtPtr Parser::breakStatement() {
+    Token tok = previous();
+    if (loopDepth == 0)
+        throw error(tok, "'break' outside of loop");
     auto stmt = std::make_unique<BreakStmt>();
-    stmt->line = previous().line;
+    stmt->line = tok.line;
     return stmt;
 }
 
 StmtPtr Parser::continueStatement() {
+    Token tok = previous();
+    if (loopDepth == 0)
+        throw error(tok, "'continue' outside of loop");
     auto stmt = std::make_unique<ContinueStmt>();
-    stmt->line = previous().line;
+    stmt->line = tok.line;
     return stmt;
 }
 
@@ -921,9 +940,11 @@ ExprPtr Parser::primary() {
         lam->line = ln;
         lam->params = std::move(params);
         lam->defaults = std::move(defaults);
+        functionDepth++;
         while (!check(TokenType::RBRACE) && !isAtEnd()) {
             lam->body.push_back(statement());
         }
+        functionDepth--;
         consume(TokenType::RBRACE, "Expected '}' after lambda body");
 
         // If the body is a single expression statement, make it auto-return

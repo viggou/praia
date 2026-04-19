@@ -117,6 +117,7 @@ void Lexer::scanToken() {
         case ' ':
         case '\r':
         case '\t':
+        case ';':
             break;
         case '\n':
             line++;
