@@ -68,6 +68,31 @@ void vmRegisterNatives(VM& vm) {
     // NativeFunction callables (e.g., built-in functions). For VM closures,
     // users should use for-in loops.
 
+    // Convert any iterable to an array for for-in loops.
+    // Arrays pass through, maps become [{key, value}, ...], strings become char arrays.
+    vm.defineNative("__iterEntries", makeNat("__iterEntries", 1,
+        [](const std::vector<Value>& args) -> Value {
+            const Value& v = args[0];
+            if (v.isArray()) return v;
+            if (v.isMap()) {
+                auto arr = std::make_shared<PraiaArray>();
+                for (auto& [k, val] : v.asMap()->entries) {
+                    auto entry = std::make_shared<PraiaMap>();
+                    entry->entries["key"] = Value(k);
+                    entry->entries["value"] = val;
+                    arr->elements.push_back(Value(entry));
+                }
+                return Value(arr);
+            }
+            if (v.isString()) {
+                auto arr = std::make_shared<PraiaArray>();
+                for (char c : v.asString())
+                    arr->elements.push_back(Value(std::string(1, c)));
+                return Value(arr);
+            }
+            return Value(); // nil for non-iterables
+        }));
+
     vm.defineNative("__arraySlice", makeNat("__arraySlice", 2,
         [](const std::vector<Value>& args) -> Value {
             if (!args[0].isArray() || !args[1].isNumber()) return Value();

@@ -360,7 +360,7 @@ void Compiler::compileForStmt(const ForStmt* stmt) {
 
 void Compiler::compileForInStmt(const ForInStmt* stmt) {
     // Compiled as:
-    // let __iter__ = <iterable>
+    // let __iter__ = __iterEntries(<iterable>)   // normalizes maps/strings to arrays
     // let __idx__ = 0
     // while (__idx__ < len(__iter__)) {
     //     let varName = __iter__[__idx__]
@@ -370,8 +370,13 @@ void Compiler::compileForInStmt(const ForInStmt* stmt) {
 
     beginScope();
 
-    // Store iterable
+    // Normalize iterable via __iterEntries (arrays pass through,
+    // maps become [{key,value},...], strings become char arrays)
+    emit(OpCode::OP_GET_GLOBAL, stmt->line);
+    emitU16(identifierConstant("__iterEntries"), stmt->line);
     compileExpr(stmt->iterable.get());
+    emit(OpCode::OP_CALL, stmt->line);
+    emit(1, stmt->line);
     addLocal("__iter__");
     int iterSlot = resolveLocal(current, "__iter__");
 
