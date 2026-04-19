@@ -424,6 +424,129 @@ Interpreter::Interpreter() {
             return Value(std::move(result));
         }));
 
+    // ── Response helpers ──
+
+    // http.json(obj, status?) → {status, body, headers}
+    httpMap->entries["json"] = Value(makeNative("http.json", -1,
+        [](const std::vector<Value>& args) -> Value {
+            if (args.empty())
+                throw RuntimeError("http.json() requires a value", 0);
+            int status = 200;
+            if (args.size() > 1 && args[1].isNumber())
+                status = static_cast<int>(args[1].asNumber());
+            auto res = std::make_shared<PraiaMap>();
+            res->entries["status"] = Value(static_cast<double>(status));
+            res->entries["body"] = Value(jsonStringify(args[0], 0, 0));
+            auto hdrs = std::make_shared<PraiaMap>();
+            hdrs->entries["Content-Type"] = Value("application/json");
+            res->entries["headers"] = Value(hdrs);
+            return Value(res);
+        }));
+
+    // http.text(str, status?) → {status, body, headers}
+    httpMap->entries["text"] = Value(makeNative("http.text", -1,
+        [](const std::vector<Value>& args) -> Value {
+            if (args.empty())
+                throw RuntimeError("http.text() requires a string", 0);
+            int status = 200;
+            if (args.size() > 1 && args[1].isNumber())
+                status = static_cast<int>(args[1].asNumber());
+            auto res = std::make_shared<PraiaMap>();
+            res->entries["status"] = Value(static_cast<double>(status));
+            res->entries["body"] = Value(args[0].toString());
+            auto hdrs = std::make_shared<PraiaMap>();
+            hdrs->entries["Content-Type"] = Value("text/plain");
+            res->entries["headers"] = Value(hdrs);
+            return Value(res);
+        }));
+
+    // http.html(str, status?) → {status, body, headers}
+    httpMap->entries["html"] = Value(makeNative("http.html", -1,
+        [](const std::vector<Value>& args) -> Value {
+            if (args.empty())
+                throw RuntimeError("http.html() requires a string", 0);
+            int status = 200;
+            if (args.size() > 1 && args[1].isNumber())
+                status = static_cast<int>(args[1].asNumber());
+            auto res = std::make_shared<PraiaMap>();
+            res->entries["status"] = Value(static_cast<double>(status));
+            res->entries["body"] = Value(args[0].toString());
+            auto hdrs = std::make_shared<PraiaMap>();
+            hdrs->entries["Content-Type"] = Value("text/html; charset=utf-8");
+            res->entries["headers"] = Value(hdrs);
+            return Value(res);
+        }));
+
+    // http.redirect(url, status?) → {status, body, headers}
+    httpMap->entries["redirect"] = Value(makeNative("http.redirect", -1,
+        [](const std::vector<Value>& args) -> Value {
+            if (args.empty() || !args[0].isString())
+                throw RuntimeError("http.redirect() requires a URL string", 0);
+            int status = 302;
+            if (args.size() > 1 && args[1].isNumber())
+                status = static_cast<int>(args[1].asNumber());
+            auto res = std::make_shared<PraiaMap>();
+            res->entries["status"] = Value(static_cast<double>(status));
+            res->entries["body"] = Value(std::string(""));
+            auto hdrs = std::make_shared<PraiaMap>();
+            hdrs->entries["Location"] = Value(args[0].asString());
+            res->entries["headers"] = Value(hdrs);
+            return Value(res);
+        }));
+
+    // http.file(path, status?) → {status, body, headers} with MIME detection
+    httpMap->entries["file"] = Value(makeNative("http.file", -1,
+        [](const std::vector<Value>& args) -> Value {
+            if (args.empty() || !args[0].isString())
+                throw RuntimeError("http.file() requires a file path", 0);
+            auto& path = args[0].asString();
+            int status = 200;
+            if (args.size() > 1 && args[1].isNumber())
+                status = static_cast<int>(args[1].asNumber());
+
+            std::ifstream f(path, std::ios::binary);
+            if (!f.is_open())
+                throw RuntimeError("Cannot read file: " + path, 0);
+            std::stringstream ss;
+            ss << f.rdbuf();
+
+            // MIME type detection from extension
+            std::string mime = "application/octet-stream";
+            auto dot = path.rfind('.');
+            if (dot != std::string::npos) {
+                std::string ext = path.substr(dot);
+                std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+                if (ext == ".html" || ext == ".htm") mime = "text/html; charset=utf-8";
+                else if (ext == ".css")  mime = "text/css";
+                else if (ext == ".js")   mime = "application/javascript";
+                else if (ext == ".json") mime = "application/json";
+                else if (ext == ".xml")  mime = "application/xml";
+                else if (ext == ".txt")  mime = "text/plain";
+                else if (ext == ".csv")  mime = "text/csv";
+                else if (ext == ".svg")  mime = "image/svg+xml";
+                else if (ext == ".png")  mime = "image/png";
+                else if (ext == ".jpg" || ext == ".jpeg") mime = "image/jpeg";
+                else if (ext == ".gif")  mime = "image/gif";
+                else if (ext == ".ico")  mime = "image/x-icon";
+                else if (ext == ".webp") mime = "image/webp";
+                else if (ext == ".woff") mime = "font/woff";
+                else if (ext == ".woff2") mime = "font/woff2";
+                else if (ext == ".pdf")  mime = "application/pdf";
+                else if (ext == ".zip")  mime = "application/zip";
+                else if (ext == ".mp3")  mime = "audio/mpeg";
+                else if (ext == ".mp4")  mime = "video/mp4";
+                else if (ext == ".wasm") mime = "application/wasm";
+            }
+
+            auto res = std::make_shared<PraiaMap>();
+            res->entries["status"] = Value(static_cast<double>(status));
+            res->entries["body"] = Value(ss.str());
+            auto hdrs = std::make_shared<PraiaMap>();
+            hdrs->entries["Content-Type"] = Value(mime);
+            res->entries["headers"] = Value(hdrs);
+            return Value(res);
+        }));
+
     globals->define("http", Value(httpMap));
 
     // ── json namespace ──

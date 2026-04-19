@@ -1426,6 +1426,42 @@ app.get("/search", lam{ req, params in
 })
 ```
 
+### Response Helpers
+
+Instead of manually building response maps, use these helpers:
+
+| Helper | Description |
+|--------|-------------|
+| `http.json(obj, status?)` | JSON response with `application/json` |
+| `http.text(str, status?)` | Plain text response |
+| `http.html(str, status?)` | HTML response with `charset=utf-8` |
+| `http.redirect(url, status?)` | Redirect (302 by default) |
+| `http.file(path, status?)` | Serve a file with auto-detected MIME type |
+
+```
+// Before
+return {status: 200, body: json.stringify(data), headers: {"Content-Type": "application/json"}}
+
+// After
+return http.json(data)
+return http.json({error: "not found"}, 404)
+return http.text("hello")
+return http.html("<h1>Hi</h1>")
+return http.redirect("/login")
+return http.redirect("/new-url", 301)    // permanent redirect
+return http.file("public/style.css")     // auto-detects text/css
+```
+
+`http.file()` detects MIME types for: html, css, js, json, xml, txt, csv, svg, png, jpg, gif, ico, webp, woff, woff2, pdf, zip, mp3, mp4, wasm.
+
+#### Static file serving
+
+```
+app.get("/static/:filename", lam{ req, params in
+    return http.file("public/" + params.filename)
+})
+```
+
 ### URL Encoding
 
 | Function | Description |
