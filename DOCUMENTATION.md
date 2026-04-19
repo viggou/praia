@@ -2195,6 +2195,9 @@ hello world
 ./praia                             # REPL
 ./praia script.praia                # run a script
 ./praia script.praia arg1 arg2      # run with arguments (sys.args)
+./praia -c 'print("hello")'        # run a one-liner
+./praia -c 'print(sys.args)' a b   # one-liner with arguments
+./praia test                        # run test suite in tests/
 ./praia --tokens script.praia       # show lexer tokens
 ./praia --ast script.praia          # show parse tree
 ```

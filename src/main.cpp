@@ -298,20 +298,46 @@ static void repl(bool showTokens, bool showAst) {
         if (line == "exit") break;
         if (line.empty()) continue;
 
-        // Multi-line: keep reading while braces are unbalanced
-        int braces = 0;
-        for (char c : line) {
-            if (c == '{') braces++;
-            if (c == '}') braces--;
-        }
+        // Multi-line: keep reading while braces are unbalanced.
+        // Tracks braces correctly by skipping strings and comments.
+        auto countBraces = [](const std::string& s) -> int {
+            int depth = 0;
+            bool inString = false;
+            bool inLineComment = false;
+            bool inBlockComment = false;
+            for (size_t i = 0; i < s.size(); i++) {
+                char c = s[i];
+                char next = (i + 1 < s.size()) ? s[i + 1] : '\0';
+
+                if (inLineComment) {
+                    if (c == '\n') inLineComment = false;
+                    continue;
+                }
+                if (inBlockComment) {
+                    if (c == '*' && next == '/') { inBlockComment = false; i++; }
+                    continue;
+                }
+                if (inString) {
+                    if (c == '\\') { i++; continue; } // skip escaped char
+                    if (c == '"') inString = false;
+                    continue;
+                }
+
+                if (c == '/' && next == '/') { inLineComment = true; i++; continue; }
+                if (c == '/' && next == '*') { inBlockComment = true; i++; continue; }
+                if (c == '"') { inString = true; continue; }
+                if (c == '{') depth++;
+                if (c == '}') depth--;
+            }
+            return depth;
+        };
+
+        int braces = countBraces(line);
         while (braces > 0) {
             auto cont = readLine(".. ");
             if (!cont) break;
             line += "\n" + *cont;
-            for (char c : *cont) {
-                if (c == '{') braces++;
-                if (c == '}') braces--;
-            }
+            braces = countBraces(line);
         }
 
         addHistory(line);
@@ -400,6 +426,23 @@ int main(int argc, char* argv[]) {
     if (argc >= 2 && std::string(argv[1]) == "test") {
         std::string dir = (argc >= 3) ? argv[2] : "tests";
         return runTestsCommand(dir);
+    }
+
+    // `praia -c "code"` — run a one-liner
+    if (argc >= 3 && std::string(argv[1]) == "-c") {
+        std::string source = argv[2];
+        auto program = compile(source, false, false);
+        if (!program.empty()) {
+            Interpreter interpreter;
+            // Remaining args after the code string
+            std::vector<std::string> scriptArgs;
+            for (int i = 3; i < argc; i++)
+                scriptArgs.push_back(argv[i]);
+            interpreter.setArgs(scriptArgs);
+            try { interpreter.interpret(program); }
+            catch (const ExitSignal& e) { return e.code; }
+        }
+        return 0;
     }
 
     for (int i = 1; i < argc; i++) {
