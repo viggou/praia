@@ -377,7 +377,109 @@ void Compiler::compileContinueStmt(const ContinueStmt* stmt) {
     emitLoop(loop.loopStart, stmt->line);
 }
 
-void Compiler::compileClassStmt(const ClassStmt* stmt) { error("class not yet in VM", stmt->line); }
+void Compiler::compileClassStmt(const ClassStmt* stmt) {
+    uint16_t nameIdx = identifierConstant(stmt->name);
+
+    emit(OpCode::OP_CLASS, stmt->line);
+    emitU16(nameIdx, stmt->line);
+
+    // Define the class name immediately so methods can reference it
+    if (current->scopeDepth > 0) {
+        addLocal(stmt->name);
+    } else {
+        emit(OpCode::OP_DEFINE_GLOBAL, stmt->line);
+        emitU16(identifierConstant(stmt->name), stmt->line);
+    }
+
+    // Inheritance
+    if (!stmt->superclass.empty()) {
+        // Push superclass
+        uint16_t superIdx = identifierConstant(stmt->superclass);
+        emit(OpCode::OP_GET_GLOBAL, stmt->line);
+        emitU16(superIdx, stmt->line);
+
+        // Push the class again for INHERIT
+        if (current->scopeDepth > 0) {
+            int slot = resolveLocal(current, stmt->name);
+            emit(OpCode::OP_GET_LOCAL, stmt->line);
+            emitU16(static_cast<uint16_t>(slot), stmt->line);
+        } else {
+            emit(OpCode::OP_GET_GLOBAL, stmt->line);
+            emitU16(identifierConstant(stmt->name), stmt->line);
+        }
+
+        emit(OpCode::OP_INHERIT, stmt->line);
+    }
+
+    // Push class onto stack for METHOD opcodes
+    if (current->scopeDepth > 0) {
+        int slot = resolveLocal(current, stmt->name);
+        emit(OpCode::OP_GET_LOCAL, stmt->line);
+        emitU16(static_cast<uint16_t>(slot), stmt->line);
+    } else {
+        emit(OpCode::OP_GET_GLOBAL, stmt->line);
+        emitU16(identifierConstant(stmt->name), stmt->line);
+    }
+
+    // Compile each method
+    for (auto& method : stmt->methods) {
+        auto fn = std::make_shared<CompiledFunction>();
+        fn->name = method.name;
+        fn->arity = static_cast<int>(method.params.size());
+
+        CompilerState methodState;
+        methodState.enclosing = current;
+        methodState.function = fn;
+        methodState.scopeDepth = 0;
+        current = &methodState;
+
+        // Slot 0 = "this"
+        addLocal("this");
+
+        // Parameters
+        for (auto& param : method.params) {
+            addLocal(param);
+        }
+
+        // Body
+        for (auto& s : method.body) {
+            compileStmt(s.get());
+        }
+
+        // Implicit nil return (init returns this)
+        if (method.name == "init") {
+            emit(OpCode::OP_GET_LOCAL, method.line);
+            emitU16(0, method.line); // slot 0 = this
+        } else {
+            emit(OpCode::OP_NIL, method.line);
+        }
+        emit(OpCode::OP_RETURN, method.line);
+
+        current = methodState.enclosing;
+        fn->upvalueCount = static_cast<int>(methodState.upvalues.size());
+
+        // Create closure for the method
+        auto* proto = new ObjClosure(fn);
+        auto wrapper = std::make_shared<VMClosureCallable>(proto);
+        uint16_t fnIdx = currentChunk().addConstant(
+            Value(std::static_pointer_cast<Callable>(wrapper)));
+
+        emit(OpCode::OP_CLOSURE, method.line);
+        emitU16(fnIdx, method.line);
+
+        for (auto& uv : methodState.upvalues) {
+            emit(uv.isLocal ? 1 : 0, method.line);
+            emitU16(uv.index, method.line);
+        }
+
+        // Add method to class
+        emit(OpCode::OP_METHOD, method.line);
+        emitU16(identifierConstant(method.name), method.line);
+    }
+
+    // Pop the class from the stack
+    emit(OpCode::OP_POP, stmt->line);
+}
 void Compiler::compileEnumStmt(const EnumStmt* stmt) { error("enum not yet in VM", stmt->line); }
 void Compiler::compileThrowStmt(const ThrowStmt* stmt) { error("throw not yet in VM", stmt->line); }
 void Compiler::compileTryCatchStmt(const TryCatchStmt* stmt) { error("try/catch not yet in VM", stmt->line); }

@@ -39,6 +39,16 @@ struct VMClosureCallable : Callable {
     std::string name() const override { return closure->function->name; }
 };
 
+// A method bound to an instance — when called, slot 0 = this
+struct VMBoundMethod : Callable {
+    Value receiver;
+    ObjClosure* method;
+    VMBoundMethod(Value recv, ObjClosure* m) : receiver(std::move(recv)), method(m) {}
+    Value call(Interpreter&, const std::vector<Value>&) override { return Value(); } // unused
+    int arity() const override { return method->function->arity; }
+    std::string name() const override { return method->function->name; }
+};
+
 struct VMCallFrame {
     ObjClosure* closure;   // the closure being executed (null for script w/o closure)
     std::shared_ptr<CompiledFunction> function; // fallback for script frame

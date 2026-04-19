@@ -1,4 +1,5 @@
 #include "vm.h"
+#include "../builtins.h"
 #include "../interpreter.h"
 #include <cmath>
 #include <iostream>
@@ -108,11 +109,43 @@ bool VM::callClosure(ObjClosure* closure, int argCount, int line) {
 
 bool VM::callValue(Value callee, int argCount, int line) {
     if (callee.isCallable()) {
-        // Check if it's a VM closure
         auto callable = callee.asCallable();
+
+        // VM closure
         auto* vmClosure = dynamic_cast<VMClosureCallable*>(callable.get());
         if (vmClosure) {
             return callClosure(vmClosure->closure, argCount, line);
+        }
+
+        // Bound method (instance.method())
+        auto* bound = dynamic_cast<VMBoundMethod*>(callable.get());
+        if (bound) {
+            // Replace the callee slot with the receiver (this)
+            stack[stackTop - argCount - 1] = bound->receiver;
+            return callClosure(bound->method, argCount, line);
+        }
+
+        // PraiaClass (instantiation)
+        auto* klass = dynamic_cast<PraiaClass*>(callable.get());
+        if (klass) {
+            auto instance = std::make_shared<PraiaInstance>();
+            instance->klass = std::dynamic_pointer_cast<PraiaClass>(callable);
+
+            // Replace callee with the new instance
+            stack[stackTop - argCount - 1] = Value(instance);
+
+            // Call init if it exists
+            auto it = klass->vmMethods.find("init");
+            if (it != klass->vmMethods.end() && it->second.isCallable()) {
+                auto* initVmcc = dynamic_cast<VMClosureCallable*>(it->second.asCallable().get());
+                if (initVmcc) {
+                    return callClosure(initVmcc->closure, argCount, line);
+                }
+            } else if (argCount > 0) {
+                runtimeError(klass->className + "() takes no arguments (no init method)", line);
+                return false;
+            }
+            return true;
         }
 
         // Native function
@@ -409,14 +442,168 @@ VM::Result VM::execute() {
             break;
         }
 
-        // ── Stubs for later phases ──
-        case OpCode::OP_CLASS:
-        case OpCode::OP_METHOD:
-        case OpCode::OP_INHERIT:
-        case OpCode::OP_GET_PROPERTY:
-        case OpCode::OP_SET_PROPERTY:
-        case OpCode::OP_GET_THIS:
-        case OpCode::OP_GET_SUPER:
+        // ── Classes ──
+        case OpCode::OP_CLASS: {
+            std::string name = READ_STRING();
+            auto klass = std::make_shared<PraiaClass>();
+            klass->className = name;
+            push(Value(std::static_pointer_cast<Callable>(klass)));
+            break;
+        }
+
+        case OpCode::OP_METHOD: {
+            std::string name = READ_STRING();
+            Value method = pop(); // the closure
+            Value& klass = peek(); // the class
+
+            auto klassPtr = std::dynamic_pointer_cast<PraiaClass>(klass.asCallable());
+            if (!klassPtr) { runtimeError("OP_METHOD: not a class", CURRENT_LINE()); return Result::RUNTIME_ERROR; }
+
+            // Store the closure as a method — the VM will bind it when accessed
+            klassPtr->vmMethods[name] = method;
+            break;
+        }
+
+        case OpCode::OP_INHERIT: {
+            Value subclass = pop();
+            Value superclass = peek(); // leave superclass on stack? no, pop both
+
+            auto superPtr = std::dynamic_pointer_cast<PraiaClass>(superclass.asCallable());
+            auto subPtr = std::dynamic_pointer_cast<PraiaClass>(subclass.asCallable());
+
+            if (!superPtr) { runtimeError("Superclass must be a class", CURRENT_LINE()); return Result::RUNTIME_ERROR; }
+            if (!subPtr) { runtimeError("Subclass must be a class", CURRENT_LINE()); return Result::RUNTIME_ERROR; }
+
+            subPtr->superclass = superPtr;
+
+            // Copy superclass methods (they can be overridden later by OP_METHOD)
+            for (auto& [k, v] : superPtr->vmMethods) {
+                if (subPtr->vmMethods.find(k) == subPtr->vmMethods.end()) {
+                    subPtr->vmMethods[k] = v;
+                }
+            }
+
+            pop(); // pop superclass
+            break;
+        }
+
+        case OpCode::OP_GET_PROPERTY: {
+            std::string name = READ_STRING();
+            Value obj = pop();
+
+            if (obj.isInstance()) {
+                auto inst = obj.asInstance();
+                // Fields first
+                auto fit = inst->fields.find(name);
+                if (fit != inst->fields.end()) { push(fit->second); break; }
+
+                // Then methods — bind to instance
+                auto it = inst->klass->vmMethods.find(name);
+                if (it == inst->klass->vmMethods.end()) {
+                    // Walk superclass chain
+                    auto walk = inst->klass->superclass;
+                    while (walk) {
+                        auto sit = walk->vmMethods.find(name);
+                        if (sit != walk->vmMethods.end()) { it = sit; break; }
+                        walk = walk->superclass;
+                    }
+                }
+                if (it != inst->klass->vmMethods.end()) {
+                    // Bind: create a new closure-like value with "this" bound
+                    // For simplicity, store instance+method as a bound method callable
+                    auto boundMethod = it->second;
+                    if (boundMethod.isCallable()) {
+                        auto* vmcc = dynamic_cast<VMClosureCallable*>(boundMethod.asCallable().get());
+                        if (vmcc) {
+                            // Create a bound method: when called, slot 0 = this
+                            auto bm = std::make_shared<VMBoundMethod>(obj, vmcc->closure);
+                            push(Value(std::static_pointer_cast<Callable>(bm)));
+                            break;
+                        }
+                    }
+                    push(boundMethod);
+                    break;
+                }
+
+                runtimeError("Instance has no property '" + name + "'", CURRENT_LINE());
+                return Result::RUNTIME_ERROR;
+            }
+
+            if (obj.isMap()) {
+                auto& entries = obj.asMap()->entries;
+                auto it = entries.find(name);
+                if (it != entries.end()) { push(it->second); break; }
+                runtimeError("Map has no field '" + name + "'", CURRENT_LINE());
+                return Result::RUNTIME_ERROR;
+            }
+
+            // String/array methods
+            if (obj.isString()) {
+                push(getStringMethod(obj.asString(), name, CURRENT_LINE()));
+                break;
+            }
+            if (obj.isArray()) {
+                push(getArrayMethod(obj.asArray(), name, CURRENT_LINE(), nullptr));
+                break;
+            }
+
+            runtimeError("Cannot access property '" + name + "' on this type", CURRENT_LINE());
+            return Result::RUNTIME_ERROR;
+        }
+
+        case OpCode::OP_SET_PROPERTY: {
+            std::string name = READ_STRING();
+            Value val = pop();
+            Value obj = pop();
+
+            if (obj.isInstance()) {
+                obj.asInstance()->fields[name] = val;
+                push(val);
+                break;
+            }
+            if (obj.isMap()) {
+                obj.asMap()->entries[name] = val;
+                push(val);
+                break;
+            }
+
+            runtimeError("Can only set properties on instances and maps", CURRENT_LINE());
+            return Result::RUNTIME_ERROR;
+        }
+
+        case OpCode::OP_GET_THIS: {
+            push(stack[FRAME.baseSlot]);
+            break;
+        }
+
+        case OpCode::OP_GET_SUPER: {
+            std::string name = READ_STRING();
+            Value instance = pop();
+
+            if (!instance.isInstance()) {
+                runtimeError("'super' used outside of a method", CURRENT_LINE());
+                return Result::RUNTIME_ERROR;
+            }
+            auto inst = instance.asInstance();
+            auto super = inst->klass->superclass;
+            if (!super) { runtimeError("Class has no superclass", CURRENT_LINE()); return Result::RUNTIME_ERROR; }
+
+            auto it = super->vmMethods.find(name);
+            if (it == super->vmMethods.end()) {
+                runtimeError("Superclass has no method '" + name + "'", CURRENT_LINE());
+                return Result::RUNTIME_ERROR;
+            }
+
+            auto* vmcc = dynamic_cast<VMClosureCallable*>(it->second.asCallable().get());
+            if (vmcc) {
+                auto bm = std::make_shared<VMBoundMethod>(instance, vmcc->closure);
+                push(Value(std::static_pointer_cast<Callable>(bm)));
+            } else {
+                push(it->second);
+            }
+            break;
+        }
+
         case OpCode::OP_INVOKE:
         case OpCode::OP_SUPER_INVOKE:
         case OpCode::OP_BUILD_ARRAY:

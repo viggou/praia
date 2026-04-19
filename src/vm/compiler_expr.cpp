@@ -238,10 +238,56 @@ void Compiler::compileArrayLiteralExpr(const ArrayLiteralExpr* expr) { error("ar
 void Compiler::compileMapLiteralExpr(const MapLiteralExpr* expr) { error("maps not yet in VM", expr->line); }
 void Compiler::compileIndexExpr(const IndexExpr* expr) { error("indexing not yet in VM", expr->line); }
 void Compiler::compileIndexAssignExpr(const IndexAssignExpr* expr) { error("index assign not yet in VM", expr->line); }
-void Compiler::compileDotExpr(const DotExpr* expr) { error("dot access not yet in VM", expr->line); }
-void Compiler::compileDotAssignExpr(const DotAssignExpr* expr) { error("dot assign not yet in VM", expr->line); }
+void Compiler::compileDotExpr(const DotExpr* expr) {
+    compileExpr(expr->object.get());
+    uint16_t nameIdx = identifierConstant(expr->field);
+    emit(OpCode::OP_GET_PROPERTY, expr->line);
+    emitU16(nameIdx, expr->line);
+}
+
+void Compiler::compileDotAssignExpr(const DotAssignExpr* expr) {
+    compileExpr(expr->object.get());
+    compileExpr(expr->value.get());
+    uint16_t nameIdx = identifierConstant(expr->field);
+    emit(OpCode::OP_SET_PROPERTY, expr->line);
+    emitU16(nameIdx, expr->line);
+}
 void Compiler::compileInterpolatedStringExpr(const InterpolatedStringExpr* expr) { error("interp string not yet in VM", expr->line); }
-void Compiler::compileThisExpr(const ThisExpr* expr) { error("this not yet in VM", expr->line); }
-void Compiler::compileSuperExpr(const SuperExpr* expr) { error("super not yet in VM", expr->line); }
+void Compiler::compileThisExpr(const ThisExpr* expr) {
+    // "this" is always local slot 0 in a method
+    int slot = resolveLocal(current, "this");
+    if (slot != -1) {
+        emit(OpCode::OP_GET_LOCAL, expr->line);
+        emitU16(static_cast<uint16_t>(slot), expr->line);
+    } else {
+        int uv = resolveUpvalue(current, "this");
+        if (uv != -1) {
+            emit(OpCode::OP_GET_UPVALUE, expr->line);
+            emit(static_cast<uint8_t>(uv), expr->line);
+        } else {
+            error("'this' used outside of a method", expr->line);
+        }
+    }
+}
+
+void Compiler::compileSuperExpr(const SuperExpr* expr) {
+    // Push "this" for method binding
+    int slot = resolveLocal(current, "this");
+    if (slot != -1) {
+        emit(OpCode::OP_GET_LOCAL, expr->line);
+        emitU16(static_cast<uint16_t>(slot), expr->line);
+    } else {
+        int uv = resolveUpvalue(current, "this");
+        if (uv != -1) {
+            emit(OpCode::OP_GET_UPVALUE, expr->line);
+            emit(static_cast<uint8_t>(uv), expr->line);
+        } else {
+            error("'super' used outside of a method", expr->line);
+        }
+    }
+    uint16_t nameIdx = identifierConstant(expr->method);
+    emit(OpCode::OP_GET_SUPER, expr->line);
+    emitU16(nameIdx, expr->line);
+}
 void Compiler::compileAsyncExpr(const AsyncExpr* expr) { error("async not yet in VM", expr->line); }
 void Compiler::compileAwaitExpr(const AwaitExpr* expr) { error("await not yet in VM", expr->line); }
