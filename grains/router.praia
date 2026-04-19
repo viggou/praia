@@ -1,8 +1,11 @@
 // HTTP Router with :param support
+//
 // Usage:
 //   use "router"
 //   let app = router.create()
-//   app.get("/users/:id", lam{ req in ... })
+//   app.get("/users/:id", lam{ req, params in
+//       return {status: 200, body: "User %{params.id}"}
+//   })
 //   app.listen(8080)
 
 func matchRoute(pattern, path) {
@@ -19,7 +22,6 @@ func matchRoute(pattern, path) {
         let rp = pathParts[i]
 
         if (pp.startsWith(":")) {
-            // Parameter segment — capture it
             let paramName = pp.replace(":", "")
             params[paramName] = rp
         } elif (pp != rp) {
@@ -31,6 +33,9 @@ func matchRoute(pattern, path) {
 
 func create() {
     let routes = []
+    let notFoundHandler = lam{ req, params in
+        return {status: 404, body: "Not Found: %{req.path}"}
+    }
 
     func addRoute(method, pattern, handler) {
         routes.push({method: method, pattern: pattern, handler: handler})
@@ -38,15 +43,14 @@ func create() {
 
     func handleRequest(req) {
         for (route in routes) {
-            if (route.method != req.method) { continue }
+            if (route.method != "*" && route.method != req.method) { continue }
 
             let params = matchRoute(route.pattern, req.path)
             if (params) {
-                req.params = params
-                return route.handler(req)
+                return route.handler(req, params)
             }
         }
-        return {status: 404, body: "Not Found: %{req.path}"}
+        return notFoundHandler(req, {})
     }
 
     return {
@@ -54,6 +58,10 @@ func create() {
         post: lam{ pattern, handler in addRoute("POST", pattern, handler) },
         put: lam{ pattern, handler in addRoute("PUT", pattern, handler) },
         delete: lam{ pattern, handler in addRoute("DELETE", pattern, handler) },
+        patch: lam{ pattern, handler in addRoute("PATCH", pattern, handler) },
+        options: lam{ pattern, handler in addRoute("OPTIONS", pattern, handler) },
+        all: lam{ pattern, handler in addRoute("*", pattern, handler) },
+        notFound: lam{ handler in notFoundHandler = handler },
         handle: lam{ req in handleRequest(req) },
         listen: lam{ port in
             let server = http.createServer(lam{ req in handleRequest(req) })

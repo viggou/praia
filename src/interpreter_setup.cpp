@@ -378,6 +378,52 @@ Interpreter::Interpreter() {
             return Value(server);
         }));
 
+    httpMap->entries["encodeURI"] = Value(makeNative("http.encodeURI", 1,
+        [](const std::vector<Value>& args) -> Value {
+            if (!args[0].isString())
+                throw RuntimeError("http.encodeURI() requires a string", 0);
+            auto& input = args[0].asString();
+            std::string result;
+            result.reserve(input.size() * 3);
+            for (unsigned char c : input) {
+                if (std::isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~') {
+                    result += static_cast<char>(c);
+                } else {
+                    char hex[4];
+                    snprintf(hex, sizeof(hex), "%%%02X", c);
+                    result += hex;
+                }
+            }
+            return Value(std::move(result));
+        }));
+
+    httpMap->entries["decodeURI"] = Value(makeNative("http.decodeURI", 1,
+        [](const std::vector<Value>& args) -> Value {
+            if (!args[0].isString())
+                throw RuntimeError("http.decodeURI() requires a string", 0);
+            auto& input = args[0].asString();
+            std::string result;
+            result.reserve(input.size());
+            auto hexVal = [](char c) -> int {
+                if (c >= '0' && c <= '9') return c - '0';
+                if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+                if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+                return -1;
+            };
+            for (size_t i = 0; i < input.size(); ++i) {
+                if (input[i] == '%' && i + 2 < input.size()) {
+                    int hi = hexVal(input[i + 1]), lo = hexVal(input[i + 2]);
+                    if (hi >= 0 && lo >= 0) {
+                        result += static_cast<char>((hi << 4) | lo);
+                        i += 2;
+                        continue;
+                    }
+                }
+                result += input[i];
+            }
+            return Value(std::move(result));
+        }));
+
     globals->define("http", Value(httpMap));
 
     // ── json namespace ──

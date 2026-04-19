@@ -12,6 +12,51 @@
 
 namespace {
 
+// URL-decode a percent-encoded string. Handles %XX and + → space (form encoding).
+std::string urlDecode(const std::string& str) {
+    std::string result;
+    result.reserve(str.size());
+    auto hexVal = [](char c) -> int {
+        if (c >= '0' && c <= '9') return c - '0';
+        if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+        if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+        return -1;
+    };
+    for (size_t i = 0; i < str.size(); ++i) {
+        if (str[i] == '%' && i + 2 < str.size()) {
+            int hi = hexVal(str[i + 1]), lo = hexVal(str[i + 2]);
+            if (hi >= 0 && lo >= 0) {
+                result += static_cast<char>((hi << 4) | lo);
+                i += 2;
+                continue;
+            }
+        }
+        result += (str[i] == '+') ? ' ' : str[i];
+    }
+    return result;
+}
+
+// Parse "key=val&key2=val2" into a PraiaMap with URL-decoded keys/values.
+std::shared_ptr<PraiaMap> parseQueryString(const std::string& query) {
+    auto qmap = std::make_shared<PraiaMap>();
+    if (query.empty()) return qmap;
+    std::string key, value;
+    bool inValue = false;
+    for (size_t i = 0; i <= query.size(); ++i) {
+        char c = (i < query.size()) ? query[i] : '&';
+        if (c == '=') {
+            inValue = true;
+        } else if (c == '&') {
+            if (!key.empty())
+                qmap->entries[urlDecode(key)] = Value(urlDecode(value));
+            key.clear(); value.clear(); inValue = false;
+        } else {
+            if (inValue) value += c; else key += c;
+        }
+    }
+    return qmap;
+}
+
 struct ParsedUrl {
     std::string host;
     int port = 80;
@@ -236,7 +281,7 @@ void httpServerListen(int port, std::shared_ptr<Callable> handler, Interpreter& 
         auto req = std::make_shared<PraiaMap>();
         req->entries["method"] = Value(method);
         req->entries["path"] = Value(path);
-        req->entries["query"] = Value(query);
+        req->entries["query"] = Value(parseQueryString(query));
         req->entries["headers"] = Value(reqHeaders);
         req->entries["body"] = Value(reqBody);
 

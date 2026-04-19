@@ -27,6 +27,7 @@ Praia is a dynamically typed, interpreted programming language built in C++.
 - [YAML](#yaml)
 - [Async / Await](#async--await)
 - [HTTP Networking](#http-networking)
+- [Router](#router)
 - [SQLite](#sqlite)
 - [Math](#math)
 - [Random](#random)
@@ -1364,7 +1365,7 @@ The handler receives a map with:
 |-------|-------------|
 | `method` | `"GET"`, `"POST"`, etc. |
 | `path` | URL path (e.g. `"/hello"`) |
-| `query` | Query string without `?` (e.g. `"name=Ada&age=36"`) |
+| `query` | Parsed query parameters as a map (e.g. `{name: "Ada", age: "36"}`) |
 | `headers` | Map of lowercase header names |
 | `body` | Request body string |
 
@@ -1409,6 +1410,115 @@ server.listen(3000)
 #### Error handling
 
 If the handler throws an error, the server returns a 500 response and continues running.
+
+#### Query parameters
+
+Query strings are automatically parsed into a map. Values are URL-decoded.
+
+```
+// Request: GET /search?q=hello+world&page=2
+
+app.get("/search", lam{ req, params in
+    print(req.query.q)      // "hello world"
+    print(req.query.page)   // "2"
+})
+```
+
+### URL Encoding
+
+| Function | Description |
+|----------|-------------|
+| `http.encodeURI(str)` | Percent-encode a string (RFC 3986) |
+| `http.decodeURI(str)` | Decode percent-encoded sequences |
+
+```
+http.encodeURI("hello world")       // "hello%20world"
+http.encodeURI("a=1&b=2")          // "a%3D1%26b%3D2"
+http.decodeURI("hello%20world")    // "hello world"
+```
+
+`encodeURI` leaves unreserved characters (`A-Z a-z 0-9 - _ . ~`) as-is and percent-encodes everything else. `decodeURI` reverses `%XX` sequences. Use these when building URLs with user input to prevent injection.
+
+---
+
+## Router
+
+The `router` grain provides Express-style HTTP routing with path parameters.
+
+### Setup
+
+```
+use "router"
+
+let app = router.create()
+
+app.get("/", lam{ req, params in
+    return {status: 200, body: "Home"}
+})
+
+app.listen(8080)
+```
+
+### Path parameters
+
+Use `:name` segments to capture parts of the URL. Captured values are passed as the second argument to the handler.
+
+```
+app.get("/users/:id", lam{ req, params in
+    return {status: 200, body: "User %{params.id}"}
+})
+
+app.post("/api/game/:id/guess", lam{ req, params in
+    let gameId = params.id
+    let guess = json.parse(req.body)
+    // ...
+})
+
+// Multiple params
+app.get("/users/:userId/posts/:postId", lam{ req, params in
+    print(params.userId, params.postId)
+})
+```
+
+### HTTP methods
+
+| Method | Description |
+|--------|-------------|
+| `app.get(path, handler)` | GET |
+| `app.post(path, handler)` | POST |
+| `app.put(path, handler)` | PUT |
+| `app.delete(path, handler)` | DELETE |
+| `app.patch(path, handler)` | PATCH |
+| `app.options(path, handler)` | OPTIONS |
+| `app.all(path, handler)` | Match any method |
+
+### Custom 404
+
+```
+app.notFound(lam{ req, params in
+    return {
+        status: 404,
+        body: json.stringify({error: "Not found", path: req.path}),
+        headers: {"Content-Type": "application/json"}
+    }
+})
+```
+
+### Handler signature
+
+All handlers receive two arguments: `(req, params)`.
+
+- `req` — the request map with `method`, `path`, `query`, `headers`, `body`
+- `params` — map of captured path parameters (empty `{}` for the 404 handler)
+
+### Using without a server
+
+Use `.handle(req)` to test routing without starting a server:
+
+```
+let result = app.handle({method: "GET", path: "/users/42", query: {}, body: ""})
+print(result.body)      // "User 42"
+```
 
 ---
 
