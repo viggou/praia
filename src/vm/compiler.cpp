@@ -165,21 +165,14 @@ void Compiler::compileLetStmt(const LetStmt* stmt) {
             for (size_t i = 0; i < stmt->pattern.size(); i++) {
                 auto& p = stmt->pattern[i];
                 if (p.isRest) {
-                    // rest = arr.slice(i)
+                    // rest = __arraySlice(arr, i)
+                    emit(OpCode::OP_GET_GLOBAL, stmt->line);
+                    emitU16(identifierConstant("__arraySlice"), stmt->line);
                     emit(OpCode::OP_GET_LOCAL, stmt->line);
                     emitU16(static_cast<uint16_t>(arrSlot), stmt->line);
                     emitConstant(Value(static_cast<int64_t>(i)), stmt->line);
-                    // We need a slice operation — for now emit as index-get loop
-                    // Simpler: push the array and index, use a native call
-                    // Actually simplest: just compile destructuring as sequential index gets
-                    emit(OpCode::OP_POP, stmt->line); // pop index
-                    emit(OpCode::OP_POP, stmt->line); // pop array
-                    // For rest, we need the array.slice method... which isn't an opcode.
-                    // Pragmatic: use OP_BUILD_ARRAY with a runtime slice.
-                    // For now, emit code that creates a new array from remaining elements.
-                    // This is complex without a slice opcode. Let me use a simpler approach:
-                    // Just push nil for rest for now and fix properly with collections.
-                    emit(OpCode::OP_NIL, stmt->line);
+                    emit(OpCode::OP_CALL, stmt->line);
+                    emit(2, stmt->line);
                 } else {
                     emit(OpCode::OP_GET_LOCAL, stmt->line);
                     emitU16(static_cast<uint16_t>(arrSlot), stmt->line);
@@ -199,9 +192,29 @@ void Compiler::compileLetStmt(const LetStmt* stmt) {
             addLocal("__destr__");
             int mapSlot = resolveLocal(current, "__destr__");
 
+            // Collect extracted keys for rest computation
+            std::vector<std::string> extractedKeys;
+            for (auto& p : stmt->pattern) {
+                if (!p.isRest) {
+                    std::string key = p.key.empty() ? p.name : p.key;
+                    extractedKeys.push_back(key);
+                }
+            }
+
             for (auto& p : stmt->pattern) {
                 if (p.isRest) {
-                    emit(OpCode::OP_NIL, stmt->line); // placeholder for rest
+                    // rest = __mapRest(map, [extracted_keys...])
+                    emit(OpCode::OP_GET_GLOBAL, stmt->line);
+                    emitU16(identifierConstant("__mapRest"), stmt->line);
+                    emit(OpCode::OP_GET_LOCAL, stmt->line);
+                    emitU16(static_cast<uint16_t>(mapSlot), stmt->line);
+                    // Build array of extracted key names
+                    for (auto& k : extractedKeys)
+                        emitConstant(Value(k), stmt->line);
+                    emit(OpCode::OP_BUILD_ARRAY, stmt->line);
+                    emitU16(static_cast<uint16_t>(extractedKeys.size()), stmt->line);
+                    emit(OpCode::OP_CALL, stmt->line);
+                    emit(2, stmt->line);
                 } else {
                     emit(OpCode::OP_GET_LOCAL, stmt->line);
                     emitU16(static_cast<uint16_t>(mapSlot), stmt->line);
@@ -362,23 +375,24 @@ void Compiler::compileForInStmt(const ForInStmt* stmt) {
     addLocal("__idx__");
     int idxSlot = resolveLocal(current, "__idx__");
 
-    int loopStart = currentChunk().size();
-    current->loops.push_back({loopStart, {}, current->scopeDepth});
-
-    // Condition: __idx__ < len(__iter__)
-    // Emit len() as a native call each iteration (simple, correct)
-    emit(OpCode::OP_GET_LOCAL, stmt->line);
-    emitU16(static_cast<uint16_t>(idxSlot), stmt->line);
-
-    // Call len(iterable): push len function, push iterable, call 1
+    // Cache len(iterable) — call once, store as local
     emit(OpCode::OP_GET_GLOBAL, stmt->line);
     emitU16(identifierConstant("len"), stmt->line);
     emit(OpCode::OP_GET_LOCAL, stmt->line);
     emitU16(static_cast<uint16_t>(iterSlot), stmt->line);
     emit(OpCode::OP_CALL, stmt->line);
     emit(1, stmt->line);
+    addLocal("__len__");
+    int lenSlot = resolveLocal(current, "__len__");
 
-    // Now stack has: ..., idx, len_result
+    int loopStart = currentChunk().size();
+    current->loops.push_back({loopStart, {}, current->scopeDepth});
+
+    // Condition: __idx__ < __len__
+    emit(OpCode::OP_GET_LOCAL, stmt->line);
+    emitU16(static_cast<uint16_t>(idxSlot), stmt->line);
+    emit(OpCode::OP_GET_LOCAL, stmt->line);
+    emitU16(static_cast<uint16_t>(lenSlot), stmt->line);
     emit(OpCode::OP_LESS, stmt->line);
     int exitJump = emitJump(OpCode::OP_POP_JUMP_IF_FALSE, stmt->line);
 

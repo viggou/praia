@@ -252,50 +252,98 @@ void Compiler::compileLambdaExpr(const LambdaExpr* expr) {
     }
 }
 void Compiler::compileArrayLiteralExpr(const ArrayLiteralExpr* expr) {
-    int count = 0;
+    bool hasSpreads = false;
     for (auto& elem : expr->elements) {
-        if (dynamic_cast<const SpreadExpr*>(elem.get())) {
-            // Spread: compile the array expression, then emit UNPACK_SPREAD
-            compileExpr(dynamic_cast<const SpreadExpr*>(elem.get())->expr.get());
-            emit(OpCode::OP_UNPACK_SPREAD, expr->line);
-            count = -1; // signal dynamic count
+        if (dynamic_cast<const SpreadExpr*>(elem.get())) { hasSpreads = true; break; }
+    }
+
+    if (!hasSpreads) {
+        // Simple case: no spreads, just push elements and build
+        for (auto& elem : expr->elements) compileExpr(elem.get());
+        emit(OpCode::OP_BUILD_ARRAY, expr->line);
+        emitU16(static_cast<uint16_t>(expr->elements.size()), expr->line);
+        return;
+    }
+
+    // With spreads: build segments and concat with OP_ADD
+    // Strategy: accumulate non-spread elements into arrays, concat spreads
+    // Start with an empty array
+    emit(OpCode::OP_BUILD_ARRAY, expr->line);
+    emitU16(0, expr->line);
+
+    int pending = 0;
+    for (auto& elem : expr->elements) {
+        if (auto* spread = dynamic_cast<const SpreadExpr*>(elem.get())) {
+            // Flush pending non-spread elements as an array, concat
+            if (pending > 0) {
+                emit(OpCode::OP_BUILD_ARRAY, expr->line);
+                emitU16(static_cast<uint16_t>(pending), expr->line);
+                emit(OpCode::OP_ADD, expr->line); // concat with accumulator
+                pending = 0;
+            }
+            // Concat the spread array
+            compileExpr(spread->expr.get());
+            emit(OpCode::OP_ADD, expr->line);
         } else {
             compileExpr(elem.get());
-            if (count >= 0) count++;
+            pending++;
         }
     }
-    if (count < 0) {
-        // With spreads — use BUILD_ARRAY with a marker count
-        // Actually, UNPACK_SPREAD pushes elements directly onto the stack,
-        // so we can't know the count at compile time. Use a sentinel approach:
-        // push a marker, elements, then BUILD_ARRAY -1 which counts to the marker.
-        // For simplicity: re-approach without spread optimization for now.
-        // Spreads are handled by OP_UNPACK_SPREAD pushing elements individually.
-        // We emit the total count as 0xFFFF to signal "use runtime counting".
+    // Flush remaining
+    if (pending > 0) {
         emit(OpCode::OP_BUILD_ARRAY, expr->line);
-        emitU16(0xFFFF, expr->line);
-    } else {
-        emit(OpCode::OP_BUILD_ARRAY, expr->line);
-        emitU16(static_cast<uint16_t>(count), expr->line);
+        emitU16(static_cast<uint16_t>(pending), expr->line);
+        emit(OpCode::OP_ADD, expr->line);
     }
 }
 
 void Compiler::compileMapLiteralExpr(const MapLiteralExpr* expr) {
-    int count = 0;
+    bool hasSpreads = false;
     for (size_t i = 0; i < expr->keys.size(); i++) {
         if (expr->keys[i].empty() && dynamic_cast<const SpreadExpr*>(expr->values[i].get())) {
-            // Spread in map: compile the source map, emit UNPACK_SPREAD
+            hasSpreads = true; break;
+        }
+    }
+
+    if (!hasSpreads) {
+        for (size_t i = 0; i < expr->keys.size(); i++) {
+            emitConstant(Value(expr->keys[i]), expr->line);
+            compileExpr(expr->values[i].get());
+        }
+        emit(OpCode::OP_BUILD_MAP, expr->line);
+        emitU16(static_cast<uint16_t>(expr->keys.size()), expr->line);
+        return;
+    }
+
+    // With spreads: build segments and merge with OP_ADD (map + map)
+    // Start with empty map
+    emit(OpCode::OP_BUILD_MAP, expr->line);
+    emitU16(0, expr->line);
+
+    int pending = 0;
+    for (size_t i = 0; i < expr->keys.size(); i++) {
+        if (expr->keys[i].empty() && dynamic_cast<const SpreadExpr*>(expr->values[i].get())) {
+            // Flush pending key-value pairs as a map, merge
+            if (pending > 0) {
+                emit(OpCode::OP_BUILD_MAP, expr->line);
+                emitU16(static_cast<uint16_t>(pending), expr->line);
+                emit(OpCode::OP_ADD, expr->line);
+                pending = 0;
+            }
+            // Merge spread map
             compileExpr(dynamic_cast<const SpreadExpr*>(expr->values[i].get())->expr.get());
-            emit(OpCode::OP_UNPACK_SPREAD, expr->line);
-            count = -1;
+            emit(OpCode::OP_ADD, expr->line);
         } else {
             emitConstant(Value(expr->keys[i]), expr->line);
             compileExpr(expr->values[i].get());
-            if (count >= 0) count++;
+            pending++;
         }
     }
-    emit(OpCode::OP_BUILD_MAP, expr->line);
-    emitU16(count < 0 ? 0xFFFF : static_cast<uint16_t>(count), expr->line);
+    if (pending > 0) {
+        emit(OpCode::OP_BUILD_MAP, expr->line);
+        emitU16(static_cast<uint16_t>(pending), expr->line);
+        emit(OpCode::OP_ADD, expr->line);
+    }
 }
 
 void Compiler::compileIndexExpr(const IndexExpr* expr) {

@@ -364,6 +364,12 @@ VM::Result VM::execute() {
                 for (auto& el : b.asArray()->elements) r->elements.push_back(el);
                 push(Value(r)); break;
             }
+            if (a.isMap() && b.isMap()) {
+                auto r = std::make_shared<PraiaMap>();
+                for (auto& [k, v] : a.asMap()->entries) r->entries[k] = v;
+                for (auto& [k, v] : b.asMap()->entries) r->entries[k] = v; // b overrides a
+                push(Value(r)); break;
+            }
             if (a.isString() || b.isString()) { push(Value(a.toString() + b.toString())); break; }
             runtimeError("Operands of '+' must be numbers, strings, or arrays", CURRENT_LINE());
             return Result::RUNTIME_ERROR;
