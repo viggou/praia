@@ -65,9 +65,13 @@ class JsonParser {
                     case 'f': result += '\f'; break;
                     case 'u': {
                         pos++;
+                        if (pos + 4 > src.size())
+                            throw RuntimeError("Truncated unicode escape in JSON", 0);
                         std::string hex = src.substr(pos, 4);
                         pos += 3; // +1 from the loop increment below
-                        int cp = std::stoi(hex, nullptr, 16);
+                        int cp;
+                        try { cp = std::stoi(hex, nullptr, 16); }
+                        catch (...) { throw RuntimeError("Invalid unicode escape: \\u" + hex, 0); }
                         if (cp < 0x80) result += static_cast<char>(cp);
                         else if (cp < 0x800) {
                             result += static_cast<char>(0xC0 | (cp >> 6));

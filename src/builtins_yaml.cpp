@@ -82,7 +82,7 @@ class YamlParser {
         if (indent < minIndent) return Value();
 
         // Check if it's a sequence (- item)
-        if (pos + 1 < src.size() && src[pos + indent] == '-' &&
+        if (pos + indent < src.size() && src[pos + indent] == '-' &&
             (pos + indent + 1 >= src.size() || src[pos + indent + 1] == ' ' || src[pos + indent + 1] == '\n')) {
             return parseSequence(indent);
         }

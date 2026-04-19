@@ -421,7 +421,7 @@ ExprPtr Parser::logicAnd() {
     auto left = bitOr();
     while (match(TokenType::AND)) {
         int ln = previous().line;
-        auto right = equality();
+        auto right = bitOr();
         auto expr = std::make_unique<BinaryExpr>();
         expr->line = ln;
         expr->left = std::move(left);
@@ -497,7 +497,7 @@ ExprPtr Parser::comparison() {
     while (match(TokenType::LT) || match(TokenType::GT) ||
            match(TokenType::LTE) || match(TokenType::GTE)) {
         Token op = previous();
-        auto right = addition();
+        auto right = shift();
         auto expr = std::make_unique<BinaryExpr>();
         expr->line = op.line;
         expr->left = std::move(left);

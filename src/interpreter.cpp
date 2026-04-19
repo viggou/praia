@@ -375,6 +375,8 @@ Value Interpreter::evaluate(const Expr* expr) {
 
         // Get the superclass from the defining class (not the instance's class)
         Value superVal = env->get("__super__", e->line);
+        if (!superVal.isCallable())
+            throw RuntimeError("'super' used in a class with no superclass", e->line);
         auto super = std::dynamic_pointer_cast<PraiaClass>(superVal.asCallable());
         if (!super)
             throw RuntimeError("Class has no superclass", e->line);
@@ -633,16 +635,14 @@ Value Interpreter::evaluate(const Expr* expr) {
 
         auto& future = val.asFuture()->future;
 
-        // Release the interpreter lock while waiting so other async tasks can run
+        // Release the interpreter lock while waiting so other async tasks can run.
+        // RAII guard ensures the mutex is re-locked even if future.get() throws.
+        struct MutexRelocker {
+            std::recursive_mutex& m;
+            ~MutexRelocker() { m.lock(); }
+        } relocker{interpMutex};
         interpMutex.unlock();
-        Value result;
-        try {
-            result = future.get();
-            interpMutex.lock();
-        } catch (...) {
-            interpMutex.lock();
-            throw;
-        }
+        Value result = future.get();
         return result;
     }
 
@@ -725,6 +725,8 @@ Value Interpreter::evaluate(const Expr* expr) {
             obj.asMap()->entries[idx.asString()] = val;
             return val;
         }
+        if (obj.isString())
+            throw RuntimeError("Strings are immutable — cannot assign to index", e->line);
         throw RuntimeError("Can only assign to array or map indices", e->line);
     }
 

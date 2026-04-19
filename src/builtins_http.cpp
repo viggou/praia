@@ -181,7 +181,10 @@ Value doHttpRequest(const std::string& method, const std::string& url,
         req += "Content-Length: " + std::to_string(body.size()) + "\r\n";
     req += "\r\n" + body;
 
-    send(sock, req.c_str(), req.size(), 0);
+    if (send(sock, req.c_str(), req.size(), 0) < 0) {
+        close(sock);
+        throw RuntimeError("Failed to send HTTP request", 0);
+    }
     std::string raw = readAll(sock);
     close(sock);
     return parseHttpResponse(raw);
@@ -227,9 +230,11 @@ void httpServerListen(int port, std::shared_ptr<Callable> handler, Interpreter& 
                 size_t cl_pos = hdr.find("Content-Length: ");
                 if (cl_pos == std::string::npos) cl_pos = hdr.find("content-length: ");
                 if (cl_pos != std::string::npos) {
-                    int clen = std::stoi(hdr.substr(cl_pos + 16));
+                    size_t clen = 0;
+                    try { clen = std::stoul(hdr.substr(cl_pos + 16)); }
+                    catch (...) { /* malformed Content-Length, skip body reading */ }
                     size_t bodyStart = hend + 4;
-                    while ((int)(data.size() - bodyStart) < clen) {
+                    while (data.size() - bodyStart < clen) {
                         n = recv(client, buf, sizeof(buf), 0);
                         if (n <= 0) break;
                         data.append(buf, n);
