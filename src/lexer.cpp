@@ -56,7 +56,11 @@ void Lexer::scanToken() {
         case '*': addToken(TokenType::STAR); break;
         case '%': addToken(TokenType::PERCENT); break;
         case '.':
-            addToken(match('.') ? TokenType::DOT_DOT : TokenType::DOT);
+            if (match('.')) {
+                addToken(match('.') ? TokenType::SPREAD : TokenType::DOT_DOT);
+            } else {
+                addToken(TokenType::DOT);
+            }
             break;
         case ':': addToken(TokenType::COLON); break;
 

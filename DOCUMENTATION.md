@@ -6,6 +6,8 @@ Praia is a dynamically typed, interpreted programming language built in C++.
 
 - [Getting Started](#getting-started)
 - [Variables](#variables)
+- [Destructuring](#destructuring)
+- [Spread Operator](#spread-operator)
 - [Data Types](#data-types)
 - [Operators](#operators)
 - [Strings](#strings)
@@ -81,6 +83,74 @@ let score              // nil
 
 age = 37               // reassignment
 ```
+
+---
+
+## Destructuring
+
+Unpack arrays and maps into variables in a single `let` statement.
+
+### Array destructuring
+
+```
+let [a, b, c] = [1, 2, 3]
+print(a, b, c)              // 1 2 3
+
+let [first, ...rest] = [1, 2, 3, 4, 5]
+print(first)                 // 1
+print(rest)                  // [2, 3, 4, 5]
+```
+
+Missing elements become `nil`:
+```
+let [x, y, z] = [1, 2]
+print(z)                     // nil
+```
+
+### Map destructuring
+
+```
+let {name, age} = {name: "Ada", age: 36}
+print(name, age)             // Ada 36
+```
+
+Rename with `key: varName`:
+```
+let {name: userName, age: userAge} = {name: "Ada", age: 36}
+print(userName)              // Ada
+```
+
+Rest collects remaining keys:
+```
+let {name, ...other} = {name: "Ada", age: 36, lang: "Praia"}
+print(other)                 // {age: 36, lang: "Praia"}
+```
+
+---
+
+## Spread Operator
+
+The `...` operator spreads arrays and maps into literals.
+
+### Array spread
+
+```
+let a = [1, 2, 3]
+let b = [4, 5, 6]
+let combined = [...a, ...b]       // [1, 2, 3, 4, 5, 6]
+let withExtra = [0, ...a, 99]     // [0, 1, 2, 3, 99]
+```
+
+### Map spread
+
+```
+let defaults = {host: "localhost", port: 8080}
+let overrides = {port: 3000, debug: true}
+let config = {...defaults, ...overrides}
+// {host: "localhost", port: 3000, debug: true}
+```
+
+Later spreads override earlier keys (like `Object.assign` in JavaScript).
 
 ---
 

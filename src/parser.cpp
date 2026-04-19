@@ -36,10 +36,62 @@ StmtPtr Parser::statement() {
 }
 
 StmtPtr Parser::letStatement() {
-    Token name = consume(TokenType::IDENTIFIER, "Expected variable name after 'let'");
-
+    int ln = previous().line;
     auto stmt = std::make_unique<LetStmt>();
-    stmt->line = name.line;
+    stmt->line = ln;
+
+    // Array destructuring: let [a, b, ...rest] = expr
+    if (match(TokenType::LBRACKET)) {
+        stmt->isArrayPattern = true;
+        if (!check(TokenType::RBRACKET)) {
+            do {
+                PatternEntry entry;
+                if (match(TokenType::SPREAD)) {
+                    entry.name = consume(TokenType::IDENTIFIER, "Expected name after '...'").lexeme;
+                    entry.isRest = true;
+                } else {
+                    entry.name = consume(TokenType::IDENTIFIER, "Expected variable name").lexeme;
+                }
+                stmt->pattern.push_back(std::move(entry));
+            } while (match(TokenType::COMMA));
+        }
+        consume(TokenType::RBRACKET, "Expected ']' after destructuring pattern");
+        consume(TokenType::ASSIGN, "Expected '=' after destructuring pattern");
+        stmt->initializer = expression();
+        return stmt;
+    }
+
+    // Map destructuring: let {name, age, ...rest} = expr
+    if (match(TokenType::LBRACE)) {
+        stmt->isArrayPattern = false;
+        if (!check(TokenType::RBRACE)) {
+            do {
+                PatternEntry entry;
+                if (match(TokenType::SPREAD)) {
+                    entry.name = consume(TokenType::IDENTIFIER, "Expected name after '...'").lexeme;
+                    entry.isRest = true;
+                } else {
+                    if (!isNameToken(peek().type))
+                        throw error(peek(), "Expected variable name in destructuring");
+                    entry.name = advance().lexeme;
+                    entry.key = entry.name;
+                    // Optional rename: {key: varName}
+                    if (match(TokenType::COLON)) {
+                        entry.key = entry.name;
+                        entry.name = consume(TokenType::IDENTIFIER, "Expected variable name after ':'").lexeme;
+                    }
+                }
+                stmt->pattern.push_back(std::move(entry));
+            } while (match(TokenType::COMMA));
+        }
+        consume(TokenType::RBRACE, "Expected '}' after destructuring pattern");
+        consume(TokenType::ASSIGN, "Expected '=' after destructuring pattern");
+        stmt->initializer = expression();
+        return stmt;
+    }
+
+    // Simple: let name = expr
+    Token name = consume(TokenType::IDENTIFIER, "Expected variable name after 'let'");
     stmt->name = name.lexeme;
 
     if (match(TokenType::ASSIGN)) {
@@ -744,7 +796,14 @@ ExprPtr Parser::primary() {
         arr->line = ln;
         if (!check(TokenType::RBRACKET)) {
             do {
-                arr->elements.push_back(expression());
+                if (match(TokenType::SPREAD)) {
+                    auto spread = std::make_unique<SpreadExpr>();
+                    spread->line = previous().line;
+                    spread->expr = expression();
+                    arr->elements.push_back(std::move(spread));
+                } else {
+                    arr->elements.push_back(expression());
+                }
             } while (match(TokenType::COMMA));
         }
         consume(TokenType::RBRACKET, "Expected ']' after array elements");
@@ -804,6 +863,15 @@ ExprPtr Parser::primary() {
         map->line = ln;
         if (!check(TokenType::RBRACE)) {
             do {
+                // Spread: {...other}
+                if (match(TokenType::SPREAD)) {
+                    auto spread = std::make_unique<SpreadExpr>();
+                    spread->line = previous().line;
+                    spread->expr = expression();
+                    map->keys.push_back("");  // empty key = spread
+                    map->values.push_back(std::move(spread));
+                    continue;
+                }
                 std::string key;
                 if (isNameToken(peek().type)) {
                     key = advance().lexeme;

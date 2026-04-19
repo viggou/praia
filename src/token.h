@@ -72,6 +72,7 @@ enum class TokenType {
     SHR,        // >>
     DOT,        // .
     DOT_DOT,    // ..
+    SPREAD,     // ...
     PIPE,       // |>
     COLON,      // :
 
@@ -154,6 +155,7 @@ inline std::string tokenTypeToString(TokenType type) {
         case TokenType::SHR:         return "SHR";
         case TokenType::DOT:         return "DOT";
         case TokenType::DOT_DOT:     return "DOT_DOT";
+        case TokenType::SPREAD:      return "SPREAD";
         case TokenType::PIPE:        return "PIPE";
         case TokenType::COLON:       return "COLON";
         case TokenType::LPAREN:      return "LPAREN";

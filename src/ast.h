@@ -73,8 +73,12 @@ struct LambdaExpr : Expr {
     std::vector<StmtPtr> body;
 };
 
+struct SpreadExpr : Expr {
+    ExprPtr expr;
+};
+
 struct ArrayLiteralExpr : Expr {
-    std::vector<ExprPtr> elements;
+    std::vector<ExprPtr> elements; // may contain SpreadExpr nodes
 };
 
 struct IndexExpr : Expr {
@@ -135,9 +139,21 @@ struct ExprStmt : Stmt {
     ExprPtr expr;
 };
 
+// Destructuring pattern element
+struct PatternEntry {
+    std::string name;       // variable to bind
+    std::string key;        // for maps: the key to extract (empty = same as name)
+    bool isRest = false;    // ...rest
+};
+
 struct LetStmt : Stmt {
+    // Simple: name is set, pattern is empty
+    // Array destructuring: pattern has entries, isArrayPattern = true
+    // Map destructuring: pattern has entries, isArrayPattern = false
     std::string name;
-    ExprPtr initializer; // nullptr when uninitialized (= nil)
+    std::vector<PatternEntry> pattern;
+    bool isArrayPattern = false;
+    ExprPtr initializer;
 };
 
 struct BlockStmt : Stmt {

@@ -9,6 +9,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <set>
 #include <sstream>
 
 namespace fs = std::filesystem;
@@ -230,9 +231,52 @@ void Interpreter::execute(const Stmt* stmt) {
         evaluate(s->expr.get());
 
     } else if (auto* s = dynamic_cast<const LetStmt*>(stmt)) {
-        Value val;
-        if (s->initializer) val = evaluate(s->initializer.get());
-        env->define(s->name, std::move(val));
+        if (!s->pattern.empty()) {
+            // Destructuring
+            Value val = evaluate(s->initializer.get());
+            if (s->isArrayPattern) {
+                if (!val.isArray())
+                    throw RuntimeError("Cannot destructure non-array value", s->line);
+                auto& elems = val.asArray()->elements;
+                for (size_t i = 0; i < s->pattern.size(); i++) {
+                    auto& p = s->pattern[i];
+                    if (p.isRest) {
+                        auto rest = std::make_shared<PraiaArray>();
+                        for (size_t j = i; j < elems.size(); j++)
+                            rest->elements.push_back(elems[j]);
+                        env->define(p.name, Value(rest));
+                        break;
+                    }
+                    env->define(p.name, i < elems.size() ? elems[i] : Value());
+                }
+            } else {
+                // Map destructuring
+                if (!val.isMap())
+                    throw RuntimeError("Cannot destructure non-map value", s->line);
+                auto& entries = val.asMap()->entries;
+                std::set<std::string> extracted;
+                for (auto& p : s->pattern) {
+                    if (p.isRest) {
+                        auto rest = std::make_shared<PraiaMap>();
+                        for (auto& [k, v] : entries) {
+                            if (!extracted.count(k))
+                                rest->entries[k] = v;
+                        }
+                        env->define(p.name, Value(rest));
+                        break;
+                    }
+                    std::string key = p.key.empty() ? p.name : p.key;
+                    extracted.insert(key);
+                    auto it = entries.find(key);
+                    env->define(p.name, it != entries.end() ? it->second : Value());
+                }
+            }
+        } else {
+            // Simple let
+            Value val;
+            if (s->initializer) val = evaluate(s->initializer.get());
+            env->define(s->name, std::move(val));
+        }
 
     } else if (auto* s = dynamic_cast<const BlockStmt*>(stmt)) {
         executeBlock(s, std::make_shared<Environment>(env));
@@ -583,8 +627,17 @@ Value Interpreter::evaluate(const Expr* expr) {
 
     if (auto* e = dynamic_cast<const ArrayLiteralExpr*>(expr)) {
         auto arr = std::make_shared<PraiaArray>();
-        for (const auto& elem : e->elements)
-            arr->elements.push_back(evaluate(elem.get()));
+        for (const auto& elem : e->elements) {
+            if (auto* spread = dynamic_cast<const SpreadExpr*>(elem.get())) {
+                Value val = evaluate(spread->expr.get());
+                if (!val.isArray())
+                    throw RuntimeError("Spread requires an array", spread->line);
+                for (auto& item : val.asArray()->elements)
+                    arr->elements.push_back(item);
+            } else {
+                arr->elements.push_back(evaluate(elem.get()));
+            }
+        }
         return Value(arr);
     }
 
@@ -688,8 +741,18 @@ Value Interpreter::evaluate(const Expr* expr) {
 
     if (auto* e = dynamic_cast<const MapLiteralExpr*>(expr)) {
         auto map = std::make_shared<PraiaMap>();
-        for (size_t i = 0; i < e->keys.size(); i++)
-            map->entries[e->keys[i]] = evaluate(e->values[i].get());
+        for (size_t i = 0; i < e->keys.size(); i++) {
+            if (e->keys[i].empty() && dynamic_cast<const SpreadExpr*>(e->values[i].get())) {
+                auto* spread = dynamic_cast<const SpreadExpr*>(e->values[i].get());
+                Value val = evaluate(spread->expr.get());
+                if (!val.isMap())
+                    throw RuntimeError("Spread in map requires a map", spread->line);
+                for (auto& [k, v] : val.asMap()->entries)
+                    map->entries[k] = v;
+            } else {
+                map->entries[e->keys[i]] = evaluate(e->values[i].get());
+            }
+        }
         return Value(map);
     }
 
