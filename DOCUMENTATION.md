@@ -1415,6 +1415,54 @@ server.listen(3000)
 
 If the handler throws an error, the server returns a 500 response and continues running.
 
+#### Graceful shutdown
+
+The server handles `SIGINT` (Ctrl-C) and `SIGTERM` (container stop) gracefully — it finishes the current request, closes the socket, and returns from `listen()`. Code after `listen()` runs normally:
+
+```
+app.listen(8080)
+// This runs after Ctrl-C or SIGTERM:
+print("Shutting down...")
+db.close()
+```
+
+#### Server-Sent Events (SSE)
+
+`http.sse(req, callback)` keeps the connection open for real-time streaming. The callback receives a `send` function.
+
+```
+app.get("/events", lam{ req, params in
+    return http.sse(req, lam{ send in
+        for (i in 0..10) {
+            send(json.stringify({count: i}), "update")   // send(data, event?)
+            time.sleep(1000)
+        }
+        send("done", "close")
+    })
+})
+```
+
+The client receives standard SSE format:
+
+```
+event: update
+data: {"count":0}
+
+event: update
+data: {"count":1}
+```
+
+`send(data)` sends a plain `data:` message. `send(data, eventName)` adds an `event:` field. The connection closes when the callback returns.
+
+**Browser client:**
+
+```javascript
+const events = new EventSource('/events');
+events.addEventListener('update', e => {
+    console.log(JSON.parse(e.data));
+});
+```
+
 #### Query parameters
 
 Query strings are automatically parsed into a map. Values are URL-decoded.

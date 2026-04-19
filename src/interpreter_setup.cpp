@@ -378,6 +378,64 @@ Interpreter::Interpreter() {
             return Value(server);
         }));
 
+    // http.sse(req, callback) — Server-Sent Events
+    // callback receives a send function: send(data, event?)
+    // The connection stays open until the callback returns.
+    httpMap->entries["sse"] = Value(makeNative("http.sse", 2,
+        [self](const std::vector<Value>& args) -> Value {
+            if (!args[0].isMap())
+                throw RuntimeError("http.sse() requires a request object", 0);
+            if (!args[1].isCallable())
+                throw RuntimeError("http.sse() requires a callback function", 0);
+
+            auto& reqMap = args[0].asMap()->entries;
+            if (!reqMap.count("__clientFd"))
+                throw RuntimeError("http.sse() must be called inside an HTTP handler", 0);
+
+            int clientFd = static_cast<int>(reqMap["__clientFd"].asNumber());
+            auto callback = args[1].asCallable();
+
+            // Send SSE headers
+            std::string headers = "HTTP/1.1 200 OK\r\n"
+                                  "Content-Type: text/event-stream\r\n"
+                                  "Cache-Control: no-cache\r\n"
+                                  "Connection: keep-alive\r\n"
+                                  "Access-Control-Allow-Origin: *\r\n"
+                                  "\r\n";
+            send(clientFd, headers.c_str(), headers.size(), 0);
+
+            // Create a send function for the callback
+            auto sendFn = makeNative("send", -1,
+                [clientFd](const std::vector<Value>& args) -> Value {
+                    if (args.empty())
+                        throw RuntimeError("send() requires data", 0);
+                    std::string msg;
+                    // Optional event name
+                    if (args.size() > 1 && args[1].isString())
+                        msg += "event: " + args[1].asString() + "\n";
+                    msg += "data: " + args[0].toString() + "\n\n";
+                    ssize_t sent = ::send(clientFd, msg.c_str(), msg.size(), 0);
+                    if (sent < 0)
+                        throw RuntimeError("SSE client disconnected", 0);
+                    return Value();
+                });
+
+            // Call the callback with the send function
+            try {
+                std::vector<Value> cbArgs = {Value(std::static_pointer_cast<Callable>(sendFn))};
+                callback->call(*self, cbArgs);
+            } catch (const RuntimeError&) {
+                // Client likely disconnected — not an error
+            }
+
+            close(clientFd);
+
+            // Return a marker so the server loop knows not to send a response
+            auto marker = std::make_shared<PraiaMap>();
+            marker->entries["__sse"] = Value(true);
+            return Value(marker);
+        }));
+
     httpMap->entries["encodeURI"] = Value(makeNative("http.encodeURI", 1,
         [](const std::vector<Value>& args) -> Value {
             if (!args[0].isString())
