@@ -14,34 +14,19 @@ func apply(f, x) {
 }
 print("apply:", apply(lam{ x in x * x }, 7))
 
-// ── Filter/map pattern ──
-func filter(arr, predicate) {
-    let result = []
-    for (item in arr) {
-        if (predicate(item)) {
-            result.push(item)
-        }
-    }
-    return result
-}
-
-func map(arr, transform) {
-    let result = []
-    for (item in arr) {
-        result.push(transform(item))
-    }
-    return result
-}
-
+// ── Filter/map with pipes ──
 let nums = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
-let evens = filter(nums, lam{ n in n % 2 == 0 })
+
+let evens = nums |> filter(lam{ n in n % 2 == 0 })
 print("evens:", evens)
 
-let squares = map(nums, lam{ n in n * n })
+let squares = nums |> map(lam{ n in n * n })
 print("squares:", squares)
 
-// ── Chaining ──
-let result = map(filter(nums, lam{ n in n > 5 }), lam{ n in n * 10 })
+// ── Chaining — reads top to bottom instead of inside out ──
+let result = nums
+    |> filter(lam{ n in n > 5 })
+    |> map(lam{ n in n * 10 })
 print("filtered & mapped:", result)
 
 // ── Closures work ──
@@ -72,24 +57,10 @@ print(actions.double(21))
 print(actions.negate(42))
 print(actions.greet("Praia"))
 
-// ── Sorting with lambdas (bubble sort) ──
-func sort(arr, compare) {
-    let n = len(arr)
-    for (i in 0..n) {
-        for (j in 0..n - 1 - i) {
-            if (compare(arr[j], arr[j + 1]) > 0) {
-                let tmp = arr[j]
-                arr[j] = arr[j + 1]
-                arr[j + 1] = tmp
-            }
-        }
-    }
-    return arr
-}
-
+// ── Sorting with built-in sort ──
 let data = [5, 2, 8, 1, 9, 3]
-sort(data, lam{ a, b in a - b })
-print("sorted:", data)
-
-sort(data, lam{ a, b in b - a })
-print("reversed:", data)
+let sorted = data |> sort
+print("sorted:", sorted)
+sorted.reverse()
+print("reversed:", sorted)
+print("original unchanged:", data)

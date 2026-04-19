@@ -28,11 +28,8 @@ let mixed = [1, "two", true, nil, [3, 4]]
 print("mixed:", mixed)
 print("nested:", mixed[4][1])
 
-// Building arrays dynamically
-let squares = []
-for (i in 0..5) {
-    push(squares, i * i)
-}
+// Building arrays with map
+let squares = [0, 1, 2, 3, 4] |> map(lam{ n in n * n })
 print("squares:", squares)
 
 // Reference semantics

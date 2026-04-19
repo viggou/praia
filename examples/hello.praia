@@ -1,38 +1,31 @@
-let name = "ada"
-let age
+// Hello, Praia!
+print("Hello, World!")
 
-func getAge(who) {
-    if (age) {
-        print("%{name} is %{age} years old")
+// Variables and string interpolation
+let name = "Ada"
+let age = 36
+print("%{name} is %{age} years old")
+
+// Functions
+func greet(who) {
+    print("Welcome, %{who}!")
+}
+greet(name)
+
+// Arrays and pipes
+let numbers = [5, 3, 8, 1, 9, 2, 7]
+let big = numbers
+    |> filter(lam{ n in n > 4 })
+    |> sort
+print("Numbers above 4:", big)
+
+// Maps
+let person = {name: "Ada", lang: "Praia"}
+print("%{person.name} writes %{person.lang}")
+
+// Control flow
+for (i in 1..6) {
+    if (i % 2 == 0) {
+        print("%{i} is even")
     }
-    else {
-        print("%{name} has no age set")
-    }
 }
-
-getAge(name)
-
-age = 20
-
-getAge(name)
-
-// for loop (same as the while loop below)
-for (i in 0..5) {
-    print(i)
-}
-
-// equivalent while loop
-let j = 0
-while (j < 5) {
-    print(j)
-    j = j + 1
-}
-
-/* This should result in the following output:
-ada has no age set
-ada is 20 years old
-0
-1
-2
-3
-4 */

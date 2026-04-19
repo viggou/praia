@@ -6,11 +6,10 @@ print("name:", data.name)
 print("age:", data.age)
 print("langs:", data.langs)
 
-// Nested
-let nested = json.parse("{\"users\": [{\"name\": \"Alice\"}, {\"name\": \"Bob\"}]}")
-for (user in nested.users) {
-    print("user:", user.name)
-}
+// Nested — pipe into parse, then extract names
+let nested = "{\"users\": [{\"name\": \"Alice\"}, {\"name\": \"Bob\"}]}" |> json.parse
+let userNames = nested.users |> map(lam{ u in u.name })
+print("users:", userNames)
 
 // Parse with bools and null
 let mixed = json.parse("{\"active\": true, \"deleted\": false, \"notes\": null}")
@@ -61,10 +60,11 @@ print("tags:", flow.tags)
 let obj = {name: "Praia", version: 1, features: ["fast", "simple"]}
 print(yaml.stringify(obj))
 
-// ── Practical: JSON API response ──
+// ── Practical: JSON API response with pipes ──
 print("--- Practical ---")
 let response = "{\"status\": \"ok\", \"data\": {\"count\": 42, \"items\": [\"a\", \"b\", \"c\"]}}"
-let res = json.parse(response)
+let res = response |> json.parse
 if (res.status == "ok") {
-    print("Got %{res.data.count} items: %{res.data.items.join(", ")}")
+    let items = res.data.items |> sort
+    print("Got %{res.data.count} items: %{items.join(", ")}")
 }
