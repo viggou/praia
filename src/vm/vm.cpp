@@ -132,6 +132,7 @@ bool VM::callClosure(ObjClosure* closure, int argCount, int line) {
     frame.function = nullptr;
     frame.ip = fn->chunk.code.data();
     frame.baseSlot = stackTop - argCount - 1; // -1 for the closure itself on stack
+    frame.definingClass = nullptr;
     return true;
 }
 
@@ -150,7 +151,10 @@ bool VM::callValue(Value callee, int argCount, int line) {
         if (bound) {
             // Replace the callee slot with the receiver (this)
             stack[stackTop - argCount - 1] = bound->receiver;
-            return callClosure(bound->method, argCount, line);
+            if (!callClosure(bound->method, argCount, line)) return false;
+            // Tag the new frame with the defining class for super resolution
+            frames[frameCount - 1].definingClass = bound->definingClass;
+            return true;
         }
 
         // PraiaClass (instantiation)
@@ -162,12 +166,22 @@ bool VM::callValue(Value callee, int argCount, int line) {
             // Replace callee with the new instance
             stack[stackTop - argCount - 1] = Value(instance);
 
-            // Call init if it exists
-            auto it = klass->vmMethods.find("init");
-            if (it != klass->vmMethods.end() && it->second.isCallable()) {
-                auto* initVmcc = dynamic_cast<VMClosureCallable*>(it->second.asCallable().get());
-                if (initVmcc) {
-                    return callClosure(initVmcc->closure, argCount, line);
+            // Call init if it exists — walk the class chain to find it
+            std::shared_ptr<PraiaClass> initOwner;
+            auto walkKlass = std::dynamic_pointer_cast<PraiaClass>(callable);
+            while (walkKlass) {
+                if (walkKlass->vmMethods.count("init")) { initOwner = walkKlass; break; }
+                walkKlass = walkKlass->superclass;
+            }
+            if (initOwner) {
+                auto& initVal = initOwner->vmMethods["init"];
+                if (initVal.isCallable()) {
+                    auto* initVmcc = dynamic_cast<VMClosureCallable*>(initVal.asCallable().get());
+                    if (initVmcc) {
+                        if (!callClosure(initVmcc->closure, argCount, line)) return false;
+                        frames[frameCount - 1].definingClass = initOwner;
+                        return true;
+                    }
                 }
             } else if (argCount > 0) {
                 runtimeError(klass->className + "() takes no arguments (no init method)", line);
@@ -665,13 +679,6 @@ VM::Result VM::execute(int baseFrameCount_) {
 
             subPtr->superclass = superPtr;
 
-            // Copy superclass methods (they can be overridden later by OP_METHOD)
-            for (auto& [k, v] : superPtr->vmMethods) {
-                if (subPtr->vmMethods.find(k) == subPtr->vmMethods.end()) {
-                    subPtr->vmMethods[k] = v;
-                }
-            }
-
             pop(); // pop superclass
             break;
         }
@@ -686,31 +693,31 @@ VM::Result VM::execute(int baseFrameCount_) {
                 auto fit = inst->fields.find(name);
                 if (fit != inst->fields.end()) { push(fit->second); break; }
 
-                // Then methods — bind to instance
-                auto it = inst->klass->vmMethods.find(name);
-                if (it == inst->klass->vmMethods.end()) {
-                    // Walk superclass chain
-                    auto walk = inst->klass->superclass;
+                // Then methods — walk class chain, track which class owns it
+                std::shared_ptr<PraiaClass> methodOwner;
+                Value methodVal;
+                {
+                    auto walk = inst->klass;
                     while (walk) {
                         auto sit = walk->vmMethods.find(name);
-                        if (sit != walk->vmMethods.end()) { it = sit; break; }
+                        if (sit != walk->vmMethods.end()) {
+                            methodOwner = walk;
+                            methodVal = sit->second;
+                            break;
+                        }
                         walk = walk->superclass;
                     }
                 }
-                if (it != inst->klass->vmMethods.end()) {
-                    // Bind: create a new closure-like value with "this" bound
-                    // For simplicity, store instance+method as a bound method callable
-                    auto boundMethod = it->second;
-                    if (boundMethod.isCallable()) {
-                        auto* vmcc = dynamic_cast<VMClosureCallable*>(boundMethod.asCallable().get());
+                if (methodOwner) {
+                    if (methodVal.isCallable()) {
+                        auto* vmcc = dynamic_cast<VMClosureCallable*>(methodVal.asCallable().get());
                         if (vmcc) {
-                            // Create a bound method: when called, slot 0 = this
-                            auto bm = std::make_shared<VMBoundMethod>(obj, vmcc->closure);
+                            auto bm = std::make_shared<VMBoundMethod>(obj, vmcc->closure, methodOwner);
                             push(Value(std::static_pointer_cast<Callable>(bm)));
                             break;
                         }
                     }
-                    push(boundMethod);
+                    push(methodVal);
                     break;
                 }
 
@@ -780,21 +787,42 @@ VM::Result VM::execute(int baseFrameCount_) {
             if (!instance.isInstance()) {
                 RUNTIME_ERR("'super' used outside of a method");
             }
-            auto inst = instance.asInstance();
-            auto super = inst->klass->superclass;
+
+            // Use the defining class of the current method (not inst->klass)
+            // so multi-level inheritance resolves super correctly
+            auto defClass = FRAME.definingClass;
+            if (!defClass) {
+                // Fallback: no defining class on frame, use instance's class
+                defClass = instance.asInstance()->klass;
+            }
+            auto super = defClass->superclass;
             if (!super) { RUNTIME_ERR("Class has no superclass"); }
 
-            auto it = super->vmMethods.find(name);
-            if (it == super->vmMethods.end()) {
+            // Walk up from super to find the method
+            std::shared_ptr<PraiaClass> methodOwner;
+            Value methodVal;
+            {
+                auto walk = super;
+                while (walk) {
+                    auto sit = walk->vmMethods.find(name);
+                    if (sit != walk->vmMethods.end()) {
+                        methodOwner = walk;
+                        methodVal = sit->second;
+                        break;
+                    }
+                    walk = walk->superclass;
+                }
+            }
+            if (!methodOwner) {
                 RUNTIME_ERR("Superclass has no method '" + name + "'");
             }
 
-            auto* vmcc = dynamic_cast<VMClosureCallable*>(it->second.asCallable().get());
+            auto* vmcc = dynamic_cast<VMClosureCallable*>(methodVal.asCallable().get());
             if (vmcc) {
-                auto bm = std::make_shared<VMBoundMethod>(instance, vmcc->closure);
+                auto bm = std::make_shared<VMBoundMethod>(instance, vmcc->closure, methodOwner);
                 push(Value(std::static_pointer_cast<Callable>(bm)));
             } else {
-                push(it->second);
+                push(methodVal);
             }
             break;
         }

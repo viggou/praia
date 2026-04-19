@@ -45,7 +45,9 @@ struct VMClosureCallable : Callable {
 struct VMBoundMethod : Callable {
     Value receiver;
     ObjClosure* method;
-    VMBoundMethod(Value recv, ObjClosure* m) : receiver(std::move(recv)), method(m) {}
+    std::shared_ptr<PraiaClass> definingClass; // which class owns this method (for super resolution)
+    VMBoundMethod(Value recv, ObjClosure* m, std::shared_ptr<PraiaClass> dc = nullptr)
+        : receiver(std::move(recv)), method(m), definingClass(std::move(dc)) {}
     Value call(Interpreter&, const std::vector<Value>&) override { return Value(); } // unused
     int arity() const override { return method->function->arity; }
     std::string name() const override { return method->function->name; }
@@ -56,6 +58,7 @@ struct VMCallFrame {
     std::shared_ptr<CompiledFunction> function; // fallback for script frame
     const uint8_t* ip;
     int baseSlot;
+    std::shared_ptr<PraiaClass> definingClass; // for super resolution in methods
 
     Chunk& chunk() const {
         return closure ? closure->function->chunk : function->chunk;
