@@ -391,11 +391,11 @@ VM::Result VM::execute(int baseFrameCount_) {
     #define READ_CONSTANT() (FRAME.chunk().constants[READ_U16()])
     #define READ_STRING() (READ_CONSTANT().asString())
     #define CURRENT_LINE() (FRAME.chunk().getLine(static_cast<int>(FRAME.ip - FRAME.chunk().code.data())))
-    #define RUNTIME_ERR(msg) do { \
+    #define RUNTIME_ERR(msg) { \
         std::string _msg = (msg); int _line = CURRENT_LINE(); \
-        if (tryHandleError(Value(_msg))) break; \
+        if (tryHandleError(Value(_msg))) continue; \
         runtimeError(_msg, _line); return Result::RUNTIME_ERROR; \
-    } while(0)
+    }
 
     for (;;) {
         uint8_t instruction = READ_BYTE();
