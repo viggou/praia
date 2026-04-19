@@ -2,6 +2,9 @@
 #include "interpreter.h"
 #include "lexer.h"
 #include "parser.h"
+#include "vm/compiler.h"
+#include "vm/vm.h"
+#include "vm/debug.h"
 #include <algorithm>
 #include <cstdlib>
 #include <filesystem>
@@ -428,6 +431,7 @@ static int runTestsCommand(const std::string& dir) {
 int main(int argc, char* argv[]) {
     bool showTokens = false;
     bool showAst = false;
+    bool useVm = false;
     std::string filename;
     int fileArgIndex = -1;
 
@@ -437,28 +441,49 @@ int main(int argc, char* argv[]) {
         return runTestsCommand(dir);
     }
 
-    // `praia -c "code"` — run a one-liner
-    if (argc >= 3 && std::string(argv[1]) == "-c") {
-        std::string source = argv[2];
-        auto program = compile(source, false, false);
-        if (!program.empty()) {
-            Interpreter interpreter;
-            // Remaining args after the code string
-            std::vector<std::string> scriptArgs;
-            for (int i = 3; i < argc; i++)
-                scriptArgs.push_back(argv[i]);
-            interpreter.setArgs(scriptArgs);
-            try { interpreter.interpret(program); }
-            catch (const ExitSignal& e) { return e.code; }
-        }
-        return 0;
-    }
+    // Parse all flags first
+    std::string cCode;
+    bool hasCFlag = false;
+    int cArgStart = -1;
 
     for (int i = 1; i < argc; i++) {
         std::string arg = argv[i];
         if (arg == "--tokens")        showTokens = true;
         else if (arg == "--ast")      showAst = true;
-        else if (filename.empty()) {  filename = arg; fileArgIndex = i; break; }
+        else if (arg == "--vm")       useVm = true;
+        else if (arg == "-c" && i + 1 < argc) {
+            hasCFlag = true;
+            cCode = argv[++i];
+            cArgStart = i + 1;
+            break;
+        }
+        else if (filename.empty()) { filename = arg; fileArgIndex = i; break; }
+    }
+
+    // `praia [-vm] -c "code"` — run a one-liner
+    if (hasCFlag) {
+        auto program = compile(cCode, showTokens, showAst);
+        if (!program.empty()) {
+            if (useVm) {
+                Compiler compiler;
+                auto script = compiler.compile(program);
+                if (!script) return 1;
+                extern void vmRegisterNatives(VM& vm);
+                VM vm;
+                vmRegisterNatives(vm);
+                try { return vm.run(script) == VM::Result::OK ? 0 : 1; }
+                catch (const ExitSignal& e) { return e.code; }
+            } else {
+                Interpreter interpreter;
+                std::vector<std::string> scriptArgs;
+                for (int i = cArgStart; i < argc; i++)
+                    scriptArgs.push_back(argv[i]);
+                interpreter.setArgs(scriptArgs);
+                try { interpreter.interpret(program); }
+                catch (const ExitSignal& e) { return e.code; }
+            }
+        }
+        return 0;
     }
 
     if (filename.empty()) {
@@ -475,11 +500,28 @@ int main(int argc, char* argv[]) {
     std::string source = readFile(filename);
     auto program = compile(source, showTokens, showAst);
     if (!program.empty()) {
-        Interpreter interpreter;
-        interpreter.setArgs(scriptArgs);
-        interpreter.setCurrentFile(filename);
-        try { interpreter.interpret(program); }
-        catch (const ExitSignal& e) { return e.code; }
+        if (useVm) {
+            // Bytecode VM path
+            Compiler compiler;
+            auto script = compiler.compile(program);
+            if (!script) return 1;
+
+            extern void vmRegisterNatives(VM& vm);
+            VM vm;
+            vmRegisterNatives(vm);
+            vm.setCurrentFile(filename);
+            try {
+                auto result = vm.run(script);
+                return result == VM::Result::OK ? 0 : 1;
+            } catch (const ExitSignal& e) { return e.code; }
+        } else {
+            // Tree-walker path
+            Interpreter interpreter;
+            interpreter.setArgs(scriptArgs);
+            interpreter.setCurrentFile(filename);
+            try { interpreter.interpret(program); }
+            catch (const ExitSignal& e) { return e.code; }
+        }
     }
     return 0;
 }

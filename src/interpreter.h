@@ -80,7 +80,8 @@ struct PraiaMethod : Callable {
 struct PraiaClass : Callable, std::enable_shared_from_this<PraiaClass> {
     std::string className;
     std::shared_ptr<PraiaClass> superclass;
-    std::unordered_map<std::string, const ClassMethod*> methods;  // name -> AST node
+    std::unordered_map<std::string, const ClassMethod*> methods;  // tree-walker: name -> AST node
+    std::unordered_map<std::string, Value> vmMethods;             // VM: name -> closure Value
     std::shared_ptr<Environment> closure;
 
     Value call(Interpreter& interp, const std::vector<Value>& args) override;
@@ -129,6 +130,7 @@ public:
 
     // Public so PraiaFunction::call can use it
     void executeBlock(const BlockStmt* block, std::shared_ptr<Environment> env);
+    std::shared_ptr<Environment> getGlobals() { return globals; }
 
 private:
     Value evaluate(const Expr* expr);
