@@ -606,12 +606,104 @@ VM::Result VM::execute() {
 
         case OpCode::OP_INVOKE:
         case OpCode::OP_SUPER_INVOKE:
-        case OpCode::OP_BUILD_ARRAY:
-        case OpCode::OP_BUILD_MAP:
-        case OpCode::OP_INDEX_GET:
-        case OpCode::OP_INDEX_SET:
-        case OpCode::OP_UNPACK_SPREAD:
-        case OpCode::OP_BUILD_STRING:
+        case OpCode::OP_BUILD_ARRAY: {
+            uint16_t count = READ_U16();
+            auto arr = std::make_shared<PraiaArray>();
+            if (count == 0xFFFF) {
+                // Dynamic count (with spreads) — not yet supported, use fixed count
+                // For now, this shouldn't happen since we fall back to fixed count
+                runtimeError("Dynamic array builds not yet supported in VM", CURRENT_LINE());
+                return Result::RUNTIME_ERROR;
+            }
+            arr->elements.resize(count);
+            for (int i = count - 1; i >= 0; i--) arr->elements[i] = pop();
+            push(Value(arr));
+            break;
+        }
+
+        case OpCode::OP_BUILD_MAP: {
+            uint16_t count = READ_U16();
+            auto map = std::make_shared<PraiaMap>();
+            // Stack has count pairs: key, value, key, value, ...
+            // Pop in reverse
+            std::vector<std::pair<std::string, Value>> pairs(count);
+            for (int i = count - 1; i >= 0; i--) {
+                Value val = pop();
+                Value key = pop();
+                pairs[i] = {key.asString(), std::move(val)};
+            }
+            for (auto& [k, v] : pairs) map->entries[k] = std::move(v);
+            push(Value(map));
+            break;
+        }
+
+        case OpCode::OP_INDEX_GET: {
+            Value idx = pop();
+            Value obj = pop();
+            if (obj.isArray()) {
+                if (!idx.isNumber()) { runtimeError("Array index must be a number", CURRENT_LINE()); return Result::RUNTIME_ERROR; }
+                auto& elems = obj.asArray()->elements;
+                int i = static_cast<int>(idx.asNumber());
+                if (i < 0) i += static_cast<int>(elems.size());
+                if (i < 0 || i >= static_cast<int>(elems.size())) { runtimeError("Array index out of bounds", CURRENT_LINE()); return Result::RUNTIME_ERROR; }
+                push(elems[i]);
+            } else if (obj.isString()) {
+                if (!idx.isNumber()) { runtimeError("String index must be a number", CURRENT_LINE()); return Result::RUNTIME_ERROR; }
+                auto& str = obj.asString();
+                int i = static_cast<int>(idx.asNumber());
+                if (i < 0) i += static_cast<int>(str.size());
+                if (i < 0 || i >= static_cast<int>(str.size())) { runtimeError("String index out of bounds", CURRENT_LINE()); return Result::RUNTIME_ERROR; }
+                push(Value(std::string(1, str[i])));
+            } else if (obj.isMap()) {
+                if (!idx.isString()) { runtimeError("Map key must be a string", CURRENT_LINE()); return Result::RUNTIME_ERROR; }
+                auto& entries = obj.asMap()->entries;
+                auto it = entries.find(idx.asString());
+                if (it == entries.end()) { runtimeError("Map has no key '" + idx.asString() + "'", CURRENT_LINE()); return Result::RUNTIME_ERROR; }
+                push(it->second);
+            } else {
+                runtimeError("Can only index into arrays, strings, and maps", CURRENT_LINE());
+                return Result::RUNTIME_ERROR;
+            }
+            break;
+        }
+
+        case OpCode::OP_INDEX_SET: {
+            Value val = pop();
+            Value idx = pop();
+            Value obj = pop();
+            if (obj.isArray()) {
+                auto& elems = obj.asArray()->elements;
+                int i = static_cast<int>(idx.asNumber());
+                if (i < 0) i += static_cast<int>(elems.size());
+                if (i < 0 || i >= static_cast<int>(elems.size())) { runtimeError("Array index out of bounds", CURRENT_LINE()); return Result::RUNTIME_ERROR; }
+                elems[i] = val;
+                push(val);
+            } else if (obj.isMap()) {
+                obj.asMap()->entries[idx.asString()] = val;
+                push(val);
+            } else {
+                runtimeError("Can only assign to array or map indices", CURRENT_LINE());
+                return Result::RUNTIME_ERROR;
+            }
+            break;
+        }
+
+        case OpCode::OP_UNPACK_SPREAD: {
+            // Not yet fully implemented for VM
+            runtimeError("Spread in VM not yet supported", CURRENT_LINE());
+            return Result::RUNTIME_ERROR;
+        }
+
+        case OpCode::OP_BUILD_STRING: {
+            uint16_t count = READ_U16();
+            std::string result;
+            // Collect all parts in order
+            std::vector<Value> parts(count);
+            for (int i = count - 1; i >= 0; i--) parts[i] = pop();
+            for (auto& p : parts) result += p.toString();
+            push(Value(std::move(result)));
+            break;
+        }
         case OpCode::OP_TRY_BEGIN:
         case OpCode::OP_TRY_END:
         case OpCode::OP_THROW:

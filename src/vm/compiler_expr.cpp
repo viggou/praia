@@ -234,10 +234,65 @@ void Compiler::compileLambdaExpr(const LambdaExpr* expr) {
         emitU16(uv.index, expr->line);
     }
 }
-void Compiler::compileArrayLiteralExpr(const ArrayLiteralExpr* expr) { error("arrays not yet in VM", expr->line); }
-void Compiler::compileMapLiteralExpr(const MapLiteralExpr* expr) { error("maps not yet in VM", expr->line); }
-void Compiler::compileIndexExpr(const IndexExpr* expr) { error("indexing not yet in VM", expr->line); }
-void Compiler::compileIndexAssignExpr(const IndexAssignExpr* expr) { error("index assign not yet in VM", expr->line); }
+void Compiler::compileArrayLiteralExpr(const ArrayLiteralExpr* expr) {
+    int count = 0;
+    for (auto& elem : expr->elements) {
+        if (dynamic_cast<const SpreadExpr*>(elem.get())) {
+            // Spread: compile the array expression, then emit UNPACK_SPREAD
+            compileExpr(dynamic_cast<const SpreadExpr*>(elem.get())->expr.get());
+            emit(OpCode::OP_UNPACK_SPREAD, expr->line);
+            count = -1; // signal dynamic count
+        } else {
+            compileExpr(elem.get());
+            if (count >= 0) count++;
+        }
+    }
+    if (count < 0) {
+        // With spreads — use BUILD_ARRAY with a marker count
+        // Actually, UNPACK_SPREAD pushes elements directly onto the stack,
+        // so we can't know the count at compile time. Use a sentinel approach:
+        // push a marker, elements, then BUILD_ARRAY -1 which counts to the marker.
+        // For simplicity: re-approach without spread optimization for now.
+        // Spreads are handled by OP_UNPACK_SPREAD pushing elements individually.
+        // We emit the total count as 0xFFFF to signal "use runtime counting".
+        emit(OpCode::OP_BUILD_ARRAY, expr->line);
+        emitU16(0xFFFF, expr->line);
+    } else {
+        emit(OpCode::OP_BUILD_ARRAY, expr->line);
+        emitU16(static_cast<uint16_t>(count), expr->line);
+    }
+}
+
+void Compiler::compileMapLiteralExpr(const MapLiteralExpr* expr) {
+    int count = 0;
+    for (size_t i = 0; i < expr->keys.size(); i++) {
+        if (expr->keys[i].empty() && dynamic_cast<const SpreadExpr*>(expr->values[i].get())) {
+            // Spread in map: compile the source map, emit UNPACK_SPREAD
+            compileExpr(dynamic_cast<const SpreadExpr*>(expr->values[i].get())->expr.get());
+            emit(OpCode::OP_UNPACK_SPREAD, expr->line);
+            count = -1;
+        } else {
+            emitConstant(Value(expr->keys[i]), expr->line);
+            compileExpr(expr->values[i].get());
+            if (count >= 0) count++;
+        }
+    }
+    emit(OpCode::OP_BUILD_MAP, expr->line);
+    emitU16(count < 0 ? 0xFFFF : static_cast<uint16_t>(count), expr->line);
+}
+
+void Compiler::compileIndexExpr(const IndexExpr* expr) {
+    compileExpr(expr->object.get());
+    compileExpr(expr->index.get());
+    emit(OpCode::OP_INDEX_GET, expr->line);
+}
+
+void Compiler::compileIndexAssignExpr(const IndexAssignExpr* expr) {
+    compileExpr(expr->object.get());
+    compileExpr(expr->index.get());
+    compileExpr(expr->value.get());
+    emit(OpCode::OP_INDEX_SET, expr->line);
+}
 void Compiler::compileDotExpr(const DotExpr* expr) {
     compileExpr(expr->object.get());
     uint16_t nameIdx = identifierConstant(expr->field);
@@ -252,7 +307,15 @@ void Compiler::compileDotAssignExpr(const DotAssignExpr* expr) {
     emit(OpCode::OP_SET_PROPERTY, expr->line);
     emitU16(nameIdx, expr->line);
 }
-void Compiler::compileInterpolatedStringExpr(const InterpolatedStringExpr* expr) { error("interp string not yet in VM", expr->line); }
+void Compiler::compileInterpolatedStringExpr(const InterpolatedStringExpr* expr) {
+    // Each part is either a StringExpr or an expression — compile them all
+    // then emit BUILD_STRING to concatenate
+    for (auto& part : expr->parts) {
+        compileExpr(part.get());
+    }
+    emit(OpCode::OP_BUILD_STRING, expr->line);
+    emitU16(static_cast<uint16_t>(expr->parts.size()), expr->line);
+}
 void Compiler::compileThisExpr(const ThisExpr* expr) {
     // "this" is always local slot 0 in a method
     int slot = resolveLocal(current, "this");
