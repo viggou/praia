@@ -25,6 +25,7 @@ Praia is a dynamically typed, interpreted programming language built in C++.
 - [Pipe Operator](#pipe-operator)
 - [JSON](#json)
 - [YAML](#yaml)
+- [Concurrency](#concurrency)
 - [Async / Await](#async--await)
 - [HTTP Networking](#http-networking)
 - [Router](#router)
@@ -1205,6 +1206,62 @@ print(yaml.stringify(obj))
 let config = yaml.parse(sys.read("config.yaml"))
 print("Listening on port %{config.server.port}")
 ```
+
+---
+
+## Concurrency
+
+### How the HTTP server works
+
+The HTTP server is **single-threaded** — handlers run one at a time, serially. The next request is not accepted until the current handler returns. This means there are no race conditions by default.
+
+However, if you use `async` inside a handler (e.g., parallel database calls), multiple async tasks may access shared state concurrently. Use `Lock()` to protect shared data.
+
+### Lock
+
+`Lock()` creates a mutex for thread-safe access to shared state.
+
+```
+let lock = Lock()
+let counter = 0
+
+// Manual acquire/release
+lock.acquire()
+counter = counter + 1
+lock.release()
+
+// withLock — auto-releases when the function returns (or throws)
+lock.withLock(lam{ in
+    counter = counter + 1
+})
+```
+
+| Method | Description |
+|--------|-------------|
+| `lock.acquire()` | Acquire the lock (blocks if held by another thread) |
+| `lock.release()` | Release the lock |
+| `lock.withLock(fn)` | Acquire, call fn, release — even if fn throws. Returns fn's return value. |
+
+**Always prefer `withLock`** — it's impossible to forget to release, and it handles errors correctly.
+
+### Example: safe shared state
+
+```
+let lock = Lock()
+let db = sqlite.open("app.db")
+
+app.post("/increment", lam{ req, params in
+    let result = lock.withLock(lam{ in
+        let row = db.query("SELECT count FROM counters WHERE id = 1")
+        let newCount = row[0].count + 1
+        db.run("UPDATE counters SET count = ? WHERE id = 1", [newCount])
+        return newCount
+    })
+    return http.json({count: result})
+})
+```
+
+The lock is re-entrant (recursive) — the same thread can acquire it multiple times without deadlocking.
 
 ---
 

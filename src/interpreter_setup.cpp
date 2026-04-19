@@ -12,6 +12,7 @@
 #include <iomanip>
 #include <iostream>
 #include <limits>
+#include <mutex>
 #include <random>
 #include <sstream>
 #include <thread>
@@ -28,6 +29,7 @@ namespace fs = std::filesystem;
 Interpreter::Interpreter() {
     globals = std::make_shared<Environment>();
     env = globals;
+    Interpreter* self = this;
 
     // ── Global functions ──
 
@@ -117,6 +119,36 @@ Interpreter::Interpreter() {
             if (!args[0].isNumber())
                 throw RuntimeError("fromCharCode() requires a number", 0);
             return Value(std::string(1, static_cast<char>(static_cast<int>(args[0].asNumber()))));
+        })));
+
+    // ── Lock() — mutex for concurrent access ──
+
+    globals->define("Lock", Value(makeNative("Lock", 0,
+        [self](const std::vector<Value>&) -> Value {
+            auto mtx = std::make_shared<std::recursive_mutex>();
+            auto lock = std::make_shared<PraiaMap>();
+
+            lock->entries["acquire"] = Value(makeNative("acquire", 0,
+                [mtx](const std::vector<Value>&) -> Value {
+                    mtx->lock();
+                    return Value();
+                }));
+
+            lock->entries["release"] = Value(makeNative("release", 0,
+                [mtx](const std::vector<Value>&) -> Value {
+                    mtx->unlock();
+                    return Value();
+                }));
+
+            lock->entries["withLock"] = Value(makeNative("withLock", 1,
+                [mtx, self](const std::vector<Value>& args) -> Value {
+                    if (!args[0].isCallable())
+                        throw RuntimeError("withLock() requires a function", 0);
+                    std::lock_guard<std::recursive_mutex> guard(*mtx);
+                    return args[0].asCallable()->call(*self, {});
+                }));
+
+            return Value(lock);
         })));
 
     // ── Functional built-ins (work great with |>) ──
@@ -315,7 +347,6 @@ Interpreter::Interpreter() {
     // ── http namespace ──
 
     auto httpMap = std::make_shared<PraiaMap>();
-    Interpreter* self = this;
 
     httpMap->entries["get"] = Value(makeNative("http.get", 1,
         [](const std::vector<Value>& args) -> Value {
