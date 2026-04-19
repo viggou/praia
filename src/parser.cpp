@@ -862,7 +862,7 @@ ExprPtr Parser::primary() {
 
     if (match(TokenType::AWAIT)) {
         int ln = previous().line;
-        auto expr = expression();
+        auto expr = unary();
         auto e = std::make_unique<AwaitExpr>();
         e->line = ln;
         e->expr = std::move(expr);

@@ -170,7 +170,6 @@ std::string Interpreter::formatStackTrace() const {
 }
 
 bool Interpreter::interpret(const std::vector<StmtPtr>& program) {
-    std::lock_guard<std::recursive_mutex> lock(interpMutex);
     try {
         for (const auto& stmt : program)
             execute(stmt.get());
@@ -190,7 +189,6 @@ bool Interpreter::interpret(const std::vector<StmtPtr>& program) {
 }
 
 void Interpreter::interpretRepl(const std::vector<StmtPtr>& program) {
-    std::lock_guard<std::recursive_mutex> lock(interpMutex);
     try {
         for (const auto& stmt : program) {
             if (auto* es = dynamic_cast<const ExprStmt*>(stmt.get())) {
