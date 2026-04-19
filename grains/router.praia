@@ -2,21 +2,21 @@
 //
 // Usage:
 //   use "router"
-//   let app = router.create()
+//   let server = router.create()
 //
 //   // Middleware runs on every request, in order
-//   app.use(lam{ req, next in
+//   server.use(lam{ req, next in
 //       req.startTime = time.now()
 //       let res = next(req)
 //       return res
 //   })
 //
 //   // Routes
-//   app.get("/users/:id", lam{ req, params in
+//   server.get("/users/:id", lam{ req, params in
 //       return {status: 200, body: "User %{params.id}"}
 //   })
 //
-//   app.listen(8080)
+//   server.listen(8080)
 
 func matchRoute(pattern, path) {
     let patternParts = pattern.split("/")

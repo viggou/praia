@@ -1,6 +1,7 @@
 #include "builtins.h"
 #include "value.h"
 #include <cctype>
+#include <iomanip>
 #include <memory>
 #include <sstream>
 #include <string>
@@ -184,7 +185,9 @@ std::string jsonStringify(const Value& val, int indent, int depth) {
     if (val.isNil()) return "null";
     if (val.isBool()) return val.asBool() ? "true" : "false";
     if (val.isNumber()) {
-        std::ostringstream o; o << val.asNumber(); return o.str();
+        std::ostringstream o;
+        o << std::setprecision(17) << val.asNumber();
+        return o.str();
     }
     if (val.isString()) {
         std::string r = "\"";

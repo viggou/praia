@@ -3,10 +3,10 @@
 // Usage:
 //   use "router"
 //   use "middleware"
-//   let app = router.create()
-//   app.use(middleware.cors())
-//   app.use(middleware.jsonBody())
-//   app.use(middleware.requestId())
+//   let server = router.create()
+//   server.use(middleware.cors())
+//   server.use(middleware.jsonBody())
+//   server.use(middleware.requestId())
 
 func hasKey(m, k) {
     return keys(m).contains(k)

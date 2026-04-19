@@ -1250,7 +1250,7 @@ lock.withLock(lam{ in
 let lock = Lock()
 let db = sqlite.open("app.db")
 
-app.post("/increment", lam{ req, params in
+server.post("/increment", lam{ req, params in
     let result = lock.withLock(lam{ in
         let row = db.query("SELECT count FROM counters WHERE id = 1")
         let newCount = row[0].count + 1
@@ -1477,7 +1477,7 @@ If the handler throws an error, the server returns a 500 response and continues 
 The server handles `SIGINT` (Ctrl-C) and `SIGTERM` (container stop) gracefully — it finishes the current request, closes the socket, and returns from `listen()`. Code after `listen()` runs normally:
 
 ```
-app.listen(8080)
+server.listen(8080)
 // This runs after Ctrl-C or SIGTERM:
 print("Shutting down...")
 db.close()
@@ -1488,7 +1488,7 @@ db.close()
 `http.sse(req, callback)` keeps the connection open for real-time streaming. The callback receives a `send` function.
 
 ```
-app.get("/events", lam{ req, params in
+server.get("/events", lam{ req, params in
     return http.sse(req, lam{ send in
         for (i in 0..10) {
             send(json.stringify({count: i}), "update")   // send(data, event?)
@@ -1527,7 +1527,7 @@ Query strings are automatically parsed into a map. Values are URL-decoded.
 ```
 // Request: GET /search?q=hello+world&page=2
 
-app.get("/search", lam{ req, params in
+server.get("/search", lam{ req, params in
     print(req.query.q)      // "hello world"
     print(req.query.page)   // "2"
 })
@@ -1564,7 +1564,7 @@ return http.file("public/style.css")     // auto-detects text/css
 #### Static file serving
 
 ```
-app.get("/static/:filename", lam{ req, params in
+server.get("/static/:filename", lam{ req, params in
     return http.file("public/" + params.filename)
 })
 ```
@@ -1595,13 +1595,13 @@ The `router` grain provides Express-style HTTP routing with path parameters.
 ```
 use "router"
 
-let app = router.create()
+let server = router.create()
 
-app.get("/", lam{ req, params in
+server.get("/", lam{ req, params in
     return {status: 200, body: "Home"}
 })
 
-app.listen(8080)
+server.listen(8080)
 ```
 
 ### Path parameters
@@ -1609,18 +1609,18 @@ app.listen(8080)
 Use `:name` segments to capture parts of the URL. Captured values are passed as the second argument to the handler.
 
 ```
-app.get("/users/:id", lam{ req, params in
+server.get("/users/:id", lam{ req, params in
     return {status: 200, body: "User %{params.id}"}
 })
 
-app.post("/api/game/:id/guess", lam{ req, params in
+server.post("/api/game/:id/guess", lam{ req, params in
     let gameId = params.id
     let guess = json.parse(req.body)
     // ...
 })
 
 // Multiple params
-app.get("/users/:userId/posts/:postId", lam{ req, params in
+server.get("/users/:userId/posts/:postId", lam{ req, params in
     print(params.userId, params.postId)
 })
 ```
@@ -1629,18 +1629,18 @@ app.get("/users/:userId/posts/:postId", lam{ req, params in
 
 | Method | Description |
 |--------|-------------|
-| `app.get(path, handler)` | GET |
-| `app.post(path, handler)` | POST |
-| `app.put(path, handler)` | PUT |
-| `app.delete(path, handler)` | DELETE |
-| `app.patch(path, handler)` | PATCH |
-| `app.options(path, handler)` | OPTIONS |
-| `app.all(path, handler)` | Match any method |
+| `server.get(path, handler)` | GET |
+| `server.post(path, handler)` | POST |
+| `server.put(path, handler)` | PUT |
+| `server.delete(path, handler)` | DELETE |
+| `server.patch(path, handler)` | PATCH |
+| `server.options(path, handler)` | OPTIONS |
+| `server.all(path, handler)` | Match any method |
 
 ### Custom 404
 
 ```
-app.notFound(lam{ req, params in
+server.notFound(lam{ req, params in
     return {
         status: 404,
         body: json.stringify({error: "Not found", path: req.path}),
@@ -1661,7 +1661,7 @@ All handlers receive two arguments: `(req, params)`.
 Use `.handle(req)` to test routing without starting a server:
 
 ```
-let result = app.handle({method: "GET", path: "/users/42", query: {}, body: ""})
+let result = server.handle({method: "GET", path: "/users/42", query: {}, body: ""})
 print(result.body)      // "User 42"
 ```
 
@@ -1677,10 +1677,10 @@ The `middleware` grain provides common middleware functions for the router. Midd
 use "router"
 use "middleware"
 
-let app = router.create()
-app.use(middleware.requestId())
-app.use(middleware.cors())
-app.use(middleware.jsonBody())
+let server = router.create()
+server.use(middleware.requestId())
+server.use(middleware.cors())
+server.use(middleware.jsonBody())
 ```
 
 ### How middleware works
@@ -1689,7 +1689,7 @@ Each middleware is a function that receives `(req, next)`. Call `next(req)` to p
 
 ```
 // Custom middleware
-app.use(lam{ req, next in
+server.use(lam{ req, next in
     let start = time.now()
     let res = next(req)      // call next middleware / handler
     let ms = time.now() - start
@@ -1712,16 +1712,16 @@ app.use(lam{ req, next in
 ### CORS
 
 ```
-app.use(middleware.cors())                              // allow all origins
-app.use(middleware.cors({origin: "https://myapp.com"})) // specific origin
+server.use(middleware.cors())                              // allow all origins
+server.use(middleware.cors({origin: "https://myapp.com"})) // specific origin
 ```
 
 ### JSON body parsing
 
 ```
-app.use(middleware.jsonBody())
+server.use(middleware.jsonBody())
 
-app.post("/api/data", lam{ req, params in
+server.post("/api/data", lam{ req, params in
     print(req.json.name)    // parsed from {"name": "Ada"}
 })
 ```
@@ -1731,14 +1731,14 @@ Returns 400 automatically if the JSON is malformed.
 ### Authentication
 
 ```
-app.use(middleware.auth(lam{ token in
+server.use(middleware.auth(lam{ token in
     if (token == "secret123") {
         return {id: 1, name: "Ada"}   // user object
     }
     return nil                         // reject
 }))
 
-app.get("/profile", lam{ req, params in
+server.get("/profile", lam{ req, params in
     return {status: 200, body: "Hello %{req.user.name}"}
 })
 ```
@@ -1788,9 +1788,9 @@ use "logger"
 use "router"
 
 let log = logger.create("API")
-let app = router.create()
+let server = router.create()
 
-app.use(logger.middleware(log))
+server.use(logger.middleware(log))
 // Logs: [timestamp] INFO [API] GET /users/42 200 12ms
 ```
 
@@ -1853,22 +1853,22 @@ The `session` grain provides server-side session management as router middleware
 use "router"
 use "session"
 
-let app = router.create()
+let server = router.create()
 let sessions = session.create()
-app.use(sessions.middleware())
+server.use(sessions.middleware())
 ```
 
 ### Using sessions in handlers
 
 ```
 // Store data
-app.post("/login", lam{ req, params in
+server.post("/login", lam{ req, params in
     req.session.set("user", {name: "Ada", role: "admin"})
     return http.json({message: "logged in"})
 })
 
 // Read data
-app.get("/profile", lam{ req, params in
+server.get("/profile", lam{ req, params in
     let user = req.session.get("user")
     if (!user) {
         return http.json({error: "not logged in"}, 401)
@@ -1877,7 +1877,7 @@ app.get("/profile", lam{ req, params in
 })
 
 // Destroy session (logout)
-app.post("/logout", lam{ req, params in
+server.post("/logout", lam{ req, params in
     req.session.destroy()
     return http.json({message: "logged out"})
 })
