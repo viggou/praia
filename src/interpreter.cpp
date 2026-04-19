@@ -311,12 +311,12 @@ void Interpreter::execute(const Stmt* stmt) {
         if (!startVal.isNumber() || !endVal.isNumber())
             throw RuntimeError("Range bounds must be numbers", s->line);
 
-        double from = startVal.asNumber();
-        double to   = endVal.asNumber();
+        int64_t from = static_cast<int64_t>(startVal.asNumber());
+        int64_t to   = static_cast<int64_t>(endVal.asNumber());
         auto* bodyBlock = static_cast<const BlockStmt*>(s->body.get());
 
         try {
-            for (double i = from; i < to; i++) {
+            for (int64_t i = from; i < to; i++) {
                 auto iterEnv = std::make_shared<Environment>(env);
                 iterEnv->define(s->varName, Value(i));
                 try { executeBlock(bodyBlock, iterEnv); }
@@ -514,7 +514,7 @@ Value Interpreter::evaluate(const Expr* expr) {
         if (e->op == TokenType::BIT_NOT) {
             if (!operand.isNumber())
                 throw RuntimeError("Operand of '~' must be a number", e->line);
-            return Value(static_cast<double>(~static_cast<int64_t>(operand.asNumber())));
+            return Value(~static_cast<int64_t>(operand.asNumber()));
         }
         throw RuntimeError("Unknown unary operator", e->line);
     }
@@ -619,23 +619,23 @@ Value Interpreter::evaluate(const Expr* expr) {
 
         case TokenType::BIT_AND:
             if (left.isNumber() && right.isNumber())
-                return Value(static_cast<double>(static_cast<int64_t>(left.asNumber()) & static_cast<int64_t>(right.asNumber())));
+                return Value(static_cast<int64_t>(left.asNumber()) & static_cast<int64_t>(right.asNumber()));
             throw RuntimeError("Operands of '&' must be numbers", e->line);
         case TokenType::BIT_OR:
             if (left.isNumber() && right.isNumber())
-                return Value(static_cast<double>(static_cast<int64_t>(left.asNumber()) | static_cast<int64_t>(right.asNumber())));
+                return Value(static_cast<int64_t>(left.asNumber()) | static_cast<int64_t>(right.asNumber()));
             throw RuntimeError("Operands of '|' must be numbers", e->line);
         case TokenType::BIT_XOR:
             if (left.isNumber() && right.isNumber())
-                return Value(static_cast<double>(static_cast<int64_t>(left.asNumber()) ^ static_cast<int64_t>(right.asNumber())));
+                return Value(static_cast<int64_t>(left.asNumber()) ^ static_cast<int64_t>(right.asNumber()));
             throw RuntimeError("Operands of '^' must be numbers", e->line);
         case TokenType::SHL:
             if (left.isNumber() && right.isNumber())
-                return Value(static_cast<double>(static_cast<int64_t>(left.asNumber()) << static_cast<int64_t>(right.asNumber())));
+                return Value(static_cast<int64_t>(left.asNumber()) << static_cast<int64_t>(right.asNumber()));
             throw RuntimeError("Operands of '<<' must be numbers", e->line);
         case TokenType::SHR:
             if (left.isNumber() && right.isNumber())
-                return Value(static_cast<double>(static_cast<int64_t>(left.asNumber()) >> static_cast<int64_t>(right.asNumber())));
+                return Value(static_cast<int64_t>(left.asNumber()) >> static_cast<int64_t>(right.asNumber()));
             throw RuntimeError("Operands of '>>' must be numbers", e->line);
 
         default:

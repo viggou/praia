@@ -108,7 +108,15 @@ class JsonParser {
             if (pos < src.size() && (src[pos] == '+' || src[pos] == '-')) pos++;
             while (pos < src.size() && std::isdigit(src[pos])) pos++;
         }
-        return Value(std::stod(src.substr(start, pos - start)));
+        std::string numStr = src.substr(start, pos - start);
+        // Integer if no decimal point or exponent
+        if (numStr.find('.') == std::string::npos &&
+            numStr.find('e') == std::string::npos &&
+            numStr.find('E') == std::string::npos) {
+            try { return Value(std::stoll(numStr)); }
+            catch (...) {} // fallback to double for very large numbers
+        }
+        return Value(std::stod(numStr));
     }
 
     Value parseObject() {
@@ -184,7 +192,8 @@ std::string jsonStringify(const Value& val, int indent, int depth) {
 
     if (val.isNil()) return "null";
     if (val.isBool()) return val.asBool() ? "true" : "false";
-    if (val.isNumber()) {
+    if (val.isInt()) return std::to_string(val.asInt());
+    if (val.isDouble()) {
         std::ostringstream o;
         o << std::setprecision(17) << val.asNumber();
         return o.str();

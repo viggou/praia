@@ -46,11 +46,11 @@ Interpreter::Interpreter() {
     globals->define("len", Value(makeNative("len", 1,
         [](const std::vector<Value>& args) -> Value {
             if (args[0].isArray())
-                return Value(static_cast<double>(args[0].asArray()->elements.size()));
+                return Value(static_cast<int64_t>(args[0].asArray()->elements.size()));
             if (args[0].isString())
-                return Value(static_cast<double>(args[0].asString().size()));
+                return Value(static_cast<int64_t>(args[0].asString().size()));
             if (args[0].isMap())
-                return Value(static_cast<double>(args[0].asMap()->entries.size()));
+                return Value(static_cast<int64_t>(args[0].asMap()->entries.size()));
             throw RuntimeError("len() requires an array, string, or map", 0);
         })));
 
@@ -853,7 +853,7 @@ Interpreter::Interpreter() {
                 throw RuntimeError("Cannot connect to " + host + ":" + std::to_string(port), 0);
             }
             freeaddrinfo(res);
-            return Value(static_cast<double>(sock));
+            return Value(static_cast<int64_t>(sock));
         }));
 
     netMap->entries["listen"] = Value(makeNative("net.listen", 1,
@@ -881,7 +881,7 @@ Interpreter::Interpreter() {
                 close(fd);
                 throw RuntimeError("Cannot listen on port " + std::to_string(port), 0);
             }
-            return Value(static_cast<double>(fd));
+            return Value(static_cast<int64_t>(fd));
         }));
 
     netMap->entries["accept"] = Value(makeNative("net.accept", 1,
@@ -894,7 +894,7 @@ Interpreter::Interpreter() {
             int client = accept(fd, (struct sockaddr*)&ca, &cl);
             if (client < 0)
                 throw RuntimeError("Accept failed", 0);
-            return Value(static_cast<double>(client));
+            return Value(static_cast<int64_t>(client));
         }));
 
     netMap->entries["send"] = Value(makeNative("net.send", 2,
@@ -908,7 +908,7 @@ Interpreter::Interpreter() {
             ssize_t sent = ::send(fd, data.c_str(), data.size(), 0);
             if (sent < 0)
                 throw RuntimeError("Send failed", 0);
-            return Value(static_cast<double>(sent));
+            return Value(static_cast<int64_t>(sent));
         }));
 
     netMap->entries["recv"] = Value(makeNative("net.recv", -1,
@@ -1183,7 +1183,7 @@ Interpreter::Interpreter() {
             int lo = static_cast<int>(args[0].asNumber());
             int hi = static_cast<int>(args[1].asNumber());
             std::uniform_int_distribution<int> dist(lo, hi);
-            return Value(static_cast<double>(dist(*rng)));
+            return Value(static_cast<int64_t>(dist(*rng)));
         }));
 
     randomMap->entries["float"] = Value(makeNative("random.float", 0,
@@ -1231,7 +1231,7 @@ Interpreter::Interpreter() {
             auto now = std::chrono::system_clock::now();
             auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                 now.time_since_epoch()).count();
-            return Value(static_cast<double>(ms));
+            return Value(static_cast<int64_t>(ms));
         }));
 
     timeMap->entries["sleep"] = Value(makeNative("time.sleep", 1,
@@ -1267,7 +1267,7 @@ Interpreter::Interpreter() {
 
     timeMap->entries["epoch"] = Value(makeNative("time.epoch", 0,
         [](const std::vector<Value>&) -> Value {
-            return Value(static_cast<double>(std::time(nullptr)));
+            return Value(static_cast<int64_t>(std::time(nullptr)));
         }));
 
     globals->define("time", Value(timeMap));
@@ -1484,8 +1484,8 @@ Interpreter::Interpreter() {
                     }
 
                     auto result = std::make_shared<PraiaMap>();
-                    result->entries["changes"] = Value(static_cast<double>(sqlite3_changes(*db)));
-                    result->entries["lastId"] = Value(static_cast<double>(sqlite3_last_insert_rowid(*db)));
+                    result->entries["changes"] = Value(static_cast<int64_t>(sqlite3_changes(*db)));
+                    result->entries["lastId"] = Value(static_cast<int64_t>(sqlite3_last_insert_rowid(*db)));
                     return Value(result);
                 }));
 

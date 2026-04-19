@@ -126,7 +126,7 @@ Value getStringMethod(const std::string& str,
             if (idx < 0) idx += static_cast<int>(str.size());
             if (idx < 0 || idx >= static_cast<int>(str.size()))
                 throw RuntimeError("charCode index out of bounds", 0);
-            return Value(static_cast<double>(static_cast<unsigned char>(str[idx])));
+            return Value(static_cast<int64_t>(static_cast<unsigned char>(str[idx])));
         }));
     }
     if (name == "test") {
@@ -152,7 +152,7 @@ Value getStringMethod(const std::string& str,
                 // Return map with match and groups
                 auto result = std::make_shared<PraiaMap>();
                 result->entries["match"] = Value(m[0].str());
-                result->entries["index"] = Value(static_cast<double>(m.position(0)));
+                result->entries["index"] = Value(static_cast<int64_t>(m.position(0)));
                 auto groups = std::make_shared<PraiaArray>();
                 for (size_t i = 1; i < m.size(); i++)
                     groups->elements.push_back(Value(m[i].str()));
@@ -175,7 +175,7 @@ Value getStringMethod(const std::string& str,
                 for (auto it = begin; it != end; ++it) {
                     auto entry = std::make_shared<PraiaMap>();
                     entry->entries["match"] = Value((*it)[0].str());
-                    entry->entries["index"] = Value(static_cast<double>(it->position(0)));
+                    entry->entries["index"] = Value(static_cast<int64_t>(it->position(0)));
                     auto groups = std::make_shared<PraiaArray>();
                     for (size_t i = 1; i < it->size(); i++)
                         groups->elements.push_back(Value((*it)[i].str()));
@@ -227,7 +227,7 @@ Value getStringMethod(const std::string& str,
             if (args.size() > 1 && args[1].isNumber())
                 startPos = static_cast<size_t>(args[1].asNumber());
             auto pos = str.find(args[0].asString(), startPos);
-            return Value(pos == std::string::npos ? -1.0 : static_cast<double>(pos));
+            return Value(pos == std::string::npos ? static_cast<int64_t>(-1) : static_cast<int64_t>(pos));
         }));
     }
     if (name == "lastIndexOf") {
@@ -235,7 +235,7 @@ Value getStringMethod(const std::string& str,
             if (!args[0].isString())
                 throw RuntimeError("lastIndexOf() requires a string argument", 0);
             auto pos = str.rfind(args[0].asString());
-            return Value(pos == std::string::npos ? -1.0 : static_cast<double>(pos));
+            return Value(pos == std::string::npos ? static_cast<int64_t>(-1) : static_cast<int64_t>(pos));
         }));
     }
     if (name == "repeat") {
@@ -376,8 +376,8 @@ Value getArrayMethod(std::shared_ptr<PraiaArray> arr,
     if (name == "indexOf") {
         return Value(makeNative("indexOf", 1, [arr](const std::vector<Value>& args) -> Value {
             for (size_t i = 0; i < arr->elements.size(); i++)
-                if (arr->elements[i] == args[0]) return Value(static_cast<double>(i));
-            return Value(-1.0);
+                if (arr->elements[i] == args[0]) return Value(static_cast<int64_t>(i));
+            return Value(static_cast<int64_t>(-1));
         }));
     }
     if (name == "find") {
