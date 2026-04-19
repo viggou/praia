@@ -48,6 +48,8 @@ Value PraiaMethod::call(Interpreter& interp, const std::vector<Value>& args) {
             std::static_pointer_cast<Callable>(definingClass->superclass)));
     }
 
+    auto prevEnv = interp.env;
+    interp.env = methodEnv;
     for (size_t i = 0; i < params.size(); i++) {
         if (i < args.size()) {
             methodEnv->define(params[i], args[i]);
@@ -57,9 +59,6 @@ Value PraiaMethod::call(Interpreter& interp, const std::vector<Value>& args) {
             methodEnv->define(params[i], Value());
         }
     }
-
-    auto prevEnv = interp.env;
-    interp.env = methodEnv;
     try {
         for (const auto& stmt : decl->body)
             interp.execute(stmt.get());
@@ -78,6 +77,9 @@ Value PraiaMethod::call(Interpreter& interp, const std::vector<Value>& args) {
 
 Value PraiaLambda::call(Interpreter& interp, const std::vector<Value>& args) {
     auto lambdaEnv = std::make_shared<Environment>(closure);
+
+    auto prevEnv = interp.env;
+    interp.env = lambdaEnv;
     for (size_t i = 0; i < params.size(); i++) {
         if (i < args.size()) {
             lambdaEnv->define(params[i], args[i]);
@@ -88,8 +90,6 @@ Value PraiaLambda::call(Interpreter& interp, const std::vector<Value>& args) {
         }
     }
 
-    auto prevEnv = interp.env;
-    interp.env = lambdaEnv;
     try {
         for (const auto& stmt : expr->body)
             interp.execute(stmt.get());
@@ -106,6 +106,12 @@ Value PraiaLambda::call(Interpreter& interp, const std::vector<Value>& args) {
 
 Value PraiaFunction::call(Interpreter& interp, const std::vector<Value>& args) {
     auto funcEnv = std::make_shared<Environment>(closure);
+
+    // Switch to function env before evaluating defaults so that:
+    // 1. Defaults resolve in the definition scope (closure), not the caller scope
+    // 2. Earlier params are visible to later defaults (e.g. f(a=1, b=a+1))
+    auto prevEnv = interp.env;
+    interp.env = funcEnv;
     for (size_t i = 0; i < params.size(); i++) {
         if (i < args.size()) {
             funcEnv->define(params[i], args[i]);
@@ -117,9 +123,15 @@ Value PraiaFunction::call(Interpreter& interp, const std::vector<Value>& args) {
     }
 
     try {
-        interp.executeBlock(body, funcEnv);
+        for (const auto& stmt : body->statements)
+            interp.execute(stmt.get());
     } catch (const ReturnSignal& ret) {
+        interp.env = prevEnv;
         return ret.value;
+    } catch (...) {
+        interp.env = prevEnv;
+        throw;
     }
+    interp.env = prevEnv;
     return Value(); // implicit nil
 }
