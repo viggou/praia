@@ -22,9 +22,17 @@ static Value callWithContext(Interpreter& interp,
                              int line) {
     int n = static_cast<int>(args.size());
     int a = func->arity();
-    if (a != -1 && n != a) {
-        throw RuntimeError(func->name() + "() expected " + std::to_string(a) +
-                           " argument(s) but got " + std::to_string(n), line);
+    // Native functions require exact arity; user-defined functions allow
+    // fewer args (missing params default to nil, like Python/JS).
+    bool isNative = dynamic_cast<NativeFunction*>(func.get()) != nullptr;
+    if (a != -1) {
+        if (isNative && n != a) {
+            throw RuntimeError(func->name() + "() expected " + std::to_string(a) +
+                               " argument(s) but got " + std::to_string(n), line);
+        } else if (!isNative && n > a) {
+            throw RuntimeError(func->name() + "() expected at most " + std::to_string(a) +
+                               " argument(s) but got " + std::to_string(n), line);
+        }
     }
     try {
         return func->call(interp, args);

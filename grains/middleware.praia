@@ -1,0 +1,138 @@
+// Common middleware functions for the router
+//
+// Usage:
+//   use "router"
+//   use "middleware"
+//   let app = router.create()
+//   app.use(middleware.cors())
+//   app.use(middleware.jsonBody())
+//   app.use(middleware.requestId())
+
+func hasKey(m, k) {
+    return keys(m).contains(k)
+}
+
+// CORS — adds Access-Control-Allow-* headers
+func cors(options) {
+    let origin = "*"
+    let methods = "GET, POST, PUT, DELETE, PATCH, OPTIONS"
+    let hdrs = "Content-Type, Authorization"
+    if (options) {
+        if (hasKey(options, "origin")) { origin = options.origin }
+        if (hasKey(options, "methods")) { methods = options.methods }
+        if (hasKey(options, "headers")) { hdrs = options.headers }
+    }
+
+    return lam{ req, next in
+        // Handle preflight
+        if (req.method == "OPTIONS") {
+            return {
+                status: 204,
+                body: "",
+                headers: {
+                    "Access-Control-Allow-Origin": origin,
+                    "Access-Control-Allow-Methods": methods,
+                    "Access-Control-Allow-Headers": hdrs
+                }
+            }
+        }
+
+        let res = next(req)
+
+        // Add CORS headers to response
+        if (type(res) == "map") {
+            if (!hasKey(res, "headers")) {
+                res.headers = {}
+            }
+            res.headers["Access-Control-Allow-Origin"] = origin
+        }
+        return res
+    }
+}
+
+// JSON body parser — parses req.body as JSON into req.json
+func jsonBody() {
+    return lam{ req, next in
+        if (hasKey(req, "body") && len(req.body) > 0) {
+            let ct = ""
+            if (hasKey(req, "headers") && hasKey(req.headers, "content-type")) {
+                ct = req.headers["content-type"]
+            }
+            if (ct.contains("application/json")) {
+                try {
+                    req.json = json.parse(req.body)
+                } catch (err) {
+                    return {
+                        status: 400,
+                        body: json.stringify({error: "Invalid JSON"}),
+                        headers: {"Content-Type": "application/json"}
+                    }
+                }
+            }
+        }
+        return next(req)
+    }
+}
+
+// Request ID — adds a unique ID to each request as req.id
+func requestId() {
+    return lam{ req, next in
+        let hex = crypto.sha256(time.now().toString() + random.float().toString())
+        req.id = hex[0] + hex[1] + hex[2] + hex[3] + hex[4] + hex[5] + hex[6] + hex[7]
+        let res = next(req)
+        if (type(res) == "map") {
+            if (!hasKey(res, "headers")) { res.headers = {} }
+            res.headers["X-Request-Id"] = req.id
+        }
+        return res
+    }
+}
+
+// Auth — checks for Authorization header and calls a verifier function
+// verifier receives the token string and returns a user object or nil
+func auth(verifier) {
+    return lam{ req, next in
+        let authHeader = ""
+        if (hasKey(req, "headers") && hasKey(req.headers, "authorization")) {
+            authHeader = req.headers["authorization"]
+        }
+
+        if (len(authHeader) == 0 || !authHeader.startsWith("Bearer ")) {
+            return {
+                status: 401,
+                body: json.stringify({error: "Unauthorized"}),
+                headers: {"Content-Type": "application/json"}
+            }
+        }
+
+        let token = authHeader.replace("Bearer ", "")
+        let user = verifier(token)
+        if (!user) {
+            return {
+                status: 403,
+                body: json.stringify({error: "Forbidden"}),
+                headers: {"Content-Type": "application/json"}
+            }
+        }
+
+        req.user = user
+        return next(req)
+    }
+}
+
+// Static headers — adds fixed headers to every response
+func headers(headerMap) {
+    return lam{ req, next in
+        let res = next(req)
+        if (type(res) == "map") {
+            if (!hasKey(res, "headers")) { res.headers = {} }
+            let ks = keys(headerMap)
+            for (k in ks) {
+                res.headers[k] = headerMap[k]
+            }
+        }
+        return res
+    }
+}
+
+export { cors, jsonBody, requestId, auth, headers }

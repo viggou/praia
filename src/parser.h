@@ -64,6 +64,7 @@ private:
     bool match(TokenType type);
     Token consume(TokenType type, const std::string& message);
     bool isAtEnd() const;
+    bool isNameToken(TokenType type) const;
     ParseError error(const Token& token, const std::string& message);
     void synchronize();
 

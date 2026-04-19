@@ -1,11 +1,21 @@
-// HTTP Router with :param support
+// HTTP Router with :param support and middleware
 //
 // Usage:
 //   use "router"
 //   let app = router.create()
+//
+//   // Middleware runs on every request, in order
+//   app.use(lam{ req, next in
+//       req.startTime = time.now()
+//       let res = next(req)
+//       return res
+//   })
+//
+//   // Routes
 //   app.get("/users/:id", lam{ req, params in
 //       return {status: 200, body: "User %{params.id}"}
 //   })
+//
 //   app.listen(8080)
 
 func matchRoute(pattern, path) {
@@ -33,6 +43,7 @@ func matchRoute(pattern, path) {
 
 func create() {
     let routes = []
+    let middlewares = []
     let notFoundHandler = lam{ req, params in
         return {status: 404, body: "Not Found: %{req.path}"}
     }
@@ -41,19 +52,40 @@ func create() {
         routes.push({method: method, pattern: pattern, handler: handler})
     }
 
-    func handleRequest(req) {
+    func findHandler(req) {
         for (route in routes) {
             if (route.method != "*" && route.method != req.method) { continue }
-
             let params = matchRoute(route.pattern, req.path)
             if (params) {
-                return route.handler(req, params)
+                return {handler: route.handler, params: params}
             }
         }
-        return notFoundHandler(req, {})
+        return {handler: notFoundHandler, params: {}}
+    }
+
+    func handleRequest(req) {
+        let match = findHandler(req)
+        let handler = match.handler
+        let params = match.params
+
+        // Build the middleware chain from inside out:
+        // The innermost function calls the actual route handler.
+        // Each middleware wraps the next, receiving req and a next() function.
+        let chain = lam{ r in handler(r, params) }
+
+        let i = len(middlewares) - 1
+        while (i >= 0) {
+            let mw = middlewares[i]
+            let nextFn = chain
+            chain = lam{ r in mw(r, nextFn) }
+            i = i - 1
+        }
+
+        return chain(req)
     }
 
     return {
+        use: lam{ middleware in middlewares.push(middleware) },
         get: lam{ pattern, handler in addRoute("GET", pattern, handler) },
         post: lam{ pattern, handler in addRoute("POST", pattern, handler) },
         put: lam{ pattern, handler in addRoute("PUT", pattern, handler) },

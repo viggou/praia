@@ -28,6 +28,8 @@ Praia is a dynamically typed, interpreted programming language built in C++.
 - [Async / Await](#async--await)
 - [HTTP Networking](#http-networking)
 - [Router](#router)
+- [Middleware](#middleware)
+- [Logger](#logger)
 - [SQLite](#sqlite)
 - [Math](#math)
 - [Random](#random)
@@ -1518,6 +1520,135 @@ Use `.handle(req)` to test routing without starting a server:
 ```
 let result = app.handle({method: "GET", path: "/users/42", query: {}, body: ""})
 print(result.body)      // "User 42"
+```
+
+---
+
+## Middleware
+
+The `middleware` grain provides common middleware functions for the router. Middleware runs on every request, in registration order.
+
+### Using middleware
+
+```
+use "router"
+use "middleware"
+
+let app = router.create()
+app.use(middleware.requestId())
+app.use(middleware.cors())
+app.use(middleware.jsonBody())
+```
+
+### How middleware works
+
+Each middleware is a function that receives `(req, next)`. Call `next(req)` to pass the request to the next middleware (or the route handler). Return a response map to short-circuit.
+
+```
+// Custom middleware
+app.use(lam{ req, next in
+    let start = time.now()
+    let res = next(req)      // call next middleware / handler
+    let ms = time.now() - start
+    print("%{req.method} %{req.path} took %{ms}ms")
+    return res
+})
+```
+
+### Built-in middleware
+
+| Middleware | Description |
+|-----------|-------------|
+| `middleware.cors()` | Adds CORS headers, handles OPTIONS preflight |
+| `middleware.cors({origin: "...", methods: "...", headers: "..."})` | CORS with custom options |
+| `middleware.jsonBody()` | Parses JSON request bodies into `req.json` |
+| `middleware.requestId()` | Adds unique `req.id` and `X-Request-Id` response header |
+| `middleware.auth(verifier)` | Bearer token auth — calls `verifier(token)`, sets `req.user` |
+| `middleware.headers(map)` | Adds fixed headers to every response |
+
+### CORS
+
+```
+app.use(middleware.cors())                              // allow all origins
+app.use(middleware.cors({origin: "https://myapp.com"})) // specific origin
+```
+
+### JSON body parsing
+
+```
+app.use(middleware.jsonBody())
+
+app.post("/api/data", lam{ req, params in
+    print(req.json.name)    // parsed from {"name": "Ada"}
+})
+```
+
+Returns 400 automatically if the JSON is malformed.
+
+### Authentication
+
+```
+app.use(middleware.auth(lam{ token in
+    if (token == "secret123") {
+        return {id: 1, name: "Ada"}   // user object
+    }
+    return nil                         // reject
+}))
+
+app.get("/profile", lam{ req, params in
+    return {status: 200, body: "Hello %{req.user.name}"}
+})
+```
+
+Returns 401 if no `Authorization: Bearer ...` header, 403 if the verifier returns nil.
+
+---
+
+## Logger
+
+The `logger` grain provides structured logging with levels.
+
+### Creating a logger
+
+```
+use "logger"
+
+let log = logger.create("MyApp")
+log.info("server started")
+log.warn("disk space low")
+log.error("connection failed")
+log.debug("verbose output")
+```
+
+Output: `[2026-04-19 13:00:00] INFO [MyApp] server started`
+
+### Log levels
+
+| Level | Priority |
+|-------|----------|
+| `debug` | 0 (lowest) |
+| `info` | 1 (default) |
+| `warn` | 2 |
+| `error` | 3 |
+| `none` | 4 (disables all) |
+
+```
+log.setLevel("debug")    // show everything
+log.setLevel("warn")     // only warn and error
+log.setLevel("none")     // silence all
+```
+
+### As router middleware
+
+```
+use "logger"
+use "router"
+
+let log = logger.create("API")
+let app = router.create()
+
+app.use(logger.middleware(log))
+// Logs: [timestamp] INFO [API] GET /users/42 200 12ms
 ```
 
 ---

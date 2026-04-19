@@ -610,7 +610,10 @@ ExprPtr Parser::call() {
             expr = std::move(ie);
         } else if (match(TokenType::DOT)) {
             int ln = previous().line;
-            Token field = consume(TokenType::IDENTIFIER, "Expected field name after '.'");
+            // Accept identifiers and keywords as field names (e.g. app.use, obj.class)
+            if (!isNameToken(peek().type))
+                throw error(peek(), "Expected field name after '.'");
+            Token field = advance();
             auto de = std::make_unique<DotExpr>();
             de->line = ln;
             de->object = std::move(expr);
@@ -765,12 +768,13 @@ ExprPtr Parser::primary() {
         if (!check(TokenType::RBRACE)) {
             do {
                 std::string key;
-                if (match(TokenType::IDENTIFIER))
+                if (isNameToken(peek().type)) {
+                    key = advance().lexeme;
+                } else if (match(TokenType::STRING)) {
                     key = previous().lexeme;
-                else if (match(TokenType::STRING))
-                    key = previous().lexeme;
-                else
+                } else {
                     throw error(peek(), "Expected map key (identifier or string)");
+                }
                 consume(TokenType::COLON, "Expected ':' after map key");
                 map->keys.push_back(key);
                 map->values.push_back(expression());
@@ -859,6 +863,19 @@ Parser::ParseError Parser::error(const Token& token, const std::string& message)
     }
     hadError = true;
     return ParseError(message);
+}
+
+bool Parser::isNameToken(TokenType t) const {
+    return t == TokenType::IDENTIFIER ||
+           t == TokenType::LET || t == TokenType::FUNC || t == TokenType::CLASS ||
+           t == TokenType::IF || t == TokenType::ELSE || t == TokenType::ELIF ||
+           t == TokenType::WHILE || t == TokenType::FOR || t == TokenType::IN ||
+           t == TokenType::RETURN || t == TokenType::BREAK || t == TokenType::CONTINUE ||
+           t == TokenType::TRY || t == TokenType::CATCH || t == TokenType::THROW ||
+           t == TokenType::ENSURE || t == TokenType::USE || t == TokenType::EXPORT ||
+           t == TokenType::EXTENDS || t == TokenType::THIS || t == TokenType::SUPER ||
+           t == TokenType::LAM || t == TokenType::ASYNC || t == TokenType::AWAIT ||
+           t == TokenType::TRUE || t == TokenType::FALSE || t == TokenType::NIL;
 }
 
 void Parser::synchronize() {

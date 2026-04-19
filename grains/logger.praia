@@ -1,0 +1,71 @@
+// Logger grain — structured logging with levels
+//
+// Usage:
+//   use "logger"
+//   let log = logger.create("MyApp")
+//   log.info("server started")
+//   log.error("something broke", {code: 500})
+//
+// As router middleware:
+//   app.use(logger.middleware(log))
+
+let LEVELS = {
+    debug: 0,
+    info: 1,
+    warn: 2,
+    error: 3,
+    none: 4
+}
+
+func create(name) {
+    let minLevel = LEVELS.info
+
+    func shouldLog(level) {
+        return LEVELS[level] >= minLevel
+    }
+
+    func formatMessage(level, msg, data) {
+        let timestamp = time.format("%Y-%m-%d %H:%M:%S")
+        let prefix = "[%{timestamp}] %{level.upper()} [%{name}]"
+        if (data) {
+            return "%{prefix} %{msg} %{json.stringify(data)}"
+        }
+        return "%{prefix} %{msg}"
+    }
+
+    func log(level, msg, data) {
+        if (shouldLog(level)) {
+            print(formatMessage(level, msg, data))
+        }
+    }
+
+    return {
+        debug: lam{ msg in log("debug", msg, nil) },
+        info: lam{ msg in log("info", msg, nil) },
+        warn: lam{ msg in log("warn", msg, nil) },
+        error: lam{ msg in log("error", msg, nil) },
+        setLevel: lam{ level in
+            ensure (LEVELS[level] != nil) else {
+                throw "Invalid log level: %{level}. Use debug, info, warn, error, or none"
+            }
+            minLevel = LEVELS[level]
+        }
+    }
+}
+
+// Pre-built router middleware: logs method, path, status, and duration
+func middleware(log) {
+    return lam{ req, next in
+        let start = time.now()
+        let res = next(req)
+        let duration = time.now() - start
+        let status = 200
+        if (type(res) == "map" && res.status) {
+            status = res.status
+        }
+        log.info("%{req.method} %{req.path} %{status} %{duration}ms")
+        return res
+    }
+}
+
+export { create, middleware }
