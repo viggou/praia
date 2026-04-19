@@ -1,0 +1,152 @@
+%YAML 1.2
+---
+name: Praia
+file_extensions:
+  - praia
+scope: source.praia
+
+contexts:
+  main:
+    - include: comments
+    - include: strings
+    - include: numbers
+    - include: keywords
+    - include: constants
+    - include: builtins
+    - include: namespaces
+    - include: operators
+    - include: functions
+    - include: classes
+    - include: punctuation
+
+  comments:
+    - match: //.*$
+      scope: comment.line.double-slash.praia
+    - match: /\*
+      scope: punctuation.definition.comment.begin.praia
+      push:
+        - meta_scope: comment.block.praia
+        - match: \*/
+          scope: punctuation.definition.comment.end.praia
+          pop: true
+        - match: /\*
+          push:
+            - meta_scope: comment.block.praia
+            - match: \*/
+              pop: true
+
+  strings:
+    - match: '"'
+      scope: punctuation.definition.string.begin.praia
+      push:
+        - meta_scope: string.quoted.double.praia
+        - match: '"'
+          scope: punctuation.definition.string.end.praia
+          pop: true
+        - match: \\[ntr\\"/%]
+          scope: constant.character.escape.praia
+        - match: '%\{'
+          scope: punctuation.section.interpolation.begin.praia
+          push:
+            - clear_scopes: 1
+            - meta_scope: meta.interpolation.praia
+            - match: '\}'
+              scope: punctuation.section.interpolation.end.praia
+              pop: true
+            - include: main
+
+  numbers:
+    - match: \b\d+\.\d+\b
+      scope: constant.numeric.float.praia
+    - match: \b\d+\b
+      scope: constant.numeric.integer.praia
+
+  keywords:
+    - match: \b(let)\b
+      scope: storage.type.praia
+    - match: \b(func)\b
+      scope: storage.type.function.praia
+    - match: \b(class)\b
+      scope: storage.type.class.praia
+    - match: \b(extends)\b
+      scope: storage.modifier.praia
+    - match: \b(if|elif|else|while|for|in|break|continue)\b
+      scope: keyword.control.praia
+    - match: \b(return)\b
+      scope: keyword.control.flow.praia
+    - match: \b(try|catch|throw|ensure)\b
+      scope: keyword.control.exception.praia
+    - match: \b(async|await)\b
+      scope: keyword.control.async.praia
+    - match: \b(use|export)\b
+      scope: keyword.control.import.praia
+    - match: \b(lam)\b
+      scope: storage.type.function.lambda.praia
+    - match: \b(this|super)\b
+      scope: variable.language.praia
+    - match: \b(in)\b
+      scope: keyword.operator.praia
+
+  constants:
+    - match: \b(true|false)\b
+      scope: constant.language.boolean.praia
+    - match: \b(nil)\b
+      scope: constant.language.null.praia
+
+  builtins:
+    - match: \b(print|len|push|pop|type|str|num|fromCharCode|sort|filter|map|each|keys|values)\b
+      scope: support.function.praia
+
+  namespaces:
+    - match: \b(sys|http|json|yaml|net|bytes|crypto|random|time|math|sqlite)\b
+      scope: support.class.praia
+
+  operators:
+    - match: \|>
+      scope: keyword.operator.pipe.praia
+    - match: '&&|\|\|'
+      scope: keyword.operator.logical.praia
+    - match: '<<|>>'
+      scope: keyword.operator.bitwise.shift.praia
+    - match: '==|!=|<=|>=|<|>'
+      scope: keyword.operator.comparison.praia
+    - match: '\+\+|--'
+      scope: keyword.operator.increment.praia
+    - match: '[-+*/%]'
+      scope: keyword.operator.arithmetic.praia
+    - match: '[&|^~]'
+      scope: keyword.operator.bitwise.praia
+    - match: '!'
+      scope: keyword.operator.logical.not.praia
+    - match: '='
+      scope: keyword.operator.assignment.praia
+    - match: '\.\.'
+      scope: keyword.operator.range.praia
+
+  functions:
+    - match: \b(init)\s*(?=\()
+      captures:
+        1: entity.name.function.constructor.praia
+    - match: \b(func)\s+([a-zA-Z_]\w*)
+      captures:
+        1: storage.type.function.praia
+        2: entity.name.function.praia
+    - match: \b([a-zA-Z_]\w*)\s*(?=\()
+      captures:
+        1: variable.function.praia
+
+  classes:
+    - match: \b(class)\s+([a-zA-Z_]\w*)
+      captures:
+        1: storage.type.class.praia
+        2: entity.name.class.praia
+    - match: \b(extends)\s+([a-zA-Z_]\w*)
+      captures:
+        1: storage.modifier.praia
+        2: entity.other.inherited-class.praia
+
+  punctuation:
+    - match: '[{}()\[\],;:]'
+      scope: punctuation.praia
+    - match: '\.'
+      scope: punctuation.accessor.praia
