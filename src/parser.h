@@ -41,6 +41,7 @@ private:
     ExprPtr expression();
     ExprPtr assignment();
     ExprPtr pipe();
+    ExprPtr ternary();
     ExprPtr logicOr();
     ExprPtr logicAnd();
     ExprPtr bitOr();

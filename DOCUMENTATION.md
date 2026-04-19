@@ -192,6 +192,7 @@ if (nil) { print("truthy") }      // does not print
 3 * 7       // 21
 15 / 4      // 3.75
 17 % 5      // 2
+[1,2] + [3,4]  // [1, 2, 3, 4]  (array concat)
 ```
 
 ### Comparison
@@ -226,6 +227,13 @@ nil || "default"    // "default"
 true || "other"     // true
 !true               // false
 !nil                // true
+```
+
+### Ternary
+
+```
+let label = x > 5 ? "big" : "small"
+let grade = score >= 90 ? "A" : score >= 80 ? "B" : "C"   // nests right-to-left
 ```
 
 ### Increment / Decrement
@@ -597,6 +605,19 @@ let names = ["alice", "bob", "charlie"]
 for (name in names) {
     print("hello %{name}")
 }
+```
+
+### for-in (maps)
+
+Iterating a map yields `{key, value}` entries:
+
+```
+let config = {host: "localhost", port: 8080}
+for (entry in config) {
+    print("%{entry.key}: %{entry.value}")
+}
+// host: localhost
+// port: 8080
 ```
 
 ### break and continue

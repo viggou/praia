@@ -75,6 +75,12 @@ struct LambdaExpr : Expr {
     std::vector<StmtPtr> body;
 };
 
+struct TernaryExpr : Expr {
+    ExprPtr condition;
+    ExprPtr thenExpr;
+    ExprPtr elseExpr;
+};
+
 struct SpreadExpr : Expr {
     ExprPtr expr;
 };

@@ -54,8 +54,8 @@ void Lexer::scanToken() {
         case '[': addToken(TokenType::LBRACKET); break;
         case ']': addToken(TokenType::RBRACKET); break;
         case ',': addToken(TokenType::COMMA); break;
-        case '*': addToken(TokenType::STAR); break;
-        case '%': addToken(TokenType::PERCENT); break;
+        case '*': addToken(match('=') ? TokenType::STAR_ASSIGN : TokenType::STAR); break;
+        case '%': addToken(match('=') ? TokenType::PERCENT_ASSIGN : TokenType::PERCENT); break;
         case '.':
             if (match('.')) {
                 addToken(match('.') ? TokenType::SPREAD : TokenType::DOT_DOT);
@@ -64,12 +64,17 @@ void Lexer::scanToken() {
             }
             break;
         case ':': addToken(TokenType::COLON); break;
+        case '?': addToken(TokenType::QUESTION); break;
 
         case '+':
-            addToken(match('+') ? TokenType::INCREMENT : TokenType::PLUS);
+            if (match('+')) addToken(TokenType::INCREMENT);
+            else if (match('=')) addToken(TokenType::PLUS_ASSIGN);
+            else addToken(TokenType::PLUS);
             break;
         case '-':
-            addToken(match('-') ? TokenType::DECREMENT : TokenType::MINUS);
+            if (match('-')) addToken(TokenType::DECREMENT);
+            else if (match('=')) addToken(TokenType::MINUS_ASSIGN);
+            else addToken(TokenType::MINUS);
             break;
         case '!':
             addToken(match('=') ? TokenType::NEQ : TokenType::NOT);
@@ -102,6 +107,8 @@ void Lexer::scanToken() {
                 while (peek() != '\n' && !isAtEnd()) advance();
             } else if (match('*')) {
                 blockComment();
+            } else if (match('=')) {
+                addToken(TokenType::SLASH_ASSIGN);
             } else {
                 addToken(TokenType::SLASH);
             }

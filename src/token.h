@@ -54,6 +54,11 @@ enum class TokenType {
     SLASH,      // /
     PERCENT,    // %
     ASSIGN,     // =
+    PLUS_ASSIGN,  // +=
+    MINUS_ASSIGN, // -=
+    STAR_ASSIGN,  // *=
+    SLASH_ASSIGN, // /=
+    PERCENT_ASSIGN, // %=
     EQ,         // ==
     NEQ,        // !=
     LT,         // <
@@ -76,6 +81,7 @@ enum class TokenType {
     SPREAD,     // ...
     PIPE,       // |>
     COLON,      // :
+    QUESTION,   // ?
 
     // Delimiters
     LPAREN,     // (
@@ -138,6 +144,11 @@ inline std::string tokenTypeToString(TokenType type) {
         case TokenType::SLASH:       return "SLASH";
         case TokenType::PERCENT:     return "PERCENT";
         case TokenType::ASSIGN:      return "ASSIGN";
+        case TokenType::PLUS_ASSIGN: return "PLUS_ASSIGN";
+        case TokenType::MINUS_ASSIGN:return "MINUS_ASSIGN";
+        case TokenType::STAR_ASSIGN: return "STAR_ASSIGN";
+        case TokenType::SLASH_ASSIGN:return "SLASH_ASSIGN";
+        case TokenType::PERCENT_ASSIGN:return "PERCENT_ASSIGN";
         case TokenType::EQ:          return "EQ";
         case TokenType::NEQ:         return "NEQ";
         case TokenType::LT:          return "LT";
@@ -160,6 +171,7 @@ inline std::string tokenTypeToString(TokenType type) {
         case TokenType::SPREAD:      return "SPREAD";
         case TokenType::PIPE:        return "PIPE";
         case TokenType::COLON:       return "COLON";
+        case TokenType::QUESTION:    return "QUESTION";
         case TokenType::LPAREN:      return "LPAREN";
         case TokenType::RPAREN:      return "RPAREN";
         case TokenType::LBRACE:      return "LBRACE";

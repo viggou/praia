@@ -326,18 +326,33 @@ void Interpreter::execute(const Stmt* stmt) {
 
     } else if (auto* s = dynamic_cast<const ForInStmt*>(stmt)) {
         Value iterable = evaluate(s->iterable.get());
-        if (!iterable.isArray())
-            throw RuntimeError("for-in requires an array", s->line);
         auto* bodyBlock = static_cast<const BlockStmt*>(s->body.get());
 
-        try {
-            for (const auto& elem : iterable.asArray()->elements) {
-                auto iterEnv = std::make_shared<Environment>(env);
-                iterEnv->define(s->varName, elem);
-                try { executeBlock(bodyBlock, iterEnv); }
-                catch (const ContinueSignal&) { /* skip to next iteration */ }
-            }
-        } catch (const BreakSignal&) { /* exit loop */ }
+        if (iterable.isArray()) {
+            try {
+                for (const auto& elem : iterable.asArray()->elements) {
+                    auto iterEnv = std::make_shared<Environment>(env);
+                    iterEnv->define(s->varName, elem);
+                    try { executeBlock(bodyBlock, iterEnv); }
+                    catch (const ContinueSignal&) {}
+                }
+            } catch (const BreakSignal&) {}
+        } else if (iterable.isMap()) {
+            // Iterating a map yields {key, value} maps
+            try {
+                for (auto& [k, v] : iterable.asMap()->entries) {
+                    auto entry = std::make_shared<PraiaMap>();
+                    entry->entries["key"] = Value(k);
+                    entry->entries["value"] = v;
+                    auto iterEnv = std::make_shared<Environment>(env);
+                    iterEnv->define(s->varName, Value(entry));
+                    try { executeBlock(bodyBlock, iterEnv); }
+                    catch (const ContinueSignal&) {}
+                }
+            } catch (const BreakSignal&) {}
+        } else {
+            throw RuntimeError("for-in requires an array or map", s->line);
+        }
 
     } else if (auto* s = dynamic_cast<const FuncStmt*>(stmt)) {
         auto func = std::make_shared<PraiaFunction>();
@@ -563,9 +578,15 @@ Value Interpreter::evaluate(const Expr* expr) {
                 return Value(left.asInt() + right.asInt());
             if (left.isNumber() && right.isNumber())
                 return Value(left.asNumber() + right.asNumber());
+            if (left.isArray() && right.isArray()) {
+                auto result = std::make_shared<PraiaArray>();
+                for (auto& el : left.asArray()->elements) result->elements.push_back(el);
+                for (auto& el : right.asArray()->elements) result->elements.push_back(el);
+                return Value(result);
+            }
             if (left.isString() || right.isString())
                 return Value(left.toString() + right.toString());
-            throw RuntimeError("Operands of '+' must be numbers or strings", e->line);
+            throw RuntimeError("Operands of '+' must be numbers, strings, or arrays", e->line);
         case TokenType::MINUS:
             if (left.isInt() && right.isInt())
                 return Value(left.asInt() - right.asInt());
@@ -673,6 +694,13 @@ Value Interpreter::evaluate(const Expr* expr) {
             }
         }
         return Value(arr);
+    }
+
+    // ── Ternary ──
+
+    if (auto* e = dynamic_cast<const TernaryExpr*>(expr)) {
+        Value cond = evaluate(e->condition.get());
+        return cond.isTruthy() ? evaluate(e->thenExpr.get()) : evaluate(e->elseExpr.get());
     }
 
     // ── Pipe ──

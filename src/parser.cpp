@@ -456,9 +456,41 @@ ExprPtr Parser::expression() {
 ExprPtr Parser::assignment() {
     auto expr = pipe();
 
+    // Check for compound assignment: +=, -=, *=, /=, %=
+    TokenType compoundOp = TokenType::EOF_TOKEN;
+    if (match(TokenType::PLUS_ASSIGN))    compoundOp = TokenType::PLUS;
+    else if (match(TokenType::MINUS_ASSIGN))  compoundOp = TokenType::MINUS;
+    else if (match(TokenType::STAR_ASSIGN))   compoundOp = TokenType::STAR;
+    else if (match(TokenType::SLASH_ASSIGN))  compoundOp = TokenType::SLASH;
+    else if (match(TokenType::PERCENT_ASSIGN)) compoundOp = TokenType::PERCENT;
+
+    if (compoundOp != TokenType::EOF_TOKEN) {
+        int ln = previous().line;
+        auto value = assignment();
+
+        if (auto* ident = dynamic_cast<IdentifierExpr*>(expr.get())) {
+            // x += expr → x = x + expr
+            auto lhs = std::make_unique<IdentifierExpr>();
+            lhs->line = ln;
+            lhs->name = ident->name;
+            auto binop = std::make_unique<BinaryExpr>();
+            binop->line = ln;
+            binop->left = std::move(lhs);
+            binop->op = compoundOp;
+            binop->right = std::move(value);
+            auto assign = std::make_unique<AssignExpr>();
+            assign->line = ln;
+            assign->name = ident->name;
+            assign->value = std::move(binop);
+            return assign;
+        }
+
+        throw error(previous(), "Compound assignment only works on variables");
+    }
+
     if (match(TokenType::ASSIGN)) {
         int ln = previous().line;
-        auto value = assignment(); // right-associative
+        auto value = assignment();
 
         if (auto* ident = dynamic_cast<IdentifierExpr*>(expr.get())) {
             auto assign = std::make_unique<AssignExpr>();
@@ -493,10 +525,10 @@ ExprPtr Parser::assignment() {
 }
 
 ExprPtr Parser::pipe() {
-    auto left = logicOr();
+    auto left = ternary();
     while (match(TokenType::PIPE)) {
         int ln = previous().line;
-        auto right = logicOr();
+        auto right = ternary();
         auto e = std::make_unique<PipeExpr>();
         e->line = ln;
         e->left = std::move(left);
@@ -504,6 +536,23 @@ ExprPtr Parser::pipe() {
         left = std::move(e);
     }
     return left;
+}
+
+ExprPtr Parser::ternary() {
+    auto expr = logicOr();
+    if (match(TokenType::QUESTION)) {
+        int ln = previous().line;
+        auto thenExpr = expression(); // full expression between ? and :
+        consume(TokenType::COLON, "Expected ':' in ternary expression");
+        auto elseExpr = ternary(); // right-associative
+        auto t = std::make_unique<TernaryExpr>();
+        t->line = ln;
+        t->condition = std::move(expr);
+        t->thenExpr = std::move(thenExpr);
+        t->elseExpr = std::move(elseExpr);
+        return t;
+    }
+    return expr;
 }
 
 ExprPtr Parser::logicOr() {

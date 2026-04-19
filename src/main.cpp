@@ -57,6 +57,11 @@ static void printExpr(const Expr* expr, int level) {
         printExpr(e->callee.get(), level + 1);
         for (const auto& arg : e->args)
             printExpr(arg.get(), level + 1);
+    } else if (auto* e = dynamic_cast<const TernaryExpr*>(expr)) {
+        printIndent(level); std::cout << "Ternary\n";
+        printExpr(e->condition.get(), level + 1);
+        printExpr(e->thenExpr.get(), level + 1);
+        printExpr(e->elseExpr.get(), level + 1);
     } else if (auto* e = dynamic_cast<const PipeExpr*>(expr)) {
         printIndent(level); std::cout << "Pipe\n";
         printExpr(e->left.get(), level + 1);
