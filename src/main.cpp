@@ -471,7 +471,8 @@ int main(int argc, char* argv[]) {
                 extern void vmRegisterNatives(VM& vm);
                 VM vm;
                 vmRegisterNatives(vm);
-                return vm.run(script) == VM::Result::OK ? 0 : 1;
+                try { return vm.run(script) == VM::Result::OK ? 0 : 1; }
+                catch (const ExitSignal& e) { return e.code; }
             } else {
                 Interpreter interpreter;
                 std::vector<std::string> scriptArgs;
@@ -509,8 +510,10 @@ int main(int argc, char* argv[]) {
             VM vm;
             vmRegisterNatives(vm);
             vm.setCurrentFile(filename);
-            auto result = vm.run(script);
-            return result == VM::Result::OK ? 0 : 1;
+            try {
+                auto result = vm.run(script);
+                return result == VM::Result::OK ? 0 : 1;
+            } catch (const ExitSignal& e) { return e.code; }
         } else {
             // Tree-walker path
             Interpreter interpreter;

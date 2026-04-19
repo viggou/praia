@@ -42,6 +42,32 @@ void vmRegisterNatives(VM& vm) {
         return Value(std::static_pointer_cast<Callable>(f));
     };
 
+    // Override higher-order functions to work with VM closures
+    // The tree-walker versions capture the Interpreter pointer, which doesn't
+    // work for VM closures. These VM-aware versions call through callValue.
+
+    // For filter/map/each: we can't easily call VM closures from a native function
+    // because we don't have access to the VM's call stack. Instead, we override
+    // these to work by calling the callable's call() method directly.
+    // VM closures implement Callable::call() as a no-op, so we need to detect them
+    // and handle them specially... This is a fundamental limitation.
+    //
+    // Pragmatic solution: override filter/map/each/sort with versions that
+    // just call callable->call() with a dummy interpreter. For NativeFunctions
+    // this works. For VM closures, call() is a no-op, so these won't work.
+    //
+    // The REAL fix: compile filter/map/each/sort as opcodes or have the VM
+    // provide a callback mechanism. For now, users can use for-in loops + push
+    // instead of filter/map in the VM. This is a known limitation.
+
+    // Actually, a better approach: create VM-specific filter/map that use
+    // the pipe operator pattern. Since pipe compiles to OP_CALL, it works.
+    // But filter/map are global functions, not methods...
+    //
+    // OK, let me just leave the tree-walker versions for now. They work for
+    // NativeFunction callables (e.g., built-in functions). For VM closures,
+    // users should use for-in loops.
+
     vm.defineNative("__arraySlice", makeNat("__arraySlice", 2,
         [](const std::vector<Value>& args) -> Value {
             if (!args[0].isArray() || !args[1].isNumber()) return Value();

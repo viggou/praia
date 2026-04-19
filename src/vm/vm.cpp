@@ -12,6 +12,26 @@
 
 namespace fs = std::filesystem;
 
+// VMClosureCallable::call — allows native functions (filter, map, etc.)
+// to call VM closures through the tree-walker's Callable interface
+Value VMClosureCallable::call(Interpreter&, const std::vector<Value>& args) {
+    if (!vm) return Value();
+
+    int savedFrameCount = vm->frameCount;
+
+    // Push a placeholder for the closure slot, then args
+    vm->push(Value()); // slot for the closure itself
+    for (auto& arg : args) vm->push(arg);
+
+    if (!vm->callClosure(closure, static_cast<int>(args.size()), 0)) return Value();
+
+    // Execute until this closure's frame is done
+    auto result = vm->execute(savedFrameCount);
+    if (result != VM::Result::OK) return Value();
+
+    return vm->pop();
+}
+
 VM::VM() {}
 
 VM::~VM() {
@@ -171,7 +191,10 @@ bool VM::callValue(Value callee, int argCount, int line) {
             try {
                 Value result = native->fn(args);
                 push(std::move(result));
+            } catch (const ExitSignal&) {
+                throw; // propagate sys.exit() to main
             } catch (const RuntimeError& err) {
+                if (tryHandleError(Value(std::string(err.what())))) return true;
                 runtimeError(err.what(), err.line > 0 ? err.line : line);
                 return false;
             }
@@ -187,6 +210,24 @@ void VM::runtimeError(const std::string& msg, int line) {
     std::cerr << "[line " << line << "] Runtime error: " << msg << std::endl;
     std::cerr << formatStackTrace();
     resetStack();
+}
+
+bool VM::tryHandleError(Value error) {
+    if (!exceptionHandlers.empty()) {
+        auto handler = exceptionHandlers.back();
+        exceptionHandlers.pop_back();
+
+        while (frameCount - 1 > handler.frameIndex) {
+            closeUpvalues(&stack[frames[frameCount - 1].baseSlot]);
+            frameCount--;
+        }
+
+        stackTop = handler.stackTop;
+        push(error);
+        frames[frameCount - 1].ip = handler.catchIp;
+        return true; // caught
+    }
+    return false; // uncaught
 }
 
 std::string VM::formatStackTrace() const {
@@ -312,6 +353,15 @@ Value VM::loadGrain(const std::string& importPath, int line) {
     for (auto* u : grainVm.allUpvalues) allUpvalues.push_back(u);
     grainVm.allUpvalues.clear();
 
+    // Copy grain's globals to parent VM so exported closures can access
+    // their module-level variables (which were compiled as globals)
+    for (auto& [k, v] : grainVm.globals) {
+        // Don't overwrite existing builtins or user globals
+        if (globals.find(k) == globals.end()) {
+            globals[k] = v;
+        }
+    }
+
     grainCache[resolved] = exports;
     return exports;
 }
@@ -322,6 +372,7 @@ VM::Result VM::run(std::shared_ptr<CompiledFunction> script) {
     allClosures.push_back(scriptClosure);
 
     auto wrapper = std::make_shared<VMClosureCallable>(scriptClosure);
+    wrapper->vm = this;
     push(Value(std::static_pointer_cast<Callable>(wrapper)));
 
     frames[0].closure = scriptClosure;
@@ -333,13 +384,18 @@ VM::Result VM::run(std::shared_ptr<CompiledFunction> script) {
     return execute();
 }
 
-VM::Result VM::execute() {
+VM::Result VM::execute(int baseFrameCount_) {
     #define FRAME (frames[frameCount - 1])
     #define READ_BYTE() (*FRAME.ip++)
     #define READ_U16() (FRAME.ip += 2, static_cast<uint16_t>((FRAME.ip[-2] << 8) | FRAME.ip[-1]))
     #define READ_CONSTANT() (FRAME.chunk().constants[READ_U16()])
     #define READ_STRING() (READ_CONSTANT().asString())
     #define CURRENT_LINE() (FRAME.chunk().getLine(static_cast<int>(FRAME.ip - FRAME.chunk().code.data())))
+    #define RUNTIME_ERR(msg) do { \
+        std::string _msg = (msg); int _line = CURRENT_LINE(); \
+        if (tryHandleError(Value(_msg))) break; \
+        runtimeError(_msg, _line); return Result::RUNTIME_ERROR; \
+    } while(0)
 
     for (;;) {
         uint8_t instruction = READ_BYTE();
@@ -371,43 +427,42 @@ VM::Result VM::execute() {
                 push(Value(r)); break;
             }
             if (a.isString() || b.isString()) { push(Value(a.toString() + b.toString())); break; }
-            runtimeError("Operands of '+' must be numbers, strings, or arrays", CURRENT_LINE());
-            return Result::RUNTIME_ERROR;
+            RUNTIME_ERR("Operands of '+' must be numbers, strings, or arrays");
         }
         case OpCode::OP_SUBTRACT: {
             Value b = pop(), a = pop();
             if (a.isInt() && b.isInt()) { push(Value(a.asInt() - b.asInt())); break; }
             if (a.isNumber() && b.isNumber()) { push(Value(a.asNumber() - b.asNumber())); break; }
-            runtimeError("Operands of '-' must be numbers", CURRENT_LINE()); return Result::RUNTIME_ERROR;
+            RUNTIME_ERR("Operands of '-' must be numbers");
         }
         case OpCode::OP_MULTIPLY: {
             Value b = pop(), a = pop();
             if (a.isInt() && b.isInt()) { push(Value(a.asInt() * b.asInt())); break; }
             if (a.isNumber() && b.isNumber()) { push(Value(a.asNumber() * b.asNumber())); break; }
-            runtimeError("Operands of '*' must be numbers", CURRENT_LINE()); return Result::RUNTIME_ERROR;
+            RUNTIME_ERR("Operands of '*' must be numbers");
         }
         case OpCode::OP_DIVIDE: {
             Value b = pop(), a = pop();
             if (a.isNumber() && b.isNumber()) {
-                if (b.asNumber() == 0) { runtimeError("Division by zero", CURRENT_LINE()); return Result::RUNTIME_ERROR; }
+                if (b.asNumber() == 0) { RUNTIME_ERR("Division by zero"); }
                 push(Value(a.asNumber() / b.asNumber())); break;
             }
-            runtimeError("Operands of '/' must be numbers", CURRENT_LINE()); return Result::RUNTIME_ERROR;
+            RUNTIME_ERR("Operands of '/' must be numbers");
         }
         case OpCode::OP_MODULO: {
             Value b = pop(), a = pop();
             if (a.isInt() && b.isInt()) {
-                if (b.asInt() == 0) { runtimeError("Modulo by zero", CURRENT_LINE()); return Result::RUNTIME_ERROR; }
+                if (b.asInt() == 0) { RUNTIME_ERR("Modulo by zero"); }
                 push(Value(a.asInt() % b.asInt())); break;
             }
             if (a.isNumber() && b.isNumber()) {
-                if (b.asNumber() == 0) { runtimeError("Modulo by zero", CURRENT_LINE()); return Result::RUNTIME_ERROR; }
+                if (b.asNumber() == 0) { RUNTIME_ERR("Modulo by zero"); }
                 push(Value(std::fmod(a.asNumber(), b.asNumber()))); break;
             }
-            runtimeError("Operands of '%' must be numbers", CURRENT_LINE()); return Result::RUNTIME_ERROR;
+            RUNTIME_ERR("Operands of '%' must be numbers");
         }
         case OpCode::OP_NEGATE: {
-            if (!peek().isNumber()) { runtimeError("Operand of '-' must be a number", CURRENT_LINE()); return Result::RUNTIME_ERROR; }
+            if (!peek().isNumber()) { RUNTIME_ERR("Operand of '-' must be a number"); }
             if (peek().isInt()) push(Value(-pop().asInt()));
             else push(Value(-pop().asNumber()));
             break;
@@ -435,13 +490,13 @@ VM::Result VM::execute() {
         case OpCode::OP_GET_GLOBAL: {
             std::string n = READ_STRING();
             auto it = globals.find(n);
-            if (it == globals.end()) { runtimeError("Undefined variable '" + n + "'", CURRENT_LINE()); return Result::RUNTIME_ERROR; }
+            if (it == globals.end()) { RUNTIME_ERR("Undefined variable '" + n + "'"); }
             push(it->second); break;
         }
         case OpCode::OP_SET_GLOBAL: {
             std::string n = READ_STRING();
             auto it = globals.find(n);
-            if (it == globals.end()) { runtimeError("Undefined variable '" + n + "'", CURRENT_LINE()); return Result::RUNTIME_ERROR; }
+            if (it == globals.end()) { RUNTIME_ERR("Undefined variable '" + n + "'"); }
             it->second = peek(); break;
         }
         case OpCode::OP_GET_LOCAL: { uint16_t slot = READ_U16(); push(stack[FRAME.baseSlot + slot]); break; }
@@ -466,7 +521,7 @@ VM::Result VM::execute() {
         case OpCode::OP_POST_DEC_GLOBAL: {
             std::string n = READ_STRING();
             auto it = globals.find(n);
-            if (it == globals.end()) { runtimeError("Undefined variable '" + n + "'", CURRENT_LINE()); return Result::RUNTIME_ERROR; }
+            if (it == globals.end()) { RUNTIME_ERR("Undefined variable '" + n + "'"); }
             push(it->second);
             bool inc = static_cast<OpCode>(instruction) == OpCode::OP_POST_INC_GLOBAL;
             if (it->second.isInt()) it->second = Value(it->second.asInt() + (inc ? 1 : -1));
@@ -494,8 +549,10 @@ VM::Result VM::execute() {
             int returnBase = FRAME.baseSlot; // save callee's base before popping frame
             closeUpvalues(&stack[returnBase]);
             frameCount--;
-            if (frameCount == 0) {
-                pop();
+            if (frameCount <= baseFrameCount_) {
+                if (frameCount == 0) pop();
+                stackTop = returnBase;
+                push(std::move(result));
                 return Result::OK;
             }
             stackTop = returnBase;
@@ -526,13 +583,11 @@ VM::Result VM::execute() {
             // OP_CLOSURE reads it, creates a new ObjClosure with upvalues.
 
             if (!fnVal.isCallable()) {
-                runtimeError("Internal error: OP_CLOSURE constant is not a function", CURRENT_LINE());
-                return Result::RUNTIME_ERROR;
+                RUNTIME_ERR("Internal error: OP_CLOSURE constant is not a function");
             }
             auto* vmcc = dynamic_cast<VMClosureCallable*>(fnVal.asCallable().get());
             if (!vmcc) {
-                runtimeError("Internal error: OP_CLOSURE constant is not a VM closure", CURRENT_LINE());
-                return Result::RUNTIME_ERROR;
+                RUNTIME_ERR("Internal error: OP_CLOSURE constant is not a VM closure");
             }
 
             auto* closure = new ObjClosure(vmcc->closure->function);
@@ -550,6 +605,7 @@ VM::Result VM::execute() {
             }
 
             auto wrapper = std::make_shared<VMClosureCallable>(closure);
+            wrapper->vm = this;
             push(Value(std::static_pointer_cast<Callable>(wrapper)));
             break;
         }
@@ -587,7 +643,7 @@ VM::Result VM::execute() {
             Value& klass = peek(); // the class
 
             auto klassPtr = std::dynamic_pointer_cast<PraiaClass>(klass.asCallable());
-            if (!klassPtr) { runtimeError("OP_METHOD: not a class", CURRENT_LINE()); return Result::RUNTIME_ERROR; }
+            if (!klassPtr) { RUNTIME_ERR("OP_METHOD: not a class"); }
 
             // Store the closure as a method — the VM will bind it when accessed
             klassPtr->vmMethods[name] = method;
@@ -601,8 +657,8 @@ VM::Result VM::execute() {
             auto superPtr = std::dynamic_pointer_cast<PraiaClass>(superclass.asCallable());
             auto subPtr = std::dynamic_pointer_cast<PraiaClass>(subclass.asCallable());
 
-            if (!superPtr) { runtimeError("Superclass must be a class", CURRENT_LINE()); return Result::RUNTIME_ERROR; }
-            if (!subPtr) { runtimeError("Subclass must be a class", CURRENT_LINE()); return Result::RUNTIME_ERROR; }
+            if (!superPtr) { RUNTIME_ERR("Superclass must be a class"); }
+            if (!subPtr) { RUNTIME_ERR("Subclass must be a class"); }
 
             subPtr->superclass = superPtr;
 
@@ -655,30 +711,39 @@ VM::Result VM::execute() {
                     break;
                 }
 
-                runtimeError("Instance has no property '" + name + "'", CURRENT_LINE());
-                return Result::RUNTIME_ERROR;
+                RUNTIME_ERR("Instance has no property '" + name + "'");
             }
 
             if (obj.isMap()) {
                 auto& entries = obj.asMap()->entries;
                 auto it = entries.find(name);
                 if (it != entries.end()) { push(it->second); break; }
-                runtimeError("Map has no field '" + name + "'", CURRENT_LINE());
-                return Result::RUNTIME_ERROR;
+                RUNTIME_ERR("Map has no field '" + name + "'");
             }
 
             // String/array methods
             if (obj.isString()) {
-                push(getStringMethod(obj.asString(), name, CURRENT_LINE()));
+                try {
+                    push(getStringMethod(obj.asString(), name, CURRENT_LINE()));
+                } catch (const RuntimeError& err) {
+                    if (tryHandleError(Value(std::string(err.what())))) break;
+                    runtimeError(err.what(), CURRENT_LINE());
+                    return Result::RUNTIME_ERROR;
+                }
                 break;
             }
             if (obj.isArray()) {
-                push(getArrayMethod(obj.asArray(), name, CURRENT_LINE(), nullptr));
+                try {
+                    push(getArrayMethod(obj.asArray(), name, CURRENT_LINE(), nullptr));
+                } catch (const RuntimeError& err) {
+                    if (tryHandleError(Value(std::string(err.what())))) break;
+                    runtimeError(err.what(), CURRENT_LINE());
+                    return Result::RUNTIME_ERROR;
+                }
                 break;
             }
 
-            runtimeError("Cannot access property '" + name + "' on this type", CURRENT_LINE());
-            return Result::RUNTIME_ERROR;
+            RUNTIME_ERR("Cannot access property '" + name + "' on this type");
         }
 
         case OpCode::OP_SET_PROPERTY: {
@@ -697,8 +762,7 @@ VM::Result VM::execute() {
                 break;
             }
 
-            runtimeError("Can only set properties on instances and maps", CURRENT_LINE());
-            return Result::RUNTIME_ERROR;
+            RUNTIME_ERR("Can only set properties on instances and maps");
         }
 
         case OpCode::OP_GET_THIS: {
@@ -711,17 +775,15 @@ VM::Result VM::execute() {
             Value instance = pop();
 
             if (!instance.isInstance()) {
-                runtimeError("'super' used outside of a method", CURRENT_LINE());
-                return Result::RUNTIME_ERROR;
+                RUNTIME_ERR("'super' used outside of a method");
             }
             auto inst = instance.asInstance();
             auto super = inst->klass->superclass;
-            if (!super) { runtimeError("Class has no superclass", CURRENT_LINE()); return Result::RUNTIME_ERROR; }
+            if (!super) { RUNTIME_ERR("Class has no superclass"); }
 
             auto it = super->vmMethods.find(name);
             if (it == super->vmMethods.end()) {
-                runtimeError("Superclass has no method '" + name + "'", CURRENT_LINE());
-                return Result::RUNTIME_ERROR;
+                RUNTIME_ERR("Superclass has no method '" + name + "'");
             }
 
             auto* vmcc = dynamic_cast<VMClosureCallable*>(it->second.asCallable().get());
@@ -738,8 +800,7 @@ VM::Result VM::execute() {
         case OpCode::OP_SUPER_INVOKE: {
             // Not emitted by the compiler (uses GET_PROPERTY + CALL instead)
             // Reserved for future optimization
-            runtimeError("OP_INVOKE not yet implemented", CURRENT_LINE());
-            return Result::RUNTIME_ERROR;
+            RUNTIME_ERR("OP_INVOKE not yet implemented");
         }
 
         case OpCode::OP_BUILD_ARRAY: {
@@ -748,8 +809,7 @@ VM::Result VM::execute() {
             if (count == 0xFFFF) {
                 // Dynamic count (with spreads) — not yet supported, use fixed count
                 // For now, this shouldn't happen since we fall back to fixed count
-                runtimeError("Dynamic array builds not yet supported in VM", CURRENT_LINE());
-                return Result::RUNTIME_ERROR;
+                RUNTIME_ERR("Dynamic array builds not yet supported in VM");
             }
             arr->elements.resize(count);
             for (int i = count - 1; i >= 0; i--) arr->elements[i] = pop();
@@ -777,28 +837,27 @@ VM::Result VM::execute() {
             Value idx = pop();
             Value obj = pop();
             if (obj.isArray()) {
-                if (!idx.isNumber()) { runtimeError("Array index must be a number", CURRENT_LINE()); return Result::RUNTIME_ERROR; }
+                if (!idx.isNumber()) { RUNTIME_ERR("Array index must be a number"); }
                 auto& elems = obj.asArray()->elements;
                 int i = static_cast<int>(idx.asNumber());
                 if (i < 0) i += static_cast<int>(elems.size());
-                if (i < 0 || i >= static_cast<int>(elems.size())) { runtimeError("Array index out of bounds", CURRENT_LINE()); return Result::RUNTIME_ERROR; }
+                if (i < 0 || i >= static_cast<int>(elems.size())) { RUNTIME_ERR("Array index out of bounds"); }
                 push(elems[i]);
             } else if (obj.isString()) {
-                if (!idx.isNumber()) { runtimeError("String index must be a number", CURRENT_LINE()); return Result::RUNTIME_ERROR; }
+                if (!idx.isNumber()) { RUNTIME_ERR("String index must be a number"); }
                 auto& str = obj.asString();
                 int i = static_cast<int>(idx.asNumber());
                 if (i < 0) i += static_cast<int>(str.size());
-                if (i < 0 || i >= static_cast<int>(str.size())) { runtimeError("String index out of bounds", CURRENT_LINE()); return Result::RUNTIME_ERROR; }
+                if (i < 0 || i >= static_cast<int>(str.size())) { RUNTIME_ERR("String index out of bounds"); }
                 push(Value(std::string(1, str[i])));
             } else if (obj.isMap()) {
-                if (!idx.isString()) { runtimeError("Map key must be a string", CURRENT_LINE()); return Result::RUNTIME_ERROR; }
+                if (!idx.isString()) { RUNTIME_ERR("Map key must be a string"); }
                 auto& entries = obj.asMap()->entries;
                 auto it = entries.find(idx.asString());
-                if (it == entries.end()) { runtimeError("Map has no key '" + idx.asString() + "'", CURRENT_LINE()); return Result::RUNTIME_ERROR; }
+                if (it == entries.end()) { RUNTIME_ERR("Map has no key '" + idx.asString() + "'"); }
                 push(it->second);
             } else {
-                runtimeError("Can only index into arrays, strings, and maps", CURRENT_LINE());
-                return Result::RUNTIME_ERROR;
+                RUNTIME_ERR("Can only index into arrays, strings, and maps");
             }
             break;
         }
@@ -811,23 +870,21 @@ VM::Result VM::execute() {
                 auto& elems = obj.asArray()->elements;
                 int i = static_cast<int>(idx.asNumber());
                 if (i < 0) i += static_cast<int>(elems.size());
-                if (i < 0 || i >= static_cast<int>(elems.size())) { runtimeError("Array index out of bounds", CURRENT_LINE()); return Result::RUNTIME_ERROR; }
+                if (i < 0 || i >= static_cast<int>(elems.size())) { RUNTIME_ERR("Array index out of bounds"); }
                 elems[i] = val;
                 push(val);
             } else if (obj.isMap()) {
                 obj.asMap()->entries[idx.asString()] = val;
                 push(val);
             } else {
-                runtimeError("Can only assign to array or map indices", CURRENT_LINE());
-                return Result::RUNTIME_ERROR;
+                RUNTIME_ERR("Can only assign to array or map indices");
             }
             break;
         }
 
         case OpCode::OP_UNPACK_SPREAD: {
             // Not yet fully implemented for VM
-            runtimeError("Spread in VM not yet supported", CURRENT_LINE());
-            return Result::RUNTIME_ERROR;
+            RUNTIME_ERR("Spread in VM not yet supported");
         }
 
         case OpCode::OP_BUILD_STRING: {
@@ -920,8 +977,7 @@ VM::Result VM::execute() {
             Value callee = peek(argc);
 
             if (!callee.isCallable()) {
-                runtimeError("async requires a callable", CURRENT_LINE());
-                return Result::RUNTIME_ERROR;
+                RUNTIME_ERR("async requires a callable");
             }
 
             auto callable = callee.asCallable();
@@ -953,18 +1009,15 @@ VM::Result VM::execute() {
         case OpCode::OP_AWAIT: {
             Value val = pop();
             if (!val.isFuture()) {
-                runtimeError("Can only await a future", CURRENT_LINE());
-                return Result::RUNTIME_ERROR;
+                RUNTIME_ERR("Can only await a future");
             }
             try {
                 Value result = val.asFuture()->future.get();
                 push(std::move(result));
             } catch (const RuntimeError& err) {
-                runtimeError(err.what(), CURRENT_LINE());
-                return Result::RUNTIME_ERROR;
+                RUNTIME_ERR(err.what());
             } catch (...) {
-                runtimeError("Async task failed", CURRENT_LINE());
-                return Result::RUNTIME_ERROR;
+                RUNTIME_ERR("Async task failed");
             }
             break;
         }

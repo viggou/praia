@@ -34,8 +34,9 @@ struct ObjClosure {
 // Wrapper to store ObjClosure as a Callable in Value
 struct VMClosureCallable : Callable {
     ObjClosure* closure;
+    class VM* vm = nullptr; // set when closure is created during VM execution
     VMClosureCallable(ObjClosure* c) : closure(c) {}
-    Value call(Interpreter&, const std::vector<Value>&) override { return Value(); } // unused, VM handles directly
+    Value call(Interpreter&, const std::vector<Value>& args) override;
     int arity() const override { return closure->function->arity; }
     std::string name() const override { return closure->function->name; }
 };
@@ -78,22 +79,28 @@ public:
     void setCurrentFile(const std::string& path) { currentFile = path; }
 
 private:
-    Result execute();
+public:
+    Result execute(int baseFrameCount = 0);
+private:
 
     // Stack
     static constexpr int STACK_MAX = 16384;
     Value stack[STACK_MAX];
     int stackTop = 0;
 
+public:
     void push(Value value);
     Value pop();
     Value& peek(int distance = 0);
+private:
     void resetStack();
 
+public:
     // Call frames
     static constexpr int FRAMES_MAX = 256;
     VMCallFrame frames[FRAMES_MAX];
     int frameCount = 0;
+private:
 
     // Globals
     std::unordered_map<std::string, Value> globals;
@@ -129,9 +136,12 @@ private:
     uint16_t readU16();
     Value readConstant();
     std::string readString();
+public:
     bool callValue(Value callee, int argCount, int line);
     bool callClosure(ObjClosure* closure, int argCount, int line);
+private:
 
     void runtimeError(const std::string& msg, int line);
+    bool tryHandleError(Value error);  // returns true if caught, false if uncaught
     std::string formatStackTrace() const;
 };

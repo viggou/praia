@@ -292,7 +292,7 @@ void Compiler::compileIfStmt(const IfStmt* stmt) {
 void Compiler::compileWhileStmt(const WhileStmt* stmt) {
     int loopStart = currentChunk().size();
 
-    current->loops.push_back({loopStart, {}, current->scopeDepth});
+    current->loops.push_back({loopStart, loopStart, {}, {}, current->scopeDepth});
 
     compileExpr(stmt->condition.get());
     int exitJump = emitJump(OpCode::OP_POP_JUMP_IF_FALSE, stmt->line);
@@ -319,7 +319,7 @@ void Compiler::compileForStmt(const ForStmt* stmt) {
     addLocal("__end__");  // hidden end bound
 
     int loopStart = currentChunk().size();
-    current->loops.push_back({loopStart, {}, current->scopeDepth});
+    current->loops.push_back({loopStart, loopStart, {}, {}, current->scopeDepth});
 
     // Condition: i < end
     int iSlot = resolveLocal(current, stmt->varName);
@@ -333,6 +333,11 @@ void Compiler::compileForStmt(const ForStmt* stmt) {
 
     // Body
     compileStmt(stmt->body.get());
+
+    // Continue target: increment section
+    current->loops.back().continueTarget = currentChunk().size();
+    // Patch any continue jumps to here
+    for (int j : current->loops.back().continueJumps) patchJump(j);
 
     // Increment: i = i + 1
     emit(OpCode::OP_GET_LOCAL, stmt->line);
@@ -386,7 +391,7 @@ void Compiler::compileForInStmt(const ForInStmt* stmt) {
     int lenSlot = resolveLocal(current, "__len__");
 
     int loopStart = currentChunk().size();
-    current->loops.push_back({loopStart, {}, current->scopeDepth});
+    current->loops.push_back({loopStart, loopStart, {}, {}, current->scopeDepth});
 
     // Condition: __idx__ < __len__
     emit(OpCode::OP_GET_LOCAL, stmt->line);
@@ -409,6 +414,10 @@ void Compiler::compileForInStmt(const ForInStmt* stmt) {
     compileStmt(stmt->body.get());
 
     endScope(stmt->line); // pops loop var
+
+    // Continue target
+    current->loops.back().continueTarget = currentChunk().size();
+    for (int j : current->loops.back().continueJumps) patchJump(j);
 
     // Increment: __idx__ += 1
     emit(OpCode::OP_GET_LOCAL, stmt->line);
@@ -538,11 +547,13 @@ void Compiler::compileContinueStmt(const ContinueStmt* stmt) {
         return;
     }
     auto& loop = current->loops.back();
+    // Pop locals inside the loop body
     for (int i = static_cast<int>(current->locals.size()) - 1; i >= 0; i--) {
         if (current->locals[i].depth <= loop.scopeDepthAtLoop) break;
         emit(OpCode::OP_POP, stmt->line);
     }
-    emitLoop(loop.loopStart, stmt->line);
+    // Jump forward to the increment section (will be patched later)
+    loop.continueJumps.push_back(emitJump(OpCode::OP_JUMP, stmt->line));
 }
 
 void Compiler::compileClassStmt(const ClassStmt* stmt) {

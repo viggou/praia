@@ -32,8 +32,10 @@ private:
     };
 
     struct LoopContext {
-        int loopStart;
+        int loopStart;         // condition check
+        int continueTarget;    // where continue should jump (increment section)
         std::vector<int> breakJumps;
+        std::vector<int> continueJumps;
         int scopeDepthAtLoop;
     };
 
