@@ -729,7 +729,13 @@ VM::Result VM::execute() {
         }
 
         case OpCode::OP_INVOKE:
-        case OpCode::OP_SUPER_INVOKE:
+        case OpCode::OP_SUPER_INVOKE: {
+            // Not emitted by the compiler (uses GET_PROPERTY + CALL instead)
+            // Reserved for future optimization
+            runtimeError("OP_INVOKE not yet implemented", CURRENT_LINE());
+            return Result::RUNTIME_ERROR;
+        }
+
         case OpCode::OP_BUILD_ARRAY: {
             uint16_t count = READ_U16();
             auto arr = std::make_shared<PraiaArray>();
@@ -875,9 +881,10 @@ VM::Result VM::execute() {
         case OpCode::OP_IMPORT: {
             std::string path = READ_STRING();
             std::string alias = READ_STRING();
+            (void)alias; // alias is handled by the compiler (defines the variable)
             Value exports = loadGrain(path, CURRENT_LINE());
-            if (exports.isNil() && !grainCache.count(resolveGrainPath(path, 0))) {
-                return Result::RUNTIME_ERROR; // error already reported
+            if (exports.isNil() && grainCache.find(path) == grainCache.end()) {
+                return Result::RUNTIME_ERROR;
             }
             push(exports);
             break;

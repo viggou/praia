@@ -211,6 +211,23 @@ void Compiler::compileLambdaExpr(const LambdaExpr* expr) {
         addLocal(param);
     }
 
+    // Default parameter evaluation
+    for (size_t i = 0; i < expr->defaults.size(); i++) {
+        if (expr->defaults[i]) {
+            int slot = static_cast<int>(i) + 1;
+            emit(OpCode::OP_GET_LOCAL, expr->line);
+            emitU16(static_cast<uint16_t>(slot), expr->line);
+            emit(OpCode::OP_NIL, expr->line);
+            emit(OpCode::OP_EQUAL, expr->line);
+            int skipJump = emitJump(OpCode::OP_POP_JUMP_IF_FALSE, expr->line);
+            compileExpr(expr->defaults[i].get());
+            emit(OpCode::OP_SET_LOCAL, expr->line);
+            emitU16(static_cast<uint16_t>(slot), expr->line);
+            emit(OpCode::OP_POP, expr->line);
+            patchJump(skipJump);
+        }
+    }
+
     for (auto& s : expr->body) {
         compileStmt(s.get());
     }

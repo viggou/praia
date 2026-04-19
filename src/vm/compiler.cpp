@@ -435,6 +435,24 @@ void Compiler::compileFuncStmt(const FuncStmt* stmt) {
         addLocal(param);
     }
 
+    // Emit default parameter evaluation: if param is nil and default exists, replace it
+    for (size_t i = 0; i < stmt->defaults.size(); i++) {
+        if (stmt->defaults[i]) {
+            int slot = static_cast<int>(i) + 1; // +1 for slot 0 (function itself)
+            emit(OpCode::OP_GET_LOCAL, stmt->line);
+            emitU16(static_cast<uint16_t>(slot), stmt->line);
+            emit(OpCode::OP_NIL, stmt->line);
+            emit(OpCode::OP_EQUAL, stmt->line);
+            int skipJump = emitJump(OpCode::OP_POP_JUMP_IF_FALSE, stmt->line);
+            // Replace with default value
+            compileExpr(stmt->defaults[i].get());
+            emit(OpCode::OP_SET_LOCAL, stmt->line);
+            emitU16(static_cast<uint16_t>(slot), stmt->line);
+            emit(OpCode::OP_POP, stmt->line);
+            patchJump(skipJump);
+        }
+    }
+
     // Compile body
     auto* body = dynamic_cast<const BlockStmt*>(stmt->body.get());
     if (body) {
@@ -623,12 +641,19 @@ void Compiler::compileEnumStmt(const EnumStmt* stmt) {
     for (size_t i = 0; i < stmt->members.size(); i++) {
         emitConstant(Value(stmt->members[i]), stmt->line); // key
         if (stmt->values[i]) {
-            compileExpr(stmt->values[i].get()); // custom value
+            // Custom value — compile the expression
+            compileExpr(stmt->values[i].get());
+            // Try to extract compile-time constant for auto-increment tracking
+            auto* numExpr = dynamic_cast<const NumberExpr*>(stmt->values[i].get());
+            if (numExpr && numExpr->isInt) {
+                nextVal = numExpr->intValue + 1;
+            } else {
+                nextVal++; // best guess if not a constant
+            }
         } else {
             emitConstant(Value(nextVal), stmt->line);
+            nextVal++;
         }
-        // TODO: track nextVal from custom values at compile time
-        nextVal = static_cast<int64_t>(i) + 1; // simplified — just auto-increment from index
         count++;
     }
     emit(OpCode::OP_BUILD_MAP, stmt->line);
