@@ -2281,6 +2281,18 @@ print(math.PI)          // 3.14159
 print(math.square(5))   // 25
 ```
 
+### Custom alias
+
+Use `as` to bind a grain to a different name:
+
+```
+use "logger" as log
+use "collections" as col
+
+let l = log.create("App")
+let s = col.Stack()
+```
+
 ### Relative imports
 
 Paths starting with `./` or `../` are resolved relative to the importing file:

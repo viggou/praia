@@ -295,6 +295,12 @@ StmtPtr Parser::useStatement() {
     if (slashPos != std::string::npos)
         alias = alias.substr(slashPos + 1);
 
+    // Optional: use "path" as customName
+    if (check(TokenType::IDENTIFIER) && peek().lexeme == "as") {
+        advance(); // consume "as"
+        alias = consume(TokenType::IDENTIFIER, "Expected alias name after 'as'").lexeme;
+    }
+
     auto stmt = std::make_unique<UseStmt>();
     stmt->line = ln;
     stmt->path = path.lexeme;
