@@ -1,0 +1,59 @@
+use "testing"
+
+testing.test("integer type", lam{ in
+    testing.assertEqual(type(42), "int", nil)
+    testing.assertEqual(type(3.14), "number", nil)
+    testing.assertEqual(type(0), "int", nil)
+})
+
+testing.test("large integer arithmetic", lam{ in
+    testing.assertEqual(1000000000 * 1000000000, 1000000000000000000, nil)
+    testing.assertEqual(9223372036854775807 - 1, 9223372036854775806, nil)
+})
+
+testing.test("integer division produces float", lam{ in
+    testing.assertEqual(7 / 2, 3.5, nil)
+    testing.assertEqual(type(7 / 2), "number", nil)
+})
+
+testing.test("integer modulo stays int", lam{ in
+    testing.assertEqual(17 % 5, 2, nil)
+    testing.assertEqual(type(17 % 5), "int", nil)
+})
+
+testing.test("compound assignment", lam{ in
+    let x = 10
+    x += 5
+    testing.assertEqual(x, 15, nil)
+    x -= 3
+    testing.assertEqual(x, 12, nil)
+    x *= 2
+    testing.assertEqual(x, 24, nil)
+    x /= 4
+    testing.assertEqual(x, 6, nil)
+    x %= 4
+    testing.assertEqual(x, 2, nil)
+})
+
+testing.test("postfix increment/decrement", lam{ in
+    let i = 0
+    i++
+    testing.assertEqual(i, 1, nil)
+    i--
+    testing.assertEqual(i, 0, nil)
+})
+
+testing.test("ternary operator", lam{ in
+    testing.assertEqual(true ? "yes" : "no", "yes", nil)
+    testing.assertEqual(false ? "yes" : "no", "no", nil)
+    let x = 5
+    testing.assertEqual(x > 3 ? "big" : "small", "big", nil)
+})
+
+testing.test("zero is falsy", lam{ in
+    testing.assert(!0, "0 should be falsy")
+    testing.assert(1, "1 should be truthy")
+    testing.assert(-1, "-1 should be truthy")
+})
+
+testing.done()

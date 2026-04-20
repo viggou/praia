@@ -1038,18 +1038,33 @@ VM::Result VM::execute(int baseFrameCount_) {
             for (int i = argc - 1; i >= 0; i--) args[i] = pop();
             pop(); // callee
 
-            // Spawn in background thread — native functions run truly in parallel
+            // Native functions run truly in parallel in a background thread.
+            // VM closures run synchronously (can't share the VM across threads)
+            // and are wrapped in an already-resolved future.
             auto* native = dynamic_cast<NativeFunction*>(callable.get());
-            auto sharedFuture = std::async(std::launch::async,
-                [callable, args, native]() -> Value {
-                    if (native) {
+            auto* vmcc = dynamic_cast<VMClosureCallable*>(callable.get());
+
+            std::shared_future<Value> sharedFuture;
+            if (vmcc && vmcc->vm) {
+                // Call VM closure synchronously via re-entrant execute
+                Interpreter dummy;
+                Value result = vmcc->call(dummy, args);
+                std::promise<Value> p;
+                p.set_value(std::move(result));
+                sharedFuture = p.get_future().share();
+            } else if (native) {
+                sharedFuture = std::async(std::launch::async,
+                    [native, args]() -> Value {
                         return native->fn(args);
-                    }
-                    // For non-native: can't easily run Praia closures in threads
-                    // without a second VM. For now, just call synchronously.
-                    // (This matches the tree-walker's GIL behavior for Praia functions)
-                    return Value(); // placeholder
-                }).share();
+                    }).share();
+            } else {
+                // Other callable types (bound methods, etc.)
+                Interpreter dummy;
+                Value result = callable->call(dummy, args);
+                std::promise<Value> p;
+                p.set_value(std::move(result));
+                sharedFuture = p.get_future().share();
+            }
 
             auto fut = std::make_shared<PraiaFuture>();
             fut->future = sharedFuture;

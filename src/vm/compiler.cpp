@@ -577,10 +577,21 @@ void Compiler::compileClassStmt(const ClassStmt* stmt) {
 
     // Inheritance
     if (!stmt->superclass.empty()) {
-        // Push superclass
-        uint16_t superIdx = identifierConstant(stmt->superclass);
-        emit(OpCode::OP_GET_GLOBAL, stmt->line);
-        emitU16(superIdx, stmt->line);
+        // Push superclass (resolve as local first, then global)
+        int superSlot = resolveLocal(current, stmt->superclass);
+        if (superSlot != -1) {
+            emit(OpCode::OP_GET_LOCAL, stmt->line);
+            emitU16(static_cast<uint16_t>(superSlot), stmt->line);
+        } else {
+            int upval = resolveUpvalue(current, stmt->superclass);
+            if (upval != -1) {
+                emit(OpCode::OP_GET_UPVALUE, stmt->line);
+                emit(static_cast<uint8_t>(upval), stmt->line);
+            } else {
+                emit(OpCode::OP_GET_GLOBAL, stmt->line);
+                emitU16(identifierConstant(stmt->superclass), stmt->line);
+            }
+        }
 
         // Push the class again for INHERIT
         if (current->scopeDepth > 0) {
@@ -623,6 +634,23 @@ void Compiler::compileClassStmt(const ClassStmt* stmt) {
         // Parameters
         for (auto& param : method.params) {
             addLocal(param);
+        }
+
+        // Default parameter evaluation: if param is nil and default exists, replace it
+        for (size_t i = 0; i < method.defaults.size(); i++) {
+            if (method.defaults[i]) {
+                int slot = static_cast<int>(i) + 1; // +1 for slot 0 (this)
+                emit(OpCode::OP_GET_LOCAL, method.line);
+                emitU16(static_cast<uint16_t>(slot), method.line);
+                emit(OpCode::OP_NIL, method.line);
+                emit(OpCode::OP_EQUAL, method.line);
+                int skipJump = emitJump(OpCode::OP_POP_JUMP_IF_FALSE, method.line);
+                compileExpr(method.defaults[i].get());
+                emit(OpCode::OP_SET_LOCAL, method.line);
+                emitU16(static_cast<uint16_t>(slot), method.line);
+                emit(OpCode::OP_POP, method.line);
+                patchJump(skipJump);
+            }
         }
 
         // Body

@@ -92,7 +92,23 @@ Interpreter::Interpreter() {
         })));
 
     globals->define("str", Value(makeNative("str", 1,
-        [](const std::vector<Value>& args) -> Value {
+        [self](const std::vector<Value>& args) -> Value {
+            if (args[0].isInstance()) {
+                auto inst = args[0].asInstance();
+                // Check for a toString() method
+                if (inst->klass) {
+                    auto* method = inst->klass->findMethod("toString");
+                    if (method) {
+                        auto bound = std::make_shared<PraiaMethod>();
+                        bound->methodName = "toString";
+                        bound->params = method->params;
+                        bound->decl = method;
+                        bound->closure = inst->klass->closure;
+                        bound->instance = inst;
+                        return bound->call(*self, {});
+                    }
+                }
+            }
             return Value(args[0].toString());
         })));
 

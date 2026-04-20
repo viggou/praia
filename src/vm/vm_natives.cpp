@@ -68,6 +68,38 @@ void vmRegisterNatives(VM& vm) {
     // NativeFunction callables (e.g., built-in functions). For VM closures,
     // users should use for-in loops.
 
+    // Override str() to call toString() on VM instances
+    vm.defineNative("str", makeNat("str", 1,
+        [&vm](const std::vector<Value>& args) -> Value {
+            if (args[0].isInstance()) {
+                auto inst = args[0].asInstance();
+                if (inst->klass) {
+                    // Look for toString in vmMethods
+                    auto walk = inst->klass;
+                    while (walk) {
+                        auto it = walk->vmMethods.find("toString");
+                        if (it != walk->vmMethods.end() && it->second.isCallable()) {
+                            auto* vmcc = dynamic_cast<VMClosureCallable*>(it->second.asCallable().get());
+                            if (vmcc && vmcc->vm) {
+                                // Call toString() via re-entrant VM execution
+                                vm.push(Value(inst)); // slot for 'this'
+                                if (vm.callClosure(vmcc->closure, 0, 0)) {
+                                    int saved = vm.frameCount;
+                                    auto result = vm.execute(saved - 1);
+                                    if (result == VM::Result::OK) {
+                                        return vm.pop();
+                                    }
+                                }
+                            }
+                            break;
+                        }
+                        walk = walk->superclass;
+                    }
+                }
+            }
+            return Value(args[0].toString());
+        }));
+
     // Convert any iterable to an array for for-in loops.
     // Arrays pass through, maps become [{key, value}, ...], strings become char arrays.
     vm.defineNative("__iterEntries", makeNat("__iterEntries", 1,

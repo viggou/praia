@@ -1,0 +1,38 @@
+use "testing"
+
+testing.test("async/await basic", lam{ in
+    func add(a, b) { return a + b }
+    let f = async add(3, 4)
+    testing.assertEqual(await f, 7, nil)
+})
+
+testing.test("async/await multiple", lam{ in
+    func double(x) { return x * 2 }
+    let f1 = async double(5)
+    let f2 = async double(10)
+    testing.assertEqual(await f1, 10, nil)
+    testing.assertEqual(await f2, 20, nil)
+})
+
+testing.test("await precedence", lam{ in
+    func id(x) { return x }
+    let f1 = async id(3)
+    let f2 = async id(4)
+    testing.assertEqual(await f1 + await f2, 7, nil)
+})
+
+testing.test("async with closure", lam{ in
+    let base = 100
+    func addBase(x) { return x + base }
+    let f = async addBase(42)
+    testing.assertEqual(await f, 142, nil)
+})
+
+testing.test("future prints as <future>", lam{ in
+    func noop() { return nil }
+    let f = async noop()
+    testing.assertEqual(str(f), "<future>", nil)
+    await f
+})
+
+testing.done()
