@@ -1375,6 +1375,15 @@ Interpreter::Interpreter() {
             return Value(std::string(val));
         }));
 
+    sysMap->entries["setenv"] = Value(makeNative("sys.setenv", 2,
+        [](const std::vector<Value>& args) -> Value {
+            if (!args[0].isString() || !args[1].isString())
+                throw RuntimeError("sys.setenv() requires two strings (key, value)", 0);
+            if (setenv(args[0].asString().c_str(), args[1].asString().c_str(), 1) != 0)
+                throw RuntimeError("sys.setenv() failed for key '" + args[0].asString() + "'", 0);
+            return Value();
+        }));
+
     sysMap->entries["cwd"] = Value(makeNative("sys.cwd", 0,
         [](const std::vector<Value>&) -> Value {
             return Value(fs::current_path().string());
