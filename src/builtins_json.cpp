@@ -134,7 +134,7 @@ class JsonParser {
         if (numStr.find('.') == std::string::npos &&
             numStr.find('e') == std::string::npos &&
             numStr.find('E') == std::string::npos) {
-            try { return Value(std::stoll(numStr)); }
+            try { return Value(static_cast<int64_t>(std::stoll(numStr))); }
             catch (...) {} // fallback to double for very large numbers
         }
         return Value(std::stod(numStr));
