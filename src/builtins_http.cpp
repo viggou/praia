@@ -217,34 +217,84 @@ Value parseHttpResponse(const std::string& raw) {
     return Value(result);
 }
 
+// Limits for incoming requests
+static constexpr size_t MAX_HEADER_SIZE = 64 * 1024;   // 64 KB headers
+static constexpr size_t MAX_BODY_SIZE   = 8 * 1024 * 1024; // 8 MB body
+static constexpr int    RECV_TIMEOUT_SECS = 30;
+
+// Case-insensitive search for a header name in raw header text.
+// Returns the value or empty string if not found.
+static std::string findHeaderValue(const std::string& headers, const std::string& name) {
+    // Search for "\nName:" (case-insensitive) — the first line has no \n prefix, handle separately
+    for (size_t searchFrom = 0; ;) {
+        size_t pos = headers.find(':', searchFrom);
+        if (pos == std::string::npos) break;
+        // Walk back to find the start of this header name
+        size_t lineStart = headers.rfind('\n', pos);
+        lineStart = (lineStart == std::string::npos) ? 0 : lineStart + 1;
+        std::string key = headers.substr(lineStart, pos - lineStart);
+        // Trim trailing \r
+        if (!key.empty() && key.back() == '\r') key.pop_back();
+        // Case-insensitive compare
+        if (key.size() == name.size()) {
+            bool match = true;
+            for (size_t i = 0; i < key.size(); i++) {
+                if (std::tolower(key[i]) != std::tolower(name[i])) { match = false; break; }
+            }
+            if (match) {
+                size_t valStart = pos + 1;
+                while (valStart < headers.size() && headers[valStart] == ' ') valStart++;
+                size_t valEnd = headers.find('\r', valStart);
+                if (valEnd == std::string::npos) valEnd = headers.find('\n', valStart);
+                if (valEnd == std::string::npos) valEnd = headers.size();
+                return headers.substr(valStart, valEnd - valStart);
+            }
+        }
+        searchFrom = pos + 1;
+    }
+    return "";
+}
+
 // Parse a raw HTTP request from a client socket.
 // Returns a PraiaMap with method, path, query, headers, body.
 // Also outputs the raw client fd for SSE use.
 std::shared_ptr<PraiaMap> readAndParseRequest(int client) {
+    // Set a receive timeout so slow/idle clients don't block the server
+    struct timeval tv;
+    tv.tv_sec = RECV_TIMEOUT_SECS;
+    tv.tv_usec = 0;
+    setsockopt(client, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+
     std::string data;
     char buf[8192];
     while (true) {
         ssize_t n = recv(client, buf, sizeof(buf), 0);
         if (n <= 0) break;
         data.append(buf, n);
+
+        // Enforce header size limit before we find the end of headers
         auto hend = data.find("\r\n\r\n");
-        if (hend != std::string::npos) {
-            std::string hdr = data.substr(0, hend);
-            size_t cl_pos = hdr.find("Content-Length: ");
-            if (cl_pos == std::string::npos) cl_pos = hdr.find("content-length: ");
-            if (cl_pos != std::string::npos) {
-                size_t clen = 0;
-                try { clen = std::stoul(hdr.substr(cl_pos + 16)); }
-                catch (...) {}
-                size_t bodyStart = hend + 4;
-                while (data.size() - bodyStart < clen) {
-                    n = recv(client, buf, sizeof(buf), 0);
-                    if (n <= 0) break;
-                    data.append(buf, n);
-                }
-            }
-            break;
+        if (hend == std::string::npos) {
+            if (data.size() > MAX_HEADER_SIZE) return nullptr; // headers too large
+            continue;
         }
+
+        // Headers complete — check for body
+        std::string hdr = data.substr(0, hend);
+        std::string clVal = findHeaderValue(hdr, "content-length");
+        if (!clVal.empty()) {
+            size_t clen = 0;
+            try { clen = std::stoul(clVal); } catch (...) {}
+            if (clen > MAX_BODY_SIZE) return nullptr; // body too large
+            size_t bodyStart = hend + 4;
+            while (data.size() - bodyStart < clen) {
+                n = recv(client, buf, sizeof(buf), 0);
+                if (n <= 0) break;
+                data.append(buf, n);
+                if (data.size() - bodyStart > MAX_BODY_SIZE) return nullptr;
+            }
+        }
+        break;
     }
 
     if (data.empty()) return nullptr;
@@ -269,14 +319,17 @@ std::shared_ptr<PraiaMap> readAndParseRequest(int client) {
     auto reqHeaders = std::make_shared<PraiaMap>();
     std::istringstream hs(data.substr(0, hend));
     std::string line;
-    std::getline(hs, line);
+    std::getline(hs, line); // skip request line
     while (std::getline(hs, line)) {
         if (!line.empty() && line.back() == '\r') line.pop_back();
-        auto c = line.find(": ");
+        // Accept "Key: Value" or "Key:Value" (colon with optional space)
+        auto c = line.find(':');
         if (c != std::string::npos) {
             std::string key = line.substr(0, c);
             std::transform(key.begin(), key.end(), key.begin(), ::tolower);
-            reqHeaders->entries[key] = Value(line.substr(c + 2));
+            size_t valStart = c + 1;
+            while (valStart < line.size() && line[valStart] == ' ') valStart++;
+            reqHeaders->entries[key] = Value(line.substr(valStart));
         }
     }
 
@@ -291,9 +344,33 @@ std::shared_ptr<PraiaMap> readAndParseRequest(int client) {
     return req;
 }
 
+static const char* reasonPhrase(int status) {
+    switch (status) {
+        case 200: return "OK";
+        case 201: return "Created";
+        case 204: return "No Content";
+        case 301: return "Moved Permanently";
+        case 302: return "Found";
+        case 304: return "Not Modified";
+        case 400: return "Bad Request";
+        case 401: return "Unauthorized";
+        case 403: return "Forbidden";
+        case 404: return "Not Found";
+        case 405: return "Method Not Allowed";
+        case 409: return "Conflict";
+        case 413: return "Payload Too Large";
+        case 422: return "Unprocessable Entity";
+        case 429: return "Too Many Requests";
+        case 500: return "Internal Server Error";
+        case 502: return "Bad Gateway";
+        case 503: return "Service Unavailable";
+        default:  return "Unknown";
+    }
+}
+
 void sendHttpResponse(int client, int status, const std::string& body,
                        const std::unordered_map<std::string, std::string>& headers) {
-    std::string resp = "HTTP/1.1 " + std::to_string(status) + " OK\r\n";
+    std::string resp = "HTTP/1.1 " + std::to_string(status) + " " + reasonPhrase(status) + "\r\n";
     auto hdrs = headers;
     hdrs["Content-Length"] = std::to_string(body.size());
     hdrs["Connection"] = "close";
