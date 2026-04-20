@@ -1,0 +1,73 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: macos-14          # Apple Silicon (M1+)
+            target: macos-arm64
+          - os: macos-13          # Intel Mac
+            target: macos-x86_64
+          - os: ubuntu-24.04      # Linux x86_64
+            target: linux-x86_64
+          - os: ubuntu-24.04-arm  # Linux arm64
+            target: linux-arm64
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies (macOS)
+        if: startsWith(matrix.os, 'macos')
+        run: brew install openssl@3 readline sqlite
+
+      - name: Install dependencies (Linux)
+        if: startsWith(matrix.os, 'ubuntu')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev libreadline-dev libsqlite3-dev
+
+      - name: Build
+        run: make clean && make
+
+      - name: Run tests
+        run: make test
+
+      - name: Package binary
+        run: |
+          mkdir -p dist
+          cp praia dist/
+          cp README.md LICENSE dist/ 2>/dev/null || true
+          cd dist && tar czf ../praia-${{ matrix.target }}.tar.gz *
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: praia-${{ matrix.target }}
+          path: praia-${{ matrix.target }}.tar.gz
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/**/*.tar.gz
+          generate_release_notes: true

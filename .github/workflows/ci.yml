@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [macos-14, ubuntu-24.04]
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies (macOS)
+        if: startsWith(matrix.os, 'macos')
+        run: brew install openssl@3 readline sqlite
+
+      - name: Install dependencies (Linux)
+        if: startsWith(matrix.os, 'ubuntu')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev libreadline-dev libsqlite3-dev
+
+      - name: Build
+        run: make
+
+      - name: Test (tree-walker)
+        run: ./praia test
+
+      - name: Test (VM)
+        run: |
+          for f in tests/test_*.praia; do
+            echo "── $f ──"
+            ./praia --vm "$f"
+          done
