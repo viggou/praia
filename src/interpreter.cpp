@@ -364,8 +364,17 @@ void Interpreter::execute(const Stmt* stmt) {
                     catch (const ContinueSignal&) {}
                 }
             } catch (const BreakSignal&) {}
+        } else if (iterable.isString()) {
+            try {
+                for (size_t i = 0; i < iterable.asString().size(); i++) {
+                    auto iterEnv = std::make_shared<Environment>(env);
+                    iterEnv->define(s->varName, Value(std::string(1, iterable.asString()[i])));
+                    try { executeBlock(bodyBlock, iterEnv); }
+                    catch (const ContinueSignal&) {}
+                }
+            } catch (const BreakSignal&) {}
         } else {
-            throw RuntimeError("for-in requires an array or map", s->line);
+            throw RuntimeError("for-in requires an array, map, or string", s->line);
         }
 
     } else if (auto* s = dynamic_cast<const FuncStmt*>(stmt)) {
@@ -599,6 +608,12 @@ Value Interpreter::evaluate(const Expr* expr) {
                 auto result = std::make_shared<PraiaArray>();
                 for (auto& el : left.asArray()->elements) result->elements.push_back(el);
                 for (auto& el : right.asArray()->elements) result->elements.push_back(el);
+                return Value(result);
+            }
+            if (left.isMap() && right.isMap()) {
+                auto result = std::make_shared<PraiaMap>();
+                for (auto& [k, v] : left.asMap()->entries) result->entries[k] = v;
+                for (auto& [k, v] : right.asMap()->entries) result->entries[k] = v;
                 return Value(result);
             }
             if (left.isString() || right.isString())

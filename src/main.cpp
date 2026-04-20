@@ -437,9 +437,17 @@ static int runTestsCommand(const std::string& dir) {
 int main(int argc, char* argv[]) {
     bool showTokens = false;
     bool showAst = false;
-    bool useVm = false;
+    bool useVm = true; // VM is the default
     std::string filename;
     int fileArgIndex = -1;
+
+    static constexpr const char* PRAIA_VERSION = "0.1.0";
+
+    // `praia -v` / `praia --version`
+    if (argc >= 2 && (std::string(argv[1]) == "--version" || std::string(argv[1]) == "-v")) {
+        std::cout << "praia " << PRAIA_VERSION << std::endl;
+        return 0;
+    }
 
     // `praia test [dir]` subcommand
     if (argc >= 2 && std::string(argv[1]) == "test") {
@@ -457,6 +465,7 @@ int main(int argc, char* argv[]) {
         if (arg == "--tokens")        showTokens = true;
         else if (arg == "--ast")      showAst = true;
         else if (arg == "--vm")       useVm = true;
+        else if (arg == "--tree")     useVm = false;
         else if (arg == "-c" && i + 1 < argc) {
             hasCFlag = true;
             cCode = argv[++i];
