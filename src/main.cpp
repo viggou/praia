@@ -236,6 +236,8 @@ static void printAst(const std::vector<StmtPtr>& program) {
 
 // ── Main ─────────────────────────────────────────────────────
 
+static constexpr const char* PRAIA_VERSION = "0.1.1";
+
 static std::string readFile(const std::string& path) {
     std::ifstream file(path);
     if (!file.is_open()) {
@@ -301,7 +303,7 @@ static void addHistory([[maybe_unused]] const std::string& line) {
 }
 
 static void repl(bool showTokens, bool showAst) {
-    std::cout << "Praia REPL (type 'exit' to quit)" << std::endl;
+    std::cout << "Praia " << PRAIA_VERSION << " REPL (type 'exit' to quit)" << std::endl;
     Interpreter interpreter;
 
     // Keep all ASTs alive so function bodies (raw pointers) remain valid
@@ -441,18 +443,20 @@ int main(int argc, char* argv[]) {
     std::string filename;
     int fileArgIndex = -1;
 
-    static constexpr const char* PRAIA_VERSION = "0.1.0";
-
     // `praia -v` / `praia --version`
     if (argc >= 2 && (std::string(argv[1]) == "--version" || std::string(argv[1]) == "-v")) {
-        std::cout << "praia " << PRAIA_VERSION << std::endl;
+        std::cout << "Praia Version " << PRAIA_VERSION << std::endl;
         return 0;
     }
 
-    // `praia test [dir]` subcommand
-    if (argc >= 2 && std::string(argv[1]) == "test") {
-        std::string dir = (argc >= 3) ? argv[2] : "tests";
-        return runTestsCommand(dir);
+    // `praia test [dir]` subcommand — scan past flags to find it
+    for (int i = 1; i < argc; i++) {
+        std::string arg = argv[i];
+        if (arg == "test") {
+            std::string dir = (i + 1 < argc) ? argv[i + 1] : "tests";
+            return runTestsCommand(dir);
+        }
+        if (arg[0] != '-') break; // hit a non-flag, non-"test" arg (filename)
     }
 
     // Parse all flags first
@@ -488,6 +492,10 @@ int main(int argc, char* argv[]) {
                 extern void vmRegisterNatives(VM& vm);
                 VM vm;
                 vmRegisterNatives(vm);
+                std::vector<std::string> scriptArgs;
+                for (int i = cArgStart; i < argc; i++)
+                    scriptArgs.push_back(argv[i]);
+                vm.setArgs(scriptArgs);
                 try { return vm.run(script) == VM::Result::OK ? 0 : 1; }
                 catch (const ExitSignal& e) { return e.code; }
             } else {
@@ -530,6 +538,7 @@ int main(int argc, char* argv[]) {
             extern void vmRegisterNatives(VM& vm);
             VM vm;
             vmRegisterNatives(vm);
+            vm.setArgs(scriptArgs);
             vm.setCurrentFile(filename);
             try {
                 auto result = vm.run(script);

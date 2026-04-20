@@ -2629,7 +2629,7 @@ A grain can also be a directory with a `grain.yaml` manifest:
 ext_grains/
   mylib/
     grain.yaml        <- specifies entry point
-    index.praia       <- main file
+    main.praia        <- main file
     helpers.praia     <- internal module
 ```
 
@@ -2638,13 +2638,13 @@ The `grain.yaml` specifies the entry file:
 ```yaml
 name: mylib
 version: 0.1.0
-main: index.praia
+main: main.praia
 ```
 
 Files within a grain directory can import each other with relative paths:
 
 ```
-// ext_grains/mylib/index.praia
+// ext_grains/mylib/main.praia
 use "./helpers"
 
 func process(x) { return helpers.double(x) }
@@ -2703,7 +2703,7 @@ When you write `use "math"`, Praia looks for the grain in this order:
 At each location, Praia checks for:
 - `<name>.praia` (single-file grain)
 - `<name>/` directory with `grain.yaml` → reads `main` field for the entry file
-- `<name>/index.praia` (fallback if no `grain.yaml`)
+- `<name>/main.praia` (fallback if no `grain.yaml`)
 
 ### Grains importing other grains
 
@@ -2755,7 +2755,7 @@ my-project/
 ├── ext_grains/              <- installed by sand
 │   └── router/
 │       ├── grain.yaml
-│       └── index.praia
+│       └── main.praia
 ├── grains/                  <- project-bundled grains
 │   ├── math.praia
 │   └── geometry.praia

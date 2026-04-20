@@ -44,6 +44,14 @@ void VM::defineNative(const std::string& name, Value value) {
     globals[name] = std::move(value);
 }
 
+void VM::setArgs(const std::vector<std::string>& args) {
+    auto arr = std::make_shared<PraiaArray>();
+    for (auto& a : args)
+        arr->elements.push_back(Value(a));
+    if (globals.count("sys") && globals["sys"].isMap())
+        globals["sys"].asMap()->entries["args"] = Value(arr);
+}
+
 void VM::push(Value value) {
     if (stackTop >= STACK_MAX) {
         std::cerr << "Stack overflow" << std::endl;

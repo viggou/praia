@@ -80,6 +80,7 @@ public:
     // Setup
     void defineNative(const std::string& name, Value value);
     void setCurrentFile(const std::string& path) { currentFile = path; }
+    void setArgs(const std::vector<std::string>& args);
 
 private:
 public:

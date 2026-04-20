@@ -33,7 +33,10 @@ inline std::string resolveGrainDir(const fs::path& dir) {
         }
     }
 
-    // Fallback: index.praia
+    // Fallback: main.praia, then index.praia
+    auto mainFile = dir / "main.praia";
+    if (fs::exists(mainFile)) return fs::canonical(mainFile).string();
+
     auto indexFile = dir / "index.praia";
     if (fs::exists(indexFile)) return fs::canonical(indexFile).string();
 
