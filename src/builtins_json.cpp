@@ -55,6 +55,7 @@ class JsonParser {
         while (pos < src.size() && src[pos] != '"') {
             if (src[pos] == '\\') {
                 pos++;
+                if (pos >= src.size()) fail("Unterminated escape in JSON string");
                 switch (src[pos]) {
                     case '"': result += '"'; break;
                     case '\\': result += '\\'; break;
@@ -67,12 +68,12 @@ class JsonParser {
                     case 'u': {
                         pos++;
                         if (pos + 4 > src.size())
-                            throw RuntimeError("Truncated unicode escape in JSON", 0);
+                            fail("Truncated unicode escape in JSON string");
                         std::string hex = src.substr(pos, 4);
                         pos += 3; // +1 from the loop increment below
                         int cp;
                         try { cp = std::stoi(hex, nullptr, 16); }
-                        catch (...) { throw RuntimeError("Invalid unicode escape: \\u" + hex, 0); }
+                        catch (...) { fail("Invalid unicode escape: \\u" + hex); }
                         if (cp < 0x80) result += static_cast<char>(cp);
                         else if (cp < 0x800) {
                             result += static_cast<char>(0xC0 | (cp >> 6));
@@ -84,30 +85,50 @@ class JsonParser {
                         }
                         break;
                     }
-                    default: result += src[pos]; break;
+                    default: fail(std::string("Invalid escape '\\") + src[pos] + "' in JSON string");
                 }
             } else {
                 result += src[pos];
             }
             pos++;
         }
-        if (pos < src.size()) pos++; // closing "
+        if (pos >= src.size()) fail("Unterminated JSON string");
+        pos++; // closing "
         return Value(std::move(result));
     }
 
     Value parseNumber() {
         size_t start = pos;
         if (src[pos] == '-') pos++;
-        while (pos < src.size() && std::isdigit(src[pos])) pos++;
-        if (pos < src.size() && src[pos] == '.') {
+
+        // Integer part: no leading zeros (except standalone 0)
+        if (pos >= src.size() || !std::isdigit(src[pos]))
+            fail("Invalid JSON number");
+        if (src[pos] == '0') {
             pos++;
+            if (pos < src.size() && std::isdigit(src[pos]))
+                fail("Leading zeros not allowed in JSON numbers");
+        } else {
             while (pos < src.size() && std::isdigit(src[pos])) pos++;
         }
+
+        // Fractional part
+        if (pos < src.size() && src[pos] == '.') {
+            pos++;
+            if (pos >= src.size() || !std::isdigit(src[pos]))
+                fail("Expected digit after '.' in JSON number");
+            while (pos < src.size() && std::isdigit(src[pos])) pos++;
+        }
+
+        // Exponent part
         if (pos < src.size() && (src[pos] == 'e' || src[pos] == 'E')) {
             pos++;
             if (pos < src.size() && (src[pos] == '+' || src[pos] == '-')) pos++;
+            if (pos >= src.size() || !std::isdigit(src[pos]))
+                fail("Expected digit in JSON number exponent");
             while (pos < src.size() && std::isdigit(src[pos])) pos++;
         }
+
         std::string numStr = src.substr(start, pos - start);
         // Integer if no decimal point or exponent
         if (numStr.find('.') == std::string::npos &&
