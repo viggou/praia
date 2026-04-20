@@ -1,6 +1,6 @@
 # Praia
 
-Praia is a dynamically typed, interpreted programming language written in C++ from scratch (lexer, parser, interpreter — no external dependencies). It has a pipe operator for chaining data transformations and comes with HTTP, JSON, YAML, regex, and async built in.
+Praia is a dynamically typed, interpreted programming language written in C++ from scratch (lexer, parser, interpreter). It has a pipe operator for chaining data transformations and comes with HTTP, JSON, YAML, regex, and async built in.
 
 ## Example
 
@@ -32,13 +32,37 @@ More examples in the [examples directory](examples/).
 
 ## Building
 
-Requires a C++17 compiler. No external dependencies.
+Requires a C++17 compiler. Optional dependencies are auto-detected at build time:
+
+| Dependency | Enables | Required? |
+|------------|---------|-----------|
+| OpenSSL | HTTPS client (`http.get("https://...")`) | Optional |
+| SQLite | `sqlite.open()` built-in | Optional |
+| readline/libedit | REPL history and line editing | Optional |
+
+Install them with your package manager:
+
+```sh
+# macOS
+brew install openssl@3 readline sqlite
+
+# Ubuntu / Debian
+sudo apt install libssl-dev libreadline-dev libsqlite3-dev
+
+# Fedora / RHEL
+sudo dnf install openssl-devel readline-devel sqlite-devel
+```
+
+Then build:
 
 ```sh
 make
 ./praia                   # REPL
 ./praia script.praia      # run a file
+./praia -v                # print version
 ```
+
+Praia builds and runs without any of the optional dependencies, you just won't have HTTPS, SQLite, or REPL history.
 
 ## Testing
 
