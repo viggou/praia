@@ -211,10 +211,39 @@ void Lexer::string(char quote) {
             firstInterp = false;
 
             // Collect the expression source between %{ and the matching }
+            // Track strings and comments so braces inside them don't confuse the count
             std::string expr;
             int depth = 1;
+            char stringQuote = 0;
+            bool inLineComment = false;
+            bool inBlockComment = false;
             while (depth > 0 && !isAtEnd()) {
                 char ch = peek();
+                char next = peekNext();
+
+                if (inLineComment) {
+                    if (ch == '\n') { inLineComment = false; line++; }
+                    expr += advance();
+                    continue;
+                }
+                if (inBlockComment) {
+                    if (ch == '\n') line++;
+                    if (ch == '*' && next == '/') { inBlockComment = false; expr += advance(); }
+                    expr += advance();
+                    continue;
+                }
+                if (stringQuote) {
+                    if (ch == '\\') { expr += advance(); if (!isAtEnd()) expr += advance(); continue; }
+                    if (ch == stringQuote) stringQuote = 0;
+                    if (ch == '\n') line++;
+                    expr += advance();
+                    continue;
+                }
+
+                if (ch == '/' && next == '/') { inLineComment = true; expr += advance(); expr += advance(); continue; }
+                if (ch == '/' && next == '*') { inBlockComment = true; expr += advance(); expr += advance(); continue; }
+                if (ch == '"' || ch == '\'') { stringQuote = ch; expr += advance(); continue; }
+
                 if (ch == '{') depth++;
                 if (ch == '}') depth--;
                 if (depth > 0) {
