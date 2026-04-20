@@ -236,6 +236,17 @@ let label = x > 5 ? "big" : "small"
 let grade = score >= 90 ? "A" : score >= 80 ? "B" : "C"   // nests right-to-left
 ```
 
+### Compound Assignment
+
+```
+let x = 10
+x += 5              // x is now 15
+x -= 3              // x is now 12
+x *= 2              // x is now 24
+x /= 4              // x is now 6
+x %= 4              // x is now 2
+```
+
 ### Increment / Decrement
 
 ```
@@ -1190,7 +1201,11 @@ sys.append("output.txt", "\nmore text")
 ```
 sys.mkdir("my/nested/dir")          // creates all parent dirs
 print(sys.exists("output.txt"))     // true
-sys.remove("output.txt")            // delete file
+sys.remove("output.txt")            // delete a file
+sys.remove("my/nested/dir")         // delete a directory (recursive)
+sys.copy("src.txt", "dst.txt")      // copy a file
+sys.copy("srcdir", "dstdir")        // copy a directory (recursive)
+sys.move("old.txt", "new.txt")      // move / rename a file or directory
 ```
 
 ### Running Commands
@@ -2432,6 +2447,8 @@ In addition to file/directory operations, `sys` provides:
 
 | Field/Function | Description |
 |----------------|-------------|
+| `sys.copy(src, dst)` | Copy a file or directory (recursive) |
+| `sys.move(src, dst)` | Move / rename a file or directory |
 | `sys.env(name)` | Read environment variable (returns nil if not set) |
 | `sys.cwd()` | Current working directory |
 | `sys.platform` | `"darwin"`, `"linux"`, or `"windows"` |
@@ -2588,7 +2605,7 @@ With raw TCP sockets, these can be implemented:
 
 ## Grains (Modules)
 
-Praia's module system uses **grains** (like sand grains). Each grain is a `.praia` file that exports functions and values.
+Praia's module system uses **grains** (like sand grains). A grain can be a single `.praia` file or a directory with multiple files.
 
 ### Creating a grain
 
@@ -2602,6 +2619,36 @@ func square(x) { return x * x }
 func cube(x) { return x * x * x }
 
 export { PI, square, cube }
+```
+
+### Multi-file grains
+
+A grain can also be a directory with a `grain.yaml` manifest:
+
+```
+ext_grains/
+  mylib/
+    grain.yaml        <- specifies entry point
+    index.praia       <- main file
+    helpers.praia     <- internal module
+```
+
+The `grain.yaml` specifies the entry file:
+
+```yaml
+name: mylib
+version: 0.1.0
+main: index.praia
+```
+
+Files within a grain directory can import each other with relative paths:
+
+```
+// ext_grains/mylib/index.praia
+use "./helpers"
+
+func process(x) { return helpers.double(x) }
+export { process }
 ```
 
 ### Importing a grain
@@ -2627,6 +2674,14 @@ let l = log.create("App")
 let s = col.Stack()
 ```
 
+This is required for grain names that contain hyphens:
+
+```
+use "my-grain" as myGrain
+
+myGrain.doSomething()
+```
+
 ### Relative imports
 
 Paths starting with `./` or `../` are resolved relative to the importing file:
@@ -2641,11 +2696,14 @@ greeter.hello("world")
 
 When you write `use "math"`, Praia looks for the grain in this order:
 
-1. **`grains/`** directory — walking up from the current file's directory to find a `grains/` folder
-2. **`grains/`** relative to the current working directory
-3. **`~/.praia/grains/`** — global grains (for a future package manager)
+1. **`ext_grains/`** — local dependencies (installed by sand), walks up from the current file
+2. **`grains/`** — project-bundled grains, walks up from the current file
+3. **`~/.praia/grains/`** — global grains
 
-The `.praia` extension is added automatically.
+At each location, Praia checks for:
+- `<name>.praia` (single-file grain)
+- `<name>/` directory with `grain.yaml` → reads `main` field for the entry file
+- `<name>/index.praia` (fallback if no `grain.yaml`)
 
 ### Grains importing other grains
 
@@ -2674,18 +2732,35 @@ use "math"
 use "math"      // Error: Grain 'math' is already imported in this file
 ```
 
+### Package manager (sand)
+
+[sand](https://github.com/praia-lang/sand) is the package manager for Praia. It installs grains from Git repositories.
+
+```bash
+sand init                          # create grain.yaml
+sand install github.com/user/lib   # install locally to ext_grains/
+sand install --global github.com/user/lib  # install globally
+sand remove lib                    # uninstall
+sand list                          # show installed grains
+```
+
+See the [sand documentation](https://github.com/praia-lang/sand) for details.
+
 ### Project structure
 
 A typical Praia project might look like:
 
 ```
 my-project/
-├── grains/
+├── ext_grains/              <- installed by sand
+│   └── router/
+│       ├── grain.yaml
+│       └── index.praia
+├── grains/                  <- project-bundled grains
 │   ├── math.praia
-│   ├── strings.praia
 │   └── geometry.praia
-├── examples/
-│   └── demo.praia
+├── grain.yaml               <- project manifest
+├── sand-lock.yaml           <- lock file (auto-generated)
 └── main.praia
 ```
 
@@ -2787,6 +2862,24 @@ hello world
 ./praia -c 'print("hello")'        # run a one-liner
 ./praia -c 'print(sys.args)' a b   # one-liner with arguments
 ./praia test                        # run test suite in tests/
+./praia --vm script.praia           # run with the bytecode VM (faster)
 ./praia --tokens script.praia       # show lexer tokens
 ./praia --ast script.praia          # show parse tree
 ```
+
+Semicolons can be used as statement separators, which is useful for one-liners:
+
+```bash
+./praia -c 'let x = 1; let y = 2; print(x + y)'
+```
+
+### Bytecode VM
+
+Praia includes a bytecode compiler and stack-based VM as an alternative to the default tree-walking interpreter. The VM is faster for CPU-bound work. Use the `--vm` flag:
+
+```bash
+./praia --vm script.praia
+./praia --vm -c 'print("hello")'
+```
+
+Both engines support the full language. The tree-walker is the default.

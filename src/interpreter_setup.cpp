@@ -298,8 +298,34 @@ Interpreter::Interpreter() {
         [](const std::vector<Value>& args) -> Value {
             if (!args[0].isString())
                 throw RuntimeError("sys.remove() requires a string path", 0);
-            if (!fs::remove(args[0].asString()))
-                throw RuntimeError("Cannot remove: " + args[0].asString(), 0);
+            auto& p = args[0].asString();
+            if (!fs::exists(p))
+                throw RuntimeError("Cannot remove: " + p + " (not found)", 0);
+            fs::remove_all(p);
+            return Value();
+        }));
+
+    sysMap->entries["copy"] = Value(makeNative("sys.copy", 2,
+        [](const std::vector<Value>& args) -> Value {
+            if (!args[0].isString() || !args[1].isString())
+                throw RuntimeError("sys.copy() requires two string paths", 0);
+            auto& src = args[0].asString();
+            auto& dst = args[1].asString();
+            if (!fs::exists(src))
+                throw RuntimeError("Cannot copy: " + src + " (not found)", 0);
+            fs::copy(src, dst, fs::copy_options::recursive | fs::copy_options::overwrite_existing);
+            return Value();
+        }));
+
+    sysMap->entries["move"] = Value(makeNative("sys.move", 2,
+        [](const std::vector<Value>& args) -> Value {
+            if (!args[0].isString() || !args[1].isString())
+                throw RuntimeError("sys.move() requires two string paths", 0);
+            auto& src = args[0].asString();
+            auto& dst = args[1].asString();
+            if (!fs::exists(src))
+                throw RuntimeError("Cannot move: " + src + " (not found)", 0);
+            fs::rename(src, dst);
             return Value();
         }));
 

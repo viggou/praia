@@ -70,14 +70,17 @@ classes, control flow, error handling, pipes/closures, and JSON.
 * Pipe operator (`|>`) with filter, map, each, sort, keys, values
 * Lambdas (`lam{ x in x * 2 }`)
 * Classes with inheritance, super, this
+* Enums and integer types (64-bit)
 * Error handling with try/catch/throw and `ensure` (early-exit guard)
 * String interpolation (`"%{name} is %{age}"`), regex, 14 string methods
-* Arrays, maps, for-in loops, break/continue
+* Arrays, maps, destructuring, spread operator
 * HTTP client and server
 * JSON and YAML parse/stringify
 * async/await with OS threads
 * Module system ("grains") with import/export
-* File I/O, directories, shell commands (`sys` namespace)
+* Package manager ([sand](https://github.com/praia-lang/sand))
+* File I/O, directories, copy/move (`sys` namespace)
+* Bytecode VM (`--vm` flag) for faster execution
 * REPL with readline history and multi-line input
 
 ## Project structure
@@ -91,6 +94,7 @@ Praia/
 │   ├── parser.h/cpp             # recursive descent parser
 │   ├── value.h                  # runtime value types
 │   ├── environment.h            # variable scoping
+│   ├── grain_resolve.h          # grain/module resolution logic
 │   ├── interpreter.h            # Interpreter class + Callable subtypes
 │   ├── interpreter.cpp          # grain loading, execute(), evaluate()
 │   ├── interpreter_setup.cpp    # constructor wiring up all builtins
@@ -100,7 +104,13 @@ Praia/
 │   ├── builtins_json.cpp        # JSON parser + stringifier
 │   ├── builtins_yaml.cpp        # YAML parser + stringifier
 │   ├── builtins_methods.cpp     # string/array dot-methods
-│   └── main.cpp                 # entry point + REPL
+│   ├── main.cpp                 # entry point + REPL
+│   └── vm/                      # bytecode VM (--vm flag)
+│       ├── opcode.h             # ~60 opcodes
+│       ├── chunk.h/cpp          # bytecode container + constant pool
+│       ├── compiler.h/cpp       # AST -> bytecode compiler
+│       ├── vm.h/cpp             # stack-based virtual machine
+│       └── debug.h/cpp          # bytecode disassembler
 ├── grains/                      # standard library modules
 ├── examples/                    # example programs
 ├── tests/                       # test suite (run via `make test`)

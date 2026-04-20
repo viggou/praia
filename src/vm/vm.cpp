@@ -1,5 +1,6 @@
 #include "vm.h"
 #include "../builtins.h"
+#include "../grain_resolve.h"
 #include "../interpreter.h"
 #include "../lexer.h"
 #include "../parser.h"
@@ -268,26 +269,42 @@ std::string VM::resolveGrainPath(const std::string& path, int line) {
         return "";
     }
 
+    // ext_grains/ (local dependencies installed by sand)
     if (!currentFile.empty()) {
         fs::path dir = fs::path(currentFile).parent_path();
         for (int i = 0; i < 10; i++) {
-            auto candidate = dir / "grains" / (path + ".praia");
-            if (fs::exists(candidate)) return fs::canonical(candidate).string();
+            auto r = tryResolveGrain(dir / "ext_grains", path);
+            if (!r.empty()) return r;
             if (!dir.has_parent_path() || dir == dir.parent_path()) break;
             dir = dir.parent_path();
         }
     }
-
     {
-        auto candidate = fs::current_path() / "grains" / (path + ".praia");
-        if (fs::exists(candidate)) return fs::canonical(candidate).string();
+        auto r = tryResolveGrain(fs::current_path() / "ext_grains", path);
+        if (!r.empty()) return r;
     }
 
+    // grains/ directory (project-level, bundled grains)
+    if (!currentFile.empty()) {
+        fs::path dir = fs::path(currentFile).parent_path();
+        for (int i = 0; i < 10; i++) {
+            auto r = tryResolveGrain(dir / "grains", path);
+            if (!r.empty()) return r;
+            if (!dir.has_parent_path() || dir == dir.parent_path()) break;
+            dir = dir.parent_path();
+        }
+    }
+    {
+        auto r = tryResolveGrain(fs::current_path() / "grains", path);
+        if (!r.empty()) return r;
+    }
+
+    // ~/.praia/grains/ (global)
     {
         const char* home = std::getenv("HOME");
         if (home) {
-            auto candidate = fs::path(home) / ".praia" / "grains" / (path + ".praia");
-            if (fs::exists(candidate)) return fs::canonical(candidate).string();
+            auto r = tryResolveGrain(fs::path(home) / ".praia" / "grains", path);
+            if (!r.empty()) return r;
         }
     }
 

@@ -1,4 +1,5 @@
 #include "builtins.h"
+#include "grain_resolve.h"
 #include "interpreter.h"
 #include "lexer.h"
 #include "parser.h"
@@ -63,30 +64,42 @@ std::string Interpreter::resolveGrainPath(const std::string& path, int line) {
         throw RuntimeError("Grain not found: " + path + " (looked in " + resolved + ")", line);
     }
 
-    // 2. grains/ directory (project-level)
+    // 2. ext_grains/ (local dependencies installed by sand)
     if (!currentFile.empty()) {
-        // Walk up from the current file to find a grains/ directory
         fs::path dir = fs::path(currentFile).parent_path();
-        for (int i = 0; i < 10; i++) { // limit depth
-            auto candidate = dir / "grains" / (path + ".praia");
-            if (fs::exists(candidate)) return fs::canonical(candidate).string();
+        for (int i = 0; i < 10; i++) {
+            auto r = tryResolveGrain(dir / "ext_grains", path);
+            if (!r.empty()) return r;
             if (!dir.has_parent_path() || dir == dir.parent_path()) break;
             dir = dir.parent_path();
         }
     }
-
-    // 3. grains/ relative to cwd
     {
-        auto candidate = fs::current_path() / "grains" / (path + ".praia");
-        if (fs::exists(candidate)) return fs::canonical(candidate).string();
+        auto r = tryResolveGrain(fs::current_path() / "ext_grains", path);
+        if (!r.empty()) return r;
     }
 
-    // 4. ~/.praia/grains/ (global, for future package manager)
+    // 3. grains/ directory (project-level, bundled grains)
+    if (!currentFile.empty()) {
+        fs::path dir = fs::path(currentFile).parent_path();
+        for (int i = 0; i < 10; i++) {
+            auto r = tryResolveGrain(dir / "grains", path);
+            if (!r.empty()) return r;
+            if (!dir.has_parent_path() || dir == dir.parent_path()) break;
+            dir = dir.parent_path();
+        }
+    }
+    {
+        auto r = tryResolveGrain(fs::current_path() / "grains", path);
+        if (!r.empty()) return r;
+    }
+
+    // 4. ~/.praia/grains/ (global)
     {
         const char* home = std::getenv("HOME");
         if (home) {
-            auto candidate = fs::path(home) / ".praia" / "grains" / (path + ".praia");
-            if (fs::exists(candidate)) return fs::canonical(candidate).string();
+            auto r = tryResolveGrain(fs::path(home) / ".praia" / "grains", path);
+            if (!r.empty()) return r;
         }
     }
 
