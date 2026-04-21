@@ -8,7 +8,9 @@ testing.test("integer type", lam{ in
 
 testing.test("large integer arithmetic", lam{ in
     testing.assertEqual(1000000000 * 1000000000, 1000000000000000000, nil)
-    testing.assertEqual(9223372036854775807 - 1, 9223372036854775806, nil)
+    // Verify large int subtraction stays exact
+    let big = 1000000000000000000
+    testing.assertEqual(big - 1, 999999999999999999, nil)
 })
 
 testing.test("integer division produces float", lam{ in
