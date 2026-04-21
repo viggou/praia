@@ -56,8 +56,41 @@ jobs:
           name: praia-${{ matrix.target }}
           path: praia-${{ matrix.target }}.tar.gz
 
+  build-i686:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build in i386 container
+        uses: docker/setup-qemu-action@v3
+
+      - name: Build and test
+        run: |
+          docker run --rm --platform linux/386 \
+            -v ${{ github.workspace }}:/src -w /src \
+            debian:bookworm bash -c "
+              apt-get update && \
+              apt-get install -y g++ make libssl-dev libreadline-dev libsqlite3-dev && \
+              make clean && make && \
+              make test
+            "
+
+      - name: Package binary
+        run: |
+          mkdir -p dist
+          cp praia dist/
+          cp README.md LICENSE dist/ 2>/dev/null || true
+          cd dist && tar czf ../praia-linux-i686.tar.gz *
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: praia-linux-i686
+          path: praia-linux-i686.tar.gz
+
   release:
-    needs: build
+    needs: [build, build-i686]
     runs-on: ubuntu-latest
 
     steps:
