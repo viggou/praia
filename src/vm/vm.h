@@ -155,6 +155,11 @@ private:
     void runtimeError(const std::string& msg, int line);
     bool tryHandleError(Value error);  // returns true if caught, false if uncaught
     std::string formatStackTrace() const;
+
+    // Error capture for async tasks — suppresses stderr output so errors
+    // propagate to await instead of being printed by the task VM
+    std::string lastError_;
+    bool suppressErrors_ = false;
 };
 
 // Helper: call any Callable within the VM context (handles VM closures, bound methods, natives)

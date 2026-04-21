@@ -257,8 +257,11 @@ bool VM::callValue(Value callee, int argCount, int line) {
 }
 
 void VM::runtimeError(const std::string& msg, int line) {
-    std::cerr << "[line " << line << "] Runtime error: " << msg << std::endl;
-    std::cerr << formatStackTrace();
+    lastError_ = msg;
+    if (!suppressErrors_) {
+        std::cerr << "[line " << line << "] Runtime error: " << msg << std::endl;
+        std::cerr << formatStackTrace();
+    }
     resetStack();
 }
 
@@ -1125,9 +1128,12 @@ VM::Result VM::execute(int baseFrameCount_) {
             }
 
             // No handler — uncaught error
-            int line = CURRENT_LINE();
-            std::cerr << "[line " << line << "] Uncaught error: " << error.toString() << std::endl;
-            std::cerr << formatStackTrace();
+            lastError_ = error.toString();
+            if (!suppressErrors_) {
+                int line = CURRENT_LINE();
+                std::cerr << "[line " << line << "] Uncaught error: " << error.toString() << std::endl;
+                std::cerr << formatStackTrace();
+            }
             resetStack();
             return Result::RUNTIME_ERROR;
         }
@@ -1241,6 +1247,7 @@ VM::Result VM::execute(int baseFrameCount_) {
                         VM taskVm;
                         taskVm.globals = std::move(globalsCopy);
                         taskVm.builtinNames_ = std::move(builtinNames);
+                        taskVm.suppressErrors_ = true; // errors propagate to await, not stderr
 
                         // Recursively rewire VMClosureCallable vm pointers to taskVm
                         std::function<void(Value&)> rewire;
@@ -1290,7 +1297,9 @@ VM::Result VM::execute(int baseFrameCount_) {
                         auto result = taskVm.execute();
                         if (result == Result::OK && taskVm.stackTop > 0)
                             return taskVm.pop();
-                        return Value();
+                        // Propagate the error so await can catch it
+                        throw RuntimeError(
+                            taskVm.lastError_.empty() ? "Async task failed" : taskVm.lastError_, 0);
                     }).share();
             } else if (native) {
                 sharedFuture = std::async(std::launch::async,
@@ -1333,6 +1342,7 @@ VM::Result VM::execute(int baseFrameCount_) {
         throw; // propagate sys.exit() to main
     } catch (const RuntimeError& err) {
         // Fatal error (e.g. stack overflow from push())
+        lastError_ = err.what();
         return Result::RUNTIME_ERROR;
     }
 
