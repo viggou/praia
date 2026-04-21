@@ -37,6 +37,7 @@ private:
         std::vector<int> breakJumps;
         std::vector<int> continueJumps;
         int scopeDepthAtLoop;
+        int tryDepthAtLoop;    // try nesting depth when the loop started
     };
 
     struct CompilerState {
@@ -45,6 +46,7 @@ private:
         std::vector<Local> locals;
         std::vector<Upvalue> upvalues;
         int scopeDepth = 0;
+        int tryDepth = 0;      // number of active try handlers in this function
         std::vector<LoopContext> loops;
     };
 

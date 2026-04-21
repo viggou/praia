@@ -300,7 +300,7 @@ void Compiler::compileIfStmt(const IfStmt* stmt) {
 void Compiler::compileWhileStmt(const WhileStmt* stmt) {
     int loopStart = currentChunk().size();
 
-    current->loops.push_back({loopStart, loopStart, {}, {}, current->scopeDepth});
+    current->loops.push_back({loopStart, loopStart, {}, {}, current->scopeDepth, current->tryDepth});
 
     compileExpr(stmt->condition.get());
     int exitJump = emitJump(OpCode::OP_POP_JUMP_IF_FALSE, stmt->line);
@@ -330,7 +330,7 @@ void Compiler::compileForStmt(const ForStmt* stmt) {
     addLocal("__end__");  // hidden end bound
 
     int loopStart = currentChunk().size();
-    current->loops.push_back({loopStart, loopStart, {}, {}, current->scopeDepth});
+    current->loops.push_back({loopStart, loopStart, {}, {}, current->scopeDepth, current->tryDepth});
 
     // Condition: i < end
     int iSlot = resolveLocal(current, stmt->varName);
@@ -407,7 +407,7 @@ void Compiler::compileForInStmt(const ForInStmt* stmt) {
     int lenSlot = resolveLocal(current, "__len__");
 
     int loopStart = currentChunk().size();
-    current->loops.push_back({loopStart, loopStart, {}, {}, current->scopeDepth});
+    current->loops.push_back({loopStart, loopStart, {}, {}, current->scopeDepth, current->tryDepth});
 
     // Condition: __idx__ < __len__
     emit(OpCode::OP_GET_LOCAL, stmt->line);
@@ -555,6 +555,10 @@ void Compiler::compileReturnStmt(const ReturnStmt* stmt) {
     } else {
         emit(OpCode::OP_NIL, stmt->line);
     }
+    // Close any active try handlers before returning from this function
+    for (int i = 0; i < current->tryDepth; i++) {
+        emit(OpCode::OP_TRY_END, stmt->line);
+    }
     emit(OpCode::OP_RETURN, stmt->line);
 }
 
@@ -563,8 +567,12 @@ void Compiler::compileBreakStmt(const BreakStmt* stmt) {
         error("'break' outside of loop", stmt->line);
         return;
     }
-    // Pop locals in the loop scope
     auto& loop = current->loops.back();
+    // Close try handlers that are active inside this loop
+    for (int i = loop.tryDepthAtLoop; i < current->tryDepth; i++) {
+        emit(OpCode::OP_TRY_END, stmt->line);
+    }
+    // Pop locals in the loop scope
     for (int i = static_cast<int>(current->locals.size()) - 1; i >= 0; i--) {
         if (current->locals[i].depth <= loop.scopeDepthAtLoop) break;
         emit(OpCode::OP_POP, stmt->line);
@@ -578,6 +586,10 @@ void Compiler::compileContinueStmt(const ContinueStmt* stmt) {
         return;
     }
     auto& loop = current->loops.back();
+    // Close try handlers that are active inside this loop body
+    for (int i = loop.tryDepthAtLoop; i < current->tryDepth; i++) {
+        emit(OpCode::OP_TRY_END, stmt->line);
+    }
     // Pop locals inside the loop body
     for (int i = static_cast<int>(current->locals.size()) - 1; i >= 0; i--) {
         if (current->locals[i].depth <= loop.scopeDepthAtLoop) break;
@@ -757,21 +769,16 @@ void Compiler::compileThrowStmt(const ThrowStmt* stmt) {
 }
 
 void Compiler::compileTryCatchStmt(const TryCatchStmt* stmt) {
-    // OP_TRY_BEGIN [catch_offset]
-    // <try body>
-    // OP_TRY_END
-    // OP_JUMP [end_offset]  -- skip catch if try succeeded
-    // catch:
-    //   <error value is on stack>
-    //   define error variable as local
-    //   <catch body>
-    // end:
-
     int tryBegin = emitJump(OpCode::OP_TRY_BEGIN, stmt->line);
 
-    // Try body
+    current->tryDepth++;
+
+    // Try body — return/break/continue inside will emit OP_TRY_END using tryDepth
     compileStmt(stmt->tryBody.get());
 
+    current->tryDepth--;
+
+    // Normal fallthrough: pop the handler
     emit(OpCode::OP_TRY_END, stmt->line);
     int endJump = emitJump(OpCode::OP_JUMP, stmt->line);
 

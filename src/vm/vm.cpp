@@ -713,6 +713,14 @@ VM::Result VM::execute(int baseFrameCount_) {
             Value result = pop();
             int returnBase = FRAME.baseSlot; // save callee's base before popping frame
             closeUpvalues(&stack[returnBase]);
+            // Safety net: remove any exception handlers belonging to this frame
+            // (compiler emits OP_TRY_END for return/break/continue, but guard
+            // against edge cases where a handler leaks)
+            int returningFrame = frameCount - 1;
+            while (!exceptionHandlers.empty() &&
+                   exceptionHandlers.back().frameIndex >= returningFrame) {
+                exceptionHandlers.pop_back();
+            }
             frameCount--;
             if (frameCount <= baseFrameCount_) {
                 if (frameCount == 0) pop();
