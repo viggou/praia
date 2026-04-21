@@ -6,18 +6,22 @@
 
 // Call any Callable within the VM context.
 // Handles VM closures (re-entrant execution), bound methods, and native functions.
+// On error, throws RuntimeError so the calling native (filter/map/sort) propagates
+// the error back to OP_CALL's catch, which feeds it into the VM's exception system.
 Value callWithVM(VM& vm, std::shared_ptr<Callable> callable, const std::vector<Value>& args) {
     // VM closure — dispatch based on type, not vm pointer (closures from
     // async tasks may have a stale vm but are still valid VMClosureCallable)
     auto* vmcc = dynamic_cast<VMClosureCallable*>(callable.get());
     if (vmcc) {
         int savedFrameCount = vm.frameCount;
-        vm.push(Value()); // closure slot
+        // Slot 0 = the callable itself (functions reference slot 0 for recursion)
+        vm.push(Value(callable));
         for (auto& arg : args) vm.push(arg);
         if (!vm.callClosure(vmcc->closure, static_cast<int>(args.size()), 0))
-            return Value();
+            throw RuntimeError(vm.lastError().empty() ? "Call failed" : vm.lastError(), 0);
         auto result = vm.execute(savedFrameCount);
-        if (result != VM::Result::OK) return Value();
+        if (result != VM::Result::OK)
+            throw RuntimeError(vm.lastError().empty() ? "Callback failed" : vm.lastError(), 0);
         return vm.pop();
     }
 
@@ -28,10 +32,11 @@ Value callWithVM(VM& vm, std::shared_ptr<Callable> callable, const std::vector<V
         vm.push(bound->receiver); // slot 0 = this
         for (auto& arg : args) vm.push(arg);
         if (!vm.callClosure(bound->method, static_cast<int>(args.size()), 0))
-            return Value();
+            throw RuntimeError(vm.lastError().empty() ? "Call failed" : vm.lastError(), 0);
         vm.frames[vm.frameCount - 1].definingClass = bound->definingClass;
         auto result = vm.execute(savedFrameCount);
-        if (result != VM::Result::OK) return Value();
+        if (result != VM::Result::OK)
+            throw RuntimeError(vm.lastError().empty() ? "Callback failed" : vm.lastError(), 0);
         return vm.pop();
     }
 

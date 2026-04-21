@@ -16,11 +16,23 @@ namespace fs = std::filesystem;
 // Thread-local pointer to the currently executing VM
 thread_local VM* VM::currentVM_ = nullptr;
 
-// RAII guard to set/restore currentVM_ across execute() calls
+// RAII guard to set/restore currentVM_ and executeFloor_ across execute() calls.
+// executeFloor_ scopes exception handlers: handlers pushed before this execute()
+// call belong to an outer scope and must not be consumed here.
 struct VMScope {
-    VM* prev;
-    VMScope(VM* vm) : prev(VM::currentVM_) { VM::currentVM_ = vm; }
-    ~VMScope() { VM::currentVM_ = prev; }
+    VM* vm;
+    VM* prevVM;
+    int savedFloor;
+    VMScope(VM* v) : vm(v), prevVM(VM::currentVM_), savedFloor(v->executeFloor_) {
+        VM::currentVM_ = v;
+        v->executeFloor_ = static_cast<int>(v->exceptionHandlers.size());
+        v->executeDepth_++;
+    }
+    ~VMScope() {
+        vm->executeDepth_--;
+        vm->executeFloor_ = savedFloor;
+        VM::currentVM_ = prevVM;
+    }
 };
 
 // VMClosureCallable::call — allows native functions (filter, map, etc.)
@@ -259,15 +271,18 @@ bool VM::callValue(Value callee, int argCount, int line) {
 
 void VM::runtimeError(const std::string& msg, int line) {
     lastError_ = msg;
-    if (!suppressErrors_) {
+    // In re-entrant calls (depth > 1), suppress output — the error
+    // will propagate to the outer scope which will print or catch it.
+    if (!suppressErrors_ && executeDepth_ <= 1) {
         std::cerr << "[line " << line << "] Runtime error: " << msg << std::endl;
         std::cerr << formatStackTrace();
     }
-    resetStack();
 }
 
 bool VM::tryHandleError(Value error) {
-    if (!exceptionHandlers.empty()) {
+    // Only use handlers that belong to the current execute() scope.
+    // Handlers below executeFloor_ belong to an outer (re-entrant) caller.
+    if (static_cast<int>(exceptionHandlers.size()) > executeFloor_) {
         auto handler = exceptionHandlers.back();
         exceptionHandlers.pop_back();
 
@@ -281,7 +296,7 @@ bool VM::tryHandleError(Value error) {
         frames[frameCount - 1].ip = handler.catchIp;
         return true; // caught
     }
-    return false; // uncaught
+    return false; // uncaught in this scope
 }
 
 std::string VM::formatStackTrace() const {
@@ -1110,32 +1125,15 @@ VM::Result VM::execute(int baseFrameCount_) {
 
         case OpCode::OP_THROW: {
             Value error = pop();
+            if (tryHandleError(error)) break;
 
-            if (!exceptionHandlers.empty()) {
-                auto handler = exceptionHandlers.back();
-                exceptionHandlers.pop_back();
-
-                // Unwind call frames back to the handler's frame
-                while (frameCount - 1 > handler.frameIndex) {
-                    closeUpvalues(&stack[FRAME.baseSlot]);
-                    frameCount--;
-                }
-
-                // Restore stack and jump to catch
-                stackTop = handler.stackTop;
-                push(error); // push error value for catch block
-                FRAME.ip = handler.catchIp;
-                break; // continue execution from catch
-            }
-
-            // No handler — uncaught error
+            // Uncaught in this execute scope
             lastError_ = error.toString();
-            if (!suppressErrors_) {
+            if (!suppressErrors_ && executeDepth_ <= 1) {
                 int line = CURRENT_LINE();
                 std::cerr << "[line " << line << "] Uncaught error: " << error.toString() << std::endl;
                 std::cerr << formatStackTrace();
             }
-            resetStack();
             return Result::RUNTIME_ERROR;
         }
         case OpCode::OP_IMPORT: {

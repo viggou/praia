@@ -83,6 +83,7 @@ struct VMCallFrame {
 };
 
 class VM {
+    friend struct VMScope;
 public:
     VM();
     ~VM();
@@ -104,6 +105,8 @@ public:
     Result execute(int baseFrameCount = 0);
 
     static thread_local VM* currentVM_; // public for VMScope RAII guard
+    int executeFloor_ = 0; // handler stack floor for current execute() — handlers below this belong to outer calls
+    int executeDepth_ = 0; // nesting depth — 0 before first execute(), 1 during initial, 2+ during re-entrant
 private:
 
     // Stack (heap-allocated so VM can be used in threads with small stacks)
@@ -169,10 +172,13 @@ private:
     bool tryHandleError(Value error);  // returns true if caught, false if uncaught
     std::string formatStackTrace() const;
 
-    // Error capture for async tasks — suppresses stderr output so errors
-    // propagate to await instead of being printed by the task VM
+    // Error capture — suppresses stderr output in re-entrant/async contexts
+    // so errors propagate instead of being printed prematurely
     std::string lastError_;
     bool suppressErrors_ = false;
+public:
+    const std::string& lastError() const { return lastError_; }
+private:
 };
 
 // Helper: call any Callable within the VM context (handles VM closures, bound methods, natives)
