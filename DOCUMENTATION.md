@@ -2598,6 +2598,21 @@ let vals = bytes.unpack("u32be", data)     // [256]
 | `u32be`, `u32le` | 4 bytes | Unsigned 32-bit big/little endian |
 | `i32be`, `i32le` | 4 bytes | Signed 32-bit big/little endian |
 
+### Byte conversion
+
+```
+// Array of byte values ↔ string
+let raw = bytes.from([72, 101, 108, 108, 111])    // "Hello"
+let arr = bytes.toArray("Hello")                    // [72, 101, 108, 108, 111]
+
+// Hex encoding
+bytes.hex("ABC")                // "414243"
+bytes.fromHex("414243")         // "ABC"
+
+// Byte length
+bytes.len(data)                 // same as len() but clear intent for binary
+```
+
 ### Character codes
 
 ```
@@ -2626,11 +2641,11 @@ These are essential for implementing authentication protocols (PostgreSQL, MySQL
 
 ---
 
-## TCP Sockets
+## Networking (net)
 
-The `net` namespace provides raw TCP socket operations. Sockets are represented as numbers (file descriptors).
+The `net` namespace provides TCP and UDP socket operations, DNS resolution, and socket timeouts. Sockets are represented as numbers (file descriptors).
 
-### Client
+### TCP Client
 
 ```
 let sock = net.connect("localhost", 5432)
@@ -2640,7 +2655,7 @@ print(response)
 net.close(sock)
 ```
 
-### Server
+### TCP Server
 
 ```
 let server = net.listen(9000)
@@ -2654,25 +2669,55 @@ while (true) {
 }
 ```
 
+### UDP
+
+```
+// Send a UDP datagram
+let sock = net.udp()
+net.sendTo(sock, "127.0.0.1", 9999, "hello udp")
+net.close(sock)
+
+// Listen for UDP datagrams
+let server = net.udpBind(9999)
+let msg = net.recvFrom(server)
+print(msg.data, "from", msg.host, msg.port)
+net.close(server)
+```
+
+### DNS Resolution
+
+```
+let ips = net.resolve("example.com")
+print(ips)    // ["93.184.216.34"]
+```
+
+### Socket Timeouts
+
+```
+let sock = net.connect("localhost", 8080)
+net.setTimeout(sock, 5000)     // 5 second timeout for send/recv
+```
+
 ### Functions
 
 | Function | Description |
 |----------|-------------|
+| **TCP** | |
 | `net.connect(host, port)` | Connect to a TCP server, returns socket |
 | `net.listen(port)` | Bind and listen on a port, returns server socket |
 | `net.accept(server)` | Wait for and accept a connection, returns client socket |
 | `net.send(sock, data)` | Send a string, returns bytes sent |
 | `net.recv(sock, maxBytes?)` | Receive data (default 4096 bytes max), returns string |
 | `net.recvAll(sock)` | Read until the connection closes, returns string |
+| **UDP** | |
+| `net.udp()` | Create a UDP socket |
+| `net.udpBind(port)` | Create and bind a UDP socket to a port |
+| `net.sendTo(sock, host, port, data)` | Send a UDP datagram |
+| `net.recvFrom(sock, maxBytes?)` | Receive a datagram, returns `{data, host, port}` |
+| **General** | |
+| `net.resolve(host)` | DNS lookup, returns array of IP strings |
+| `net.setTimeout(sock, ms)` | Set send/recv timeout in milliseconds |
 | `net.close(sock)` | Close a socket |
-
-### Use cases
-
-With raw TCP sockets, these can be implemented:
-- Database clients (PostgreSQL, MySQL, Redis)
-- SMTP (email sending)
-- WebSocket protocol
-- Any custom TCP protocol
 
 ---
 

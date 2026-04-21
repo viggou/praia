@@ -24,6 +24,7 @@
 #include <sys/socket.h>
 #include <sys/ioctl.h>
 #include <termios.h>
+#include <arpa/inet.h>
 #include <netinet/in.h>
 #include <netdb.h>
 #include <sys/wait.h>
@@ -1153,6 +1154,124 @@ Interpreter::Interpreter() {
             return Value();
         }));
 
+    // ── UDP ──
+
+    netMap->entries["udp"] = Value(makeNative("net.udp", 0,
+        [](const std::vector<Value>&) -> Value {
+            int sock = socket(AF_INET, SOCK_DGRAM, 0);
+            if (sock < 0)
+                throw RuntimeError("Cannot create UDP socket", 0);
+            return Value(static_cast<int64_t>(sock));
+        }));
+
+    netMap->entries["udpBind"] = Value(makeNative("net.udpBind", 1,
+        [](const std::vector<Value>& args) -> Value {
+            if (!args[0].isNumber())
+                throw RuntimeError("net.udpBind() requires a port number", 0);
+            int port = static_cast<int>(args[0].asNumber());
+            int sock = socket(AF_INET, SOCK_DGRAM, 0);
+            if (sock < 0)
+                throw RuntimeError("Cannot create UDP socket", 0);
+            int opt = 1;
+            setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+            struct sockaddr_in addr = {};
+            addr.sin_family = AF_INET;
+            addr.sin_addr.s_addr = INADDR_ANY;
+            addr.sin_port = htons(port);
+            if (bind(sock, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
+                close(sock);
+                throw RuntimeError("Cannot bind UDP to port " + std::to_string(port), 0);
+            }
+            return Value(static_cast<int64_t>(sock));
+        }));
+
+    netMap->entries["sendTo"] = Value(makeNative("net.sendTo", 4,
+        [](const std::vector<Value>& args) -> Value {
+            if (!args[0].isNumber()) throw RuntimeError("net.sendTo() requires a socket", 0);
+            if (!args[1].isString()) throw RuntimeError("net.sendTo() requires a host string", 0);
+            if (!args[2].isNumber()) throw RuntimeError("net.sendTo() requires a port number", 0);
+            if (!args[3].isString()) throw RuntimeError("net.sendTo() requires data string", 0);
+            int sock = static_cast<int>(args[0].asNumber());
+            std::string host = args[1].asString();
+            int port = static_cast<int>(args[2].asNumber());
+            auto& data = args[3].asString();
+
+            struct addrinfo hints = {}, *res;
+            hints.ai_family = AF_INET;
+            hints.ai_socktype = SOCK_DGRAM;
+            if (getaddrinfo(host.c_str(), std::to_string(port).c_str(), &hints, &res) != 0)
+                throw RuntimeError("Cannot resolve host: " + host, 0);
+            ssize_t sent = sendto(sock, data.c_str(), data.size(), 0, res->ai_addr, res->ai_addrlen);
+            freeaddrinfo(res);
+            if (sent < 0)
+                throw RuntimeError("sendTo failed", 0);
+            return Value(static_cast<int64_t>(sent));
+        }));
+
+    netMap->entries["recvFrom"] = Value(makeNative("net.recvFrom", -1,
+        [](const std::vector<Value>& args) -> Value {
+            if (args.empty() || !args[0].isNumber())
+                throw RuntimeError("net.recvFrom() requires a socket", 0);
+            int sock = static_cast<int>(args[0].asNumber());
+            int maxBytes = 4096;
+            if (args.size() > 1 && args[1].isNumber())
+                maxBytes = static_cast<int>(args[1].asNumber());
+
+            std::vector<char> buf(maxBytes);
+            struct sockaddr_in from = {};
+            socklen_t fromLen = sizeof(from);
+            ssize_t n = recvfrom(sock, buf.data(), buf.size(), 0,
+                                  (struct sockaddr*)&from, &fromLen);
+            if (n < 0)
+                throw RuntimeError("recvFrom failed", 0);
+
+            // Get sender address
+            char addrBuf[INET_ADDRSTRLEN];
+            inet_ntop(AF_INET, &from.sin_addr, addrBuf, sizeof(addrBuf));
+
+            auto result = std::make_shared<PraiaMap>();
+            result->entries["data"] = Value(std::string(buf.data(), n));
+            result->entries["host"] = Value(std::string(addrBuf));
+            result->entries["port"] = Value(static_cast<int64_t>(ntohs(from.sin_port)));
+            return Value(result);
+        }));
+
+    // ── DNS + socket options ──
+
+    netMap->entries["resolve"] = Value(makeNative("net.resolve", 1,
+        [](const std::vector<Value>& args) -> Value {
+            if (!args[0].isString())
+                throw RuntimeError("net.resolve() requires a hostname string", 0);
+            std::string host = args[0].asString();
+            struct addrinfo hints = {}, *res;
+            hints.ai_family = AF_INET;
+            if (getaddrinfo(host.c_str(), nullptr, &hints, &res) != 0)
+                throw RuntimeError("Cannot resolve: " + host, 0);
+            auto result = std::make_shared<PraiaArray>();
+            for (auto* p = res; p; p = p->ai_next) {
+                char buf[INET_ADDRSTRLEN];
+                struct sockaddr_in* addr = (struct sockaddr_in*)p->ai_addr;
+                inet_ntop(AF_INET, &addr->sin_addr, buf, sizeof(buf));
+                result->elements.push_back(Value(std::string(buf)));
+            }
+            freeaddrinfo(res);
+            return Value(result);
+        }));
+
+    netMap->entries["setTimeout"] = Value(makeNative("net.setTimeout", 2,
+        [](const std::vector<Value>& args) -> Value {
+            if (!args[0].isNumber() || !args[1].isNumber())
+                throw RuntimeError("net.setTimeout(socket, ms) requires two numbers", 0);
+            int sock = static_cast<int>(args[0].asNumber());
+            int ms = static_cast<int>(args[1].asNumber());
+            struct timeval tv;
+            tv.tv_sec = ms / 1000;
+            tv.tv_usec = (ms % 1000) * 1000;
+            setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+            setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+            return Value();
+        }));
+
     globals->define("net", Value(netMap));
 
     // ── bytes namespace ──
@@ -1234,6 +1353,73 @@ Interpreter::Interpreter() {
                 pos += size;
             }
             return Value(result);
+        }));
+
+    // bytes.from([72, 101, 108]) → "Hel" — array of byte values to string
+    bytesMap->entries["from"] = Value(makeNative("bytes.from", 1,
+        [](const std::vector<Value>& args) -> Value {
+            if (!args[0].isArray())
+                throw RuntimeError("bytes.from() requires an array of numbers", 0);
+            std::string result;
+            for (auto& v : args[0].asArray()->elements) {
+                if (!v.isNumber())
+                    throw RuntimeError("bytes.from() array must contain numbers", 0);
+                result += static_cast<char>(static_cast<int>(v.asNumber()) & 0xFF);
+            }
+            return Value(std::move(result));
+        }));
+
+    // bytes.toArray("Hel") → [72, 101, 108] — string to array of byte values
+    bytesMap->entries["toArray"] = Value(makeNative("bytes.toArray", 1,
+        [](const std::vector<Value>& args) -> Value {
+            if (!args[0].isString())
+                throw RuntimeError("bytes.toArray() requires a string", 0);
+            auto result = std::make_shared<PraiaArray>();
+            for (unsigned char c : args[0].asString())
+                result->elements.push_back(Value(static_cast<int64_t>(c)));
+            return Value(result);
+        }));
+
+    // bytes.hex("AB") → "4142" — string to hex representation
+    bytesMap->entries["hex"] = Value(makeNative("bytes.hex", 1,
+        [](const std::vector<Value>& args) -> Value {
+            if (!args[0].isString())
+                throw RuntimeError("bytes.hex() requires a string", 0);
+            static const char* digits = "0123456789abcdef";
+            std::string result;
+            for (unsigned char c : args[0].asString()) {
+                result += digits[c >> 4];
+                result += digits[c & 0xF];
+            }
+            return Value(std::move(result));
+        }));
+
+    // bytes.fromHex("4142") → "AB" — hex string to raw bytes
+    bytesMap->entries["fromHex"] = Value(makeNative("bytes.fromHex", 1,
+        [](const std::vector<Value>& args) -> Value {
+            if (!args[0].isString())
+                throw RuntimeError("bytes.fromHex() requires a string", 0);
+            auto& hex = args[0].asString();
+            if (hex.size() % 2 != 0)
+                throw RuntimeError("bytes.fromHex() requires even-length hex string", 0);
+            auto hexVal = [](char c) -> int {
+                if (c >= '0' && c <= '9') return c - '0';
+                if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+                if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+                return 0;
+            };
+            std::string result;
+            for (size_t i = 0; i < hex.size(); i += 2)
+                result += static_cast<char>((hexVal(hex[i]) << 4) | hexVal(hex[i + 1]));
+            return Value(std::move(result));
+        }));
+
+    // bytes.len(str) — byte length (same as len() but semantically clear for binary data)
+    bytesMap->entries["len"] = Value(makeNative("bytes.len", 1,
+        [](const std::vector<Value>& args) -> Value {
+            if (!args[0].isString())
+                throw RuntimeError("bytes.len() requires a string", 0);
+            return Value(static_cast<int64_t>(args[0].asString().size()));
         }));
 
     globals->define("bytes", Value(bytesMap));
