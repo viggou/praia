@@ -423,6 +423,28 @@ VM::Result VM::run(std::shared_ptr<CompiledFunction> script) {
     return execute();
 }
 
+VM::Result VM::runRepl(std::shared_ptr<CompiledFunction> script) {
+    // Reset stack/frames for this line but keep globals
+    stackTop = 0;
+    frameCount = 0;
+
+    auto* scriptClosure = new ObjClosure(script);
+    allClosures.push_back(scriptClosure);
+
+    auto wrapper = std::make_shared<VMClosureCallable>(scriptClosure);
+    wrapper->vm = this;
+    push(Value(std::static_pointer_cast<Callable>(wrapper)));
+
+    frames[0].closure = scriptClosure;
+    frames[0].function = script;
+    frames[0].ip = script->chunk.code.data();
+    frames[0].baseSlot = 0;
+    frames[0].definingClass = nullptr;
+    frameCount = 1;
+
+    return execute();
+}
+
 VM::Result VM::execute(int baseFrameCount_) {
     #define FRAME (frames[frameCount - 1])
     #define READ_BYTE() (*FRAME.ip++)

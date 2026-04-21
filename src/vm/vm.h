@@ -76,6 +76,7 @@ public:
     enum class Result { OK, COMPILE_ERROR, RUNTIME_ERROR };
 
     Result run(std::shared_ptr<CompiledFunction> script);
+    Result runRepl(std::shared_ptr<CompiledFunction> script);
 
     // Setup
     void defineNative(const std::string& name, Value value);

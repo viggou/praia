@@ -369,6 +369,94 @@ static void repl(bool showTokens, bool showAst) {
     }
 }
 
+static void vmRepl(bool showTokens, bool showAst) {
+    std::cout << "Praia " << PRAIA_VERSION << " REPL (type 'exit' to quit)" << std::endl;
+
+    extern void vmRegisterNatives(VM& vm);
+    VM vm;
+    vmRegisterNatives(vm);
+
+    std::vector<std::vector<StmtPtr>> astStore;
+
+    auto countBraces = [](const std::string& s) -> int {
+        int depth = 0;
+        char stringQuote = 0;
+        bool inLineComment = false, inBlockComment = false;
+        for (size_t i = 0; i < s.size(); i++) {
+            char c = s[i], next = (i + 1 < s.size()) ? s[i + 1] : '\0';
+            if (inLineComment) { if (c == '\n') inLineComment = false; continue; }
+            if (inBlockComment) { if (c == '*' && next == '/') { inBlockComment = false; i++; } continue; }
+            if (stringQuote) { if (c == '\\') { i++; continue; } if (c == stringQuote) stringQuote = 0; continue; }
+            if (c == '/' && next == '/') { inLineComment = true; i++; continue; }
+            if (c == '/' && next == '*') { inBlockComment = true; i++; continue; }
+            if (c == '"' || c == '\'') { stringQuote = c; continue; }
+            if (c == '{') depth++;
+            if (c == '}') depth--;
+        }
+        return depth;
+    };
+
+    for (;;) {
+        auto input = readLine(">> ");
+        if (!input) break;
+        std::string line = *input;
+        if (line == "exit") break;
+        if (line.empty()) continue;
+
+        int braces = countBraces(line);
+        while (braces > 0) {
+            auto cont = readLine(".. ");
+            if (!cont) break;
+            line += "\n" + *cont;
+            braces = countBraces(line);
+        }
+
+        addHistory(line);
+
+        bool hadError = false;
+        auto program = compile(line, showTokens, showAst, hadError);
+        if (program.empty()) continue;
+
+        // Check if the last statement is a bare expression
+        bool lastIsExpr = dynamic_cast<const ExprStmt*>(program.back().get()) != nullptr;
+
+        Compiler compiler;
+        auto script = compiler.compile(program);
+        if (!script) continue;
+
+        // If the last statement is an expression, patch the bytecode:
+        // The compiler emits: <expr> OP_POP ... OP_NIL OP_RETURN
+        // We remove the OP_POP and OP_NIL so the expression value
+        // flows directly into OP_RETURN as the script's result.
+        if (lastIsExpr) {
+            auto& code = script->chunk.code;
+            // The epilogue is always the last 2 bytes: OP_NIL OP_RETURN
+            // Before that, the ExprStmt's OP_POP is the byte just before OP_NIL
+            int sz = static_cast<int>(code.size());
+            if (sz >= 3 &&
+                code[sz - 1] == static_cast<uint8_t>(OpCode::OP_RETURN) &&
+                code[sz - 2] == static_cast<uint8_t>(OpCode::OP_NIL) &&
+                code[sz - 3] == static_cast<uint8_t>(OpCode::OP_POP)) {
+                // Remove OP_POP and OP_NIL, keep OP_RETURN
+                code.erase(code.begin() + (sz - 3), code.begin() + (sz - 1));
+            }
+        }
+
+        try {
+            auto result = vm.runRepl(script);
+            if (result == VM::Result::OK && lastIsExpr) {
+                Value val = vm.pop();
+                if (!val.isNil())
+                    std::cout << val.toString() << "\n";
+            }
+        } catch (const ExitSignal&) {
+            throw;
+        }
+
+        astStore.push_back(std::move(program));
+    }
+}
+
 // Run a single test file in its own interpreter. Returns 0 if the file
 // called sys.exit(0) (convention: testing.done() when all asserts passed),
 // anything else counts as a failure. Errors are kept on stderr so the user
@@ -514,7 +602,10 @@ int main(int argc, char* argv[]) {
     }
 
     if (filename.empty()) {
-        try { repl(showTokens, showAst); }
+        try {
+            if (useVm) vmRepl(showTokens, showAst);
+            else repl(showTokens, showAst);
+        }
         catch (const ExitSignal& e) { return e.code; }
         return 0;
     }
