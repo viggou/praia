@@ -172,12 +172,15 @@ Praia has 7 types:
 
 ### Truthiness
 
-`nil`, `false`, and `0` are falsy. Everything else is truthy, including `""` and `[]`.
+`nil`, `false`, `0`, `""` (empty string), and `[]` (empty array) are falsy. Everything else is truthy.
 
 ```
-if (1)   { print("truthy") }      // prints
-if (0)   { print("truthy") }      // does not print
-if (nil) { print("truthy") }      // does not print
+if (1)      { print("truthy") }   // prints
+if ("hello") { print("truthy") }  // prints
+if (0)      { print("truthy") }   // does not print
+if (nil)    { print("truthy") }   // does not print
+if ("")     { print("truthy") }   // does not print
+if ([])     { print("truthy") }   // does not print
 ```
 
 ---
@@ -396,11 +399,11 @@ print(a)            // {x: 1, y: 2}
 
 ## Integers and Numbers
 
-Praia has two numeric types: 64-bit integers (`int`) and double-precision floats (`number`). Integer literals (no decimal point) create ints; decimal literals create doubles.
+Praia has two numeric types: 64-bit integers (`int`) and double-precision floats (`float`). Integer literals (no decimal point) create ints; decimal literals create floats.
 
 ```
 type(42)        // "int"
-type(3.14)      // "number"
+type(3.14)      // "float"
 ```
 
 ### Arithmetic rules
@@ -569,7 +572,7 @@ greet(nil)      // no name provided
 
 ```
 func processAge(age) {
-    ensure (type(age) == "number") else {
+    ensure (type(age) == "int") else {
         throw "age must be a number"
     }
     ensure (age >= 0 && age <= 150) else {
@@ -620,15 +623,20 @@ for (name in names) {
 
 ### for-in (maps)
 
-Iterating a map yields `{key, value}` entries:
+Iterating a map yields `{key, value}` entries. You can destructure directly in the loop:
 
 ```
 let config = {host: "localhost", port: 8080}
+
+// Destructuring (preferred)
+for ({key, value} in config) {
+    print("%{key}: %{value}")
+}
+
+// Without destructuring
 for (entry in config) {
     print("%{entry.key}: %{entry.value}")
 }
-// host: localhost
-// port: 8080
 ```
 
 ### break and continue
@@ -695,7 +703,7 @@ print(inc(10))       // 11
 print(inc(10, 5))    // 15
 
 class Server {
-    init(port = 8080) {
+    func init(port = 8080) {
         this.port = port
     }
 }
@@ -846,21 +854,21 @@ print(actions.double(21))   // 42
 
 ```
 class Animal {
-    init(name, sound) {
+    func init(name, sound) {
         this.name = name
         this.sound = sound
     }
 
-    speak() {
+    func speak() {
         print("%{this.name} says %{this.sound}")
     }
 }
 ```
 
 - `class` keyword defines a class
-- `init` is the constructor (called automatically when creating instances)
+- `func init` is the constructor (called automatically when creating instances)
 - `this` refers to the current instance
-- Methods are defined without `func`
+- Methods use `func` just like top-level functions
 
 ### Creating instances
 
@@ -887,12 +895,12 @@ Use `extends` for single inheritance:
 
 ```
 class Dog extends Animal {
-    init(name) {
+    func init(name) {
         super.init(name, "woof")
         this.tricks = []
     }
 
-    learn(trick) {
+    func learn(trick) {
         this.tricks.push(trick)
     }
 }
@@ -908,11 +916,11 @@ Use `super.method()` to call the parent class's version of a method:
 
 ```
 class Cat extends Animal {
-    init(name) {
+    func init(name) {
         super.init(name, "meow")
     }
 
-    describe() {
+    func describe() {
         return "%{this.name} the cat"
     }
 }
@@ -926,11 +934,11 @@ Child classes can override parent methods. The child's version is used:
 
 ```
 class Animal {
-    describe() { return "an animal" }
+    func describe() { return "an animal" }
 }
 
 class Cat extends Animal {
-    describe() { return "a cat" }
+    func describe() { return "a cat" }
 }
 
 let c = Cat()
@@ -971,7 +979,7 @@ print(a == c)       // false (different instances)
 | `len(value)` | Length of an array, string, or map |
 | `push(array, value)` | Append a value to an array |
 | `pop(array)` | Remove and return the last element of an array |
-| `type(value)` | Return the type as a string: `"nil"`, `"bool"`, `"number"`, `"string"`, `"array"`, `"map"`, `"function"` |
+| `type(value)` | Return the type as a string: `"nil"`, `"bool"`, `"int"`, `"float"`, `"string"`, `"array"`, `"map"`, `"function"` |
 | `str(value)` | Convert any value to a string |
 | `num(value)` | Convert a string or number to a number |
 | `filter(arr, fn)` | Keep elements where fn returns truthy |
@@ -986,7 +994,8 @@ print(len([1, 2, 3]))      // 3
 print(len("hello"))         // 5
 print(len({a: 1, b: 2}))   // 2
 
-print(type(42))             // number
+print(type(42))             // int
+print(type(3.14))           // float
 print(type("hi"))           // string
 
 print(str(42) + "!")        // 42!
@@ -1621,35 +1630,50 @@ The lock is re-entrant (recursive) — the same thread can acquire it multiple t
 
 ## Async / Await
 
-`async` runs a function call in a background thread and returns a **future**. `await` blocks until the future has a result.
+`async` runs a function call in a background thread and returns a **future**. `await` blocks until the future has a result. Both native and Praia functions run in true parallel.
 
 ### Basic usage
 
 ```
-// Start tasks in parallel
+func compute(n) {
+    let sum = 0
+    for (i in 0..n) { sum += i }
+    return sum
+}
+
+let f1 = async compute(10000)
+let f2 = async compute(20000)
+let f3 = async compute(30000)
+
+print(await f1, await f2, await f3)
+```
+
+### Parallel shell commands
+
+```
 let f1 = async sys.exec("sleep 1 && echo done1")
 let f2 = async sys.exec("sleep 1 && echo done2")
 let f3 = async sys.exec("sleep 1 && echo done3")
 
-// Wait for results
-let r1 = await f1
-let r2 = await f2
-let r3 = await f3
-print(r1.stdout, r2.stdout, r3.stdout)
+print(await f1, await f2, await f3)
 // Total time: ~1 second (not 3)
 ```
 
-### Parallel HTTP requests
+### futures.all and futures.race
 
 ```
-let f1 = async http.get("http://api1.com/data")
-let f2 = async http.get("http://api2.com/data")
-let f3 = async http.get("http://api3.com/data")
+// Wait for all futures, returns an array of results
+let fs = map([1,2,3,4,5], lam{ n in async compute(n) })
+let results = futures.all(fs)
 
-let r1 = await f1
-let r2 = await f2
-let r3 = await f3
+// Wait for the first future to finish
+let winner = futures.race([async slowTask(), async fastTask()])
 ```
+
+| Function | Description |
+|----------|-------------|
+| `futures.all(arr)` | Await all futures in the array, return results as an array |
+| `futures.race(arr)` | Return the result of the first future to complete |
 
 ### Error handling
 
@@ -1669,32 +1693,69 @@ try {
 - `async funcCall(args)` evaluates the function and arguments on the current thread, then spawns the actual call in a new OS thread
 - Returns a **future** value immediately
 - `await future` blocks until the background thread finishes
-- **Native functions** (http.get, sys.exec, sys.read, etc.) run in **true parallel** — they're pure C++ and don't need the interpreter
-- **Praia functions** use a mutex (like Python's GIL) — only one runs at a time, but I/O operations still overlap
+- Each async Praia function gets its own VM with a snapshot of globals. Tasks are fully isolated — no shared mutable state, no data races
+- Native functions (http.get, sys.exec, etc.) also run in true parallel
 
-### Building on futures in grains
+### Channels
 
-Futures are regular values, so you can build patterns on top:
+Channels are thread-safe queues for communication between async tasks.
 
 ```
-// grains/parallel.praia
-func all(futures) {
-    let results = []
-    for (f in futures) {
-        results.push(await f)
+let ch = Channel()      // unbuffered channel
+let ch = Channel(10)    // buffered channel (up to 10 items)
+```
+
+| Method | Description |
+|--------|-------------|
+| `ch.send(val)` | Send a value (blocks on buffered channel if full) |
+| `ch.recv()` | Receive a value (blocks until available, returns nil when closed + empty) |
+| `ch.tryRecv()` | Non-blocking receive (returns nil immediately if empty) |
+| `ch.close()` | Close the channel (no more sends allowed) |
+| `ch.closed()` | Returns true if closed and empty |
+
+#### Producer-consumer pattern
+
+```
+let ch = Channel()
+
+func producer(ch) {
+    for (i in 0..5) {
+        ch.send(i)
     }
-    return results
+    ch.close()
 }
 
-export { all }
+async producer(ch)
+
+while (true) {
+    let val = ch.recv()
+    if (val == nil) { break }
+    print(val)
+}
 ```
 
+#### Fan-out: multiple workers
+
 ```
-use "parallel"
-let results = parallel.all([
-    async http.get("http://api1.com"),
-    async http.get("http://api2.com")
-])
+let results = Channel()
+
+func scan(target, results) {
+    let r = sys.exec("ping -c1 -W1 " + target)
+    if (r.exitCode == 0) {
+        results.send(target + " is up")
+    } else {
+        results.send(target + " is down")
+    }
+}
+
+let targets = ["10.0.0.1", "10.0.0.2", "10.0.0.3"]
+for (t in targets) {
+    async scan(t, results)
+}
+
+for (i in 0..len(targets)) {
+    print(results.recv())
+}
 ```
 
 ---
@@ -2374,6 +2435,8 @@ The `math` namespace provides mathematical constants and functions.
 | `math.floor(x)` | Round down |
 | `math.ceil(x)` | Round up |
 | `math.round(x)` | Round to nearest |
+| `math.trunc(x)` | Truncate to integer (toward zero) |
+| `math.idiv(a, b)` | Integer division (truncated toward zero) |
 | `math.min(a, b)` | Minimum |
 | `math.max(a, b)` | Maximum |
 | `math.clamp(x, lo, hi)` | Clamp x between lo and hi |

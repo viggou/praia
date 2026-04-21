@@ -12,7 +12,9 @@
 #include <iomanip>
 #include <iostream>
 #include <limits>
+#include <condition_variable>
 #include <mutex>
+#include <queue>
 #include <random>
 #include <sstream>
 #include <thread>
@@ -83,7 +85,7 @@ Interpreter::Interpreter() {
             if (v.isNil())      return Value("nil");
             if (v.isBool())     return Value("bool");
             if (v.isInt())      return Value("int");
-            if (v.isDouble())   return Value("number");
+            if (v.isDouble())   return Value("float");
             if (v.isString())   return Value("string");
             if (v.isArray())    return Value("array");
             if (v.isMap())      return Value("map");
@@ -170,6 +172,123 @@ Interpreter::Interpreter() {
 
             return Value(lock);
         })));
+
+    // ── Channel() — thread-safe queue for async communication ──
+
+    struct ChannelState {
+        std::mutex mtx;
+        std::condition_variable cv;
+        std::queue<Value> buffer;
+        bool closed = false;
+    };
+
+    globals->define("Channel", Value(makeNative("Channel", -1,
+        [](const std::vector<Value>& args) -> Value {
+            auto state = std::make_shared<ChannelState>();
+            int capacity = 0; // unbuffered by default
+            if (!args.empty() && args[0].isNumber())
+                capacity = static_cast<int>(args[0].asNumber());
+
+            auto ch = std::make_shared<PraiaMap>();
+
+            ch->entries["send"] = Value(makeNative("send", 1,
+                [state, capacity](const std::vector<Value>& args) -> Value {
+                    std::unique_lock<std::mutex> lock(state->mtx);
+                    if (state->closed)
+                        throw RuntimeError("Cannot send on a closed channel", 0);
+                    if (capacity > 0) {
+                        state->cv.wait(lock, [&] {
+                            return static_cast<int>(state->buffer.size()) < capacity || state->closed;
+                        });
+                        if (state->closed)
+                            throw RuntimeError("Cannot send on a closed channel", 0);
+                    }
+                    state->buffer.push(args[0]);
+                    state->cv.notify_all();
+                    return Value();
+                }));
+
+            ch->entries["recv"] = Value(makeNative("recv", 0,
+                [state](const std::vector<Value>&) -> Value {
+                    std::unique_lock<std::mutex> lock(state->mtx);
+                    state->cv.wait(lock, [&] {
+                        return !state->buffer.empty() || state->closed;
+                    });
+                    if (state->buffer.empty()) return Value(); // closed + empty = nil
+                    Value val = state->buffer.front();
+                    state->buffer.pop();
+                    state->cv.notify_all();
+                    return val;
+                }));
+
+            ch->entries["tryRecv"] = Value(makeNative("tryRecv", 0,
+                [state](const std::vector<Value>&) -> Value {
+                    std::lock_guard<std::mutex> lock(state->mtx);
+                    if (state->buffer.empty()) return Value(); // nil
+                    Value val = state->buffer.front();
+                    state->buffer.pop();
+                    state->cv.notify_all();
+                    return val;
+                }));
+
+            ch->entries["close"] = Value(makeNative("close", 0,
+                [state](const std::vector<Value>&) -> Value {
+                    std::lock_guard<std::mutex> lock(state->mtx);
+                    state->closed = true;
+                    state->cv.notify_all();
+                    return Value();
+                }));
+
+            ch->entries["closed"] = Value(makeNative("closed", 0,
+                [state](const std::vector<Value>&) -> Value {
+                    std::lock_guard<std::mutex> lock(state->mtx);
+                    return Value(state->closed && state->buffer.empty());
+                }));
+
+            return Value(ch);
+        })));
+
+    // ── futures namespace ──
+
+    auto asyncMap = std::make_shared<PraiaMap>();
+
+    asyncMap->entries["all"] = Value(makeNative("futures.all", 1,
+        [](const std::vector<Value>& args) -> Value {
+            if (!args[0].isArray())
+                throw RuntimeError("async.all() requires an array of futures", 0);
+            auto& futures = args[0].asArray()->elements;
+            auto results = std::make_shared<PraiaArray>();
+            for (auto& f : futures) {
+                if (!f.isFuture())
+                    throw RuntimeError("async.all() array must contain only futures", 0);
+                results->elements.push_back(f.asFuture()->future.get());
+            }
+            return Value(results);
+        }));
+
+    asyncMap->entries["race"] = Value(makeNative("futures.race", 1,
+        [](const std::vector<Value>& args) -> Value {
+            if (!args[0].isArray())
+                throw RuntimeError("async.race() requires an array of futures", 0);
+            auto& futures = args[0].asArray()->elements;
+            if (futures.empty())
+                throw RuntimeError("async.race() requires at least one future", 0);
+            // Poll futures until one is ready
+            // Note: shared_future doesn't have a ready() check, so we
+            // use wait_for with zero timeout
+            while (true) {
+                for (auto& f : futures) {
+                    if (!f.isFuture()) continue;
+                    auto& sf = f.asFuture()->future;
+                    if (sf.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready) {
+                        return sf.get();
+                    }
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+        }));
+
+    globals->define("futures", Value(asyncMap));
 
     // ── Functional built-ins (work great with |>) ──
 
@@ -1384,6 +1503,23 @@ Interpreter::Interpreter() {
     mathFn1("floor", std::floor);
     mathFn1("ceil", std::ceil);
     mathFn1("round", std::round);
+
+    mathMap->entries["trunc"] = Value(makeNative("math.trunc", 1,
+        [](const std::vector<Value>& args) -> Value {
+            if (!args[0].isNumber())
+                throw RuntimeError("math.trunc() requires a number", 0);
+            return Value(static_cast<int64_t>(args[0].asNumber()));
+        }));
+
+    mathMap->entries["idiv"] = Value(makeNative("math.idiv", 2,
+        [](const std::vector<Value>& args) -> Value {
+            if (!args[0].isNumber() || !args[1].isNumber())
+                throw RuntimeError("math.idiv() requires two numbers", 0);
+            if (args[1].asNumber() == 0)
+                throw RuntimeError("Division by zero", 0);
+            double result = args[0].asNumber() / args[1].asNumber();
+            return Value(static_cast<int64_t>(result > 0 ? std::floor(result) : std::ceil(result)));
+        }));
     mathFn1("abs", std::fabs);
     mathFn1("log", std::log);
     mathFn1("log2", std::log2);

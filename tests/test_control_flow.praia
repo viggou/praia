@@ -67,6 +67,12 @@ testing.test("truthiness", lam{ in
     testing.assert(!0, nil)
     testing.assert(!nil, nil)
     testing.assert(!false, nil)
+    // empty string and empty array are falsy
+    testing.assert(!"", "empty string should be falsy")
+    testing.assert(![], "empty array should be falsy")
+    // non-empty are truthy
+    testing.assert("x", "non-empty string should be truthy")
+    testing.assert([0], "non-empty array should be truthy")
 })
 
 testing.test("short-circuit or", lam{ in

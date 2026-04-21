@@ -1,23 +1,23 @@
 use "testing"
 
 class Animal {
-    init(name) {
+    func init(name) {
         this.name = name
     }
-    speak() {
+    func speak() {
         return "%{this.name} makes a noise"
     }
 }
 
 class Dog extends Animal {
-    init(name, breed) {
+    func init(name, breed) {
         super.init(name)
         this.breed = breed
     }
-    speak() {
+    func speak() {
         return "%{this.name} barks"
     }
-    describe() {
+    func describe() {
         return super.speak() + " (it's a " + this.breed + ")"
     }
 }

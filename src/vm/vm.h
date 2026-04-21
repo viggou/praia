@@ -88,9 +88,9 @@ public:
     Result execute(int baseFrameCount = 0);
 private:
 
-    // Stack
+    // Stack (heap-allocated so VM can be used in threads with small stacks)
     static constexpr int STACK_MAX = 16384;
-    Value stack[STACK_MAX];
+    std::unique_ptr<Value[]> stack;
     int stackTop = 0;
 
 public:

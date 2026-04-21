@@ -82,15 +82,8 @@ struct Value {
     std::shared_ptr<PraiaInstance> asInstance() const { return std::get<std::shared_ptr<PraiaInstance>>(data); }
     std::shared_ptr<PraiaFuture>   asFuture()   const { return std::get<std::shared_ptr<PraiaFuture>>(data); }
 
-    bool isTruthy() const {
-        if (isNil()) return false;
-        if (isBool()) return asBool();
-        if (isInt()) return asInt() != 0;
-        if (isDouble()) return asNumber() != 0;
-        return true;
-    }
-
     // Declared here, defined after PraiaArray/PraiaMap (needs complete types)
+    bool isTruthy() const;
     std::string toString() const;
     bool operator==(const Value& o) const;
     bool operator!=(const Value& o) const { return !(*this == o); }
@@ -117,6 +110,16 @@ struct PraiaInstance {
 };
 
 // ── Value method definitions (need complete types) ──
+
+inline bool Value::isTruthy() const {
+    if (isNil()) return false;
+    if (isBool()) return asBool();
+    if (isInt()) return asInt() != 0;
+    if (isDouble()) return asNumber() != 0;
+    if (isString()) return !asString().empty();
+    if (isArray()) return !asArray()->elements.empty();
+    return true;
+}
 
 inline std::string Value::toString() const {
     if (isNil())    return "nil";

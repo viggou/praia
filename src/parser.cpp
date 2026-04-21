@@ -152,6 +152,7 @@ StmtPtr Parser::classStatement() {
     while (!check(TokenType::RBRACE) && !isAtEnd()) {
         ClassMethod method;
         method.line = peek().line;
+        consume(TokenType::FUNC, "Expected 'func' before method name");
         method.name = consume(TokenType::IDENTIFIER, "Expected method name").lexeme;
         consume(TokenType::LPAREN, "Expected '(' after method name");
 
@@ -271,18 +272,35 @@ StmtPtr Parser::whileStatement() {
 StmtPtr Parser::forStatement() {
     int ln = previous().line;
     consume(TokenType::LPAREN, "Expected '(' after 'for'");
-    Token var = consume(TokenType::IDENTIFIER, "Expected loop variable");
-    consume(TokenType::IN, "Expected 'in' after loop variable");
+
+    // Check for destructuring: for ({key, value} in ...)
+    std::vector<std::string> destructureKeys;
+    std::string varName;
+
+    if (match(TokenType::LBRACE)) {
+        // Map destructuring pattern
+        do {
+            destructureKeys.push_back(
+                consume(TokenType::IDENTIFIER, "Expected identifier in destructuring pattern").lexeme);
+        } while (match(TokenType::COMMA));
+        consume(TokenType::RBRACE, "Expected '}' after destructuring pattern");
+        consume(TokenType::IN, "Expected 'in' after destructuring pattern");
+    } else {
+        Token var = consume(TokenType::IDENTIFIER, "Expected loop variable");
+        varName = var.lexeme;
+        consume(TokenType::IN, "Expected 'in' after loop variable");
+    }
+
     auto iterExpr = expression();
 
-    if (match(TokenType::DOT_DOT)) {
+    if (destructureKeys.empty() && match(TokenType::DOT_DOT)) {
         // Range for: for (i in start..end)
         auto endExpr = expression();
         consume(TokenType::RPAREN, "Expected ')' after range");
         consume(TokenType::LBRACE, "Expected '{' after for");
         auto stmt = std::make_unique<ForStmt>();
         stmt->line = ln;
-        stmt->varName = var.lexeme;
+        stmt->varName = varName;
         stmt->start = std::move(iterExpr);
         stmt->end = std::move(endExpr);
         loopDepth++;
@@ -291,12 +309,13 @@ StmtPtr Parser::forStatement() {
         return stmt;
     }
 
-    // For-in: for (item in array)
+    // For-in: for (item in array) or for ({key, value} in map)
     consume(TokenType::RPAREN, "Expected ')' after iterable");
     consume(TokenType::LBRACE, "Expected '{' after for");
     auto stmt = std::make_unique<ForInStmt>();
     stmt->line = ln;
-    stmt->varName = var.lexeme;
+    stmt->varName = varName;
+    stmt->destructureKeys = destructureKeys;
     stmt->iterable = std::move(iterExpr);
     loopDepth++;
     stmt->body = block();

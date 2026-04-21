@@ -1,15 +1,15 @@
 // ── Basic class ──
 class Animal {
-    init(name, sound) {
+    func init(name, sound) {
         this.name = name
         this.sound = sound
     }
 
-    speak() {
+    func speak() {
         print("%{this.name} says %{this.sound}")
     }
 
-    describe() {
+    func describe() {
         return "%{this.name} the animal"
     }
 }
@@ -27,16 +27,16 @@ cat.speak()
 
 // ── Inheritance ──
 class Dog extends Animal {
-    init(name) {
+    func init(name) {
         super.init(name, "woof")
         this.tricks = []
     }
 
-    learn(trick) {
+    func learn(trick) {
         this.tricks.push(trick)
     }
 
-    showTricks() {
+    func showTricks() {
         if (len(this.tricks) == 0) {
             print("%{this.name} knows no tricks")
         } else {
@@ -53,11 +53,11 @@ buddy.showTricks()
 
 // ── Method override ──
 class Cat extends Animal {
-    init(name) {
+    func init(name) {
         super.init(name, "meow")
     }
 
-    describe() {
+    func describe() {
         return "%{this.name} the majestic cat"
     }
 }
@@ -68,12 +68,12 @@ c.speak()               // inherited
 
 // ── Multi-level inheritance ──
 class Kitten extends Cat {
-    init(name) {
+    func init(name) {
         super.init(name)
         this.energy = 100
     }
 
-    play() {
+    func play() {
         this.energy = this.energy - 10
         print("%{this.name} plays! Energy: %{this.energy}")
     }
@@ -87,15 +87,15 @@ kit.play()
 
 // ── Classes with lambdas ──
 class Counter {
-    init(start) {
+    func init(start) {
         this.count = start
     }
 
-    increment() {
+    func increment() {
         this.count = this.count + 1
     }
 
-    getCallback() {
+    func getCallback() {
         let self = this
         return lam{ in
             self.increment()

@@ -100,7 +100,7 @@ classes, control flow, error handling, pipes/closures, and JSON.
 * Arrays, maps, destructuring, spread operator
 * HTTP client and server
 * JSON and YAML parse/stringify
-* async/await with OS threads
+* async/await with true parallelism, channels, futures.all/race
 * Module system ("grains") with import/export
 * Package manager ([sand](https://github.com/praia-lang/sand))
 * File I/O, directories, copy/move (`sys` namespace)
@@ -146,10 +146,9 @@ Praia/
 
 Praia is still in active development. The language is generally functional, but some rough edges remain:
 
-* **Async for Praia functions is cooperative** — `async` with native functions (HTTP, exec) runs in real background threads, but `async` with Praia-defined functions runs synchronously. Only native calls get true parallelism.
-* **No native Windows support** — Praia uses POSIX APIs for sockets, terminal I/O, and environment variables. Works on macOS, Linux, and Windows via WSL. Should work on BSD systems but is untested.
-* **Single-threaded VM** — the bytecode VM is not thread-safe. Concurrent access from multiple OS threads is undefined behavior.
-* **No garbage collector** — memory is managed with reference counting (shared_ptr). Circular references will leak.
+* **Async tasks are isolated** - each `async` call gets its own VM with a snapshot of globals. Tasks run in true parallel but cannot share mutable state. Communicate via return values (`await`).
+* **No native Windows support** - Praia uses POSIX APIs for sockets, terminal I/O, and environment variables. Works on macOS, Linux, and Windows via WSL. Should work on BSD systems but is untested.
+* **No garbage collector** - memory is managed with reference counting (shared_ptr). Circular references will leak.
 
 ## Documentation
 
