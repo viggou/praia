@@ -1227,28 +1227,40 @@ VM::Result VM::execute(int baseFrameCount_) {
 
             auto* native = dynamic_cast<NativeFunction*>(callable.get());
             auto* vmcc = dynamic_cast<VMClosureCallable*>(callable.get());
+            auto* bound = dynamic_cast<VMBoundMethod*>(callable.get());
 
             std::shared_future<Value> sharedFuture;
-            if (vmcc) {
+            if (vmcc || bound) {
+                // Both VMClosureCallable and VMBoundMethod use the same
+                // task-VM path. The difference: bound methods push receiver
+                // as slot 0 and set definingClass on the frame.
+                auto fn = bound ? bound->method->function : vmcc->closure->function;
+                auto* closureSrc = bound ? bound->method : vmcc->closure;
                 std::unordered_map<std::string, Value> globalsCopy;
                 for (auto& [k, v] : globals)
                     globalsCopy[k] = deepCopy(v);
 
-                auto fn = vmcc->closure->function;
                 int arity = fn->arity;
 
                 // Snapshot upvalues and deep-copy so captured arrays/maps/instances
                 // are isolated from the caller
                 std::vector<Value> upvalueSnapshot;
-                for (int i = 0; i < vmcc->closure->upvalueCount; i++) {
-                    auto* uv = vmcc->closure->upvalues[i];
+                for (int i = 0; i < closureSrc->upvalueCount; i++) {
+                    auto* uv = closureSrc->upvalues[i];
                     upvalueSnapshot.push_back(uv ? deepCopy(*uv->location) : Value());
                 }
+
+                // For bound methods, deep-copy the receiver so the task
+                // doesn't share instance fields with the caller
+                Value receiverCopy = bound ? deepCopy(bound->receiver) : Value();
+                auto defClass = bound ? bound->definingClass : nullptr;
 
                 sharedFuture = std::async(std::launch::async,
                     [fn, args, globalsCopy = std::move(globalsCopy), arity,
                      upvalueSnapshot = std::move(upvalueSnapshot),
-                     builtinNames = builtinNames_]() mutable -> Value {
+                     builtinNames = builtinNames_,
+                     receiverCopy = std::move(receiverCopy),
+                     defClass = std::move(defClass)]() mutable -> Value {
                         VM taskVm;
                         taskVm.globals = std::move(globalsCopy);
                         taskVm.builtinNames_ = std::move(builtinNames);
@@ -1292,14 +1304,20 @@ VM::Result VM::execute(int baseFrameCount_) {
 
                         auto wrapper = std::make_shared<VMClosureCallable>(closure);
                         wrapper->vm = &taskVm;
-                        taskVm.push(Value(std::static_pointer_cast<Callable>(wrapper)));
+
+                        // Slot 0: receiver (this) for bound methods, closure for plain functions
+                        if (!receiverCopy.isNil()) {
+                            taskVm.push(receiverCopy);
+                        } else {
+                            taskVm.push(Value(std::static_pointer_cast<Callable>(wrapper)));
+                        }
                         for (auto& arg : paddedArgs) taskVm.push(arg);
 
                         taskVm.frames[0].closure = closure;
                         taskVm.frames[0].function = fn;
                         taskVm.frames[0].ip = fn->chunk.code.data();
                         taskVm.frames[0].baseSlot = 0;
-                        taskVm.frames[0].definingClass = nullptr;
+                        taskVm.frames[0].definingClass = defClass;
                         taskVm.frameCount = 1;
 
                         auto result = taskVm.execute();
