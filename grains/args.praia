@@ -1,0 +1,227 @@
+// args — argument parser for Praia CLI tools
+//
+// Usage:
+//   use 'args'
+//
+//   let cli = args.parse({
+//       port: {type: "number", short: "p", default: 8080, help: "Port to listen on"},
+//       verbose: {type: "bool", short: "v", help: "Enable verbose output"},
+//       output: {type: "string", short: "o", help: "Output file path"},
+//       count: {type: "number", default: 1}
+//   })
+//
+//   print(cli.port)       // 8080 (or value from --port / -p)
+//   print(cli.verbose)    // true if --verbose or -v was passed
+//   print(cli.output)     // string value or nil
+//   print(cli.args)       // remaining positional arguments
+//
+// Supports:
+//   --flag value       long flag with value
+//   --flag=value       long flag with = separator
+//   -f value           short flag with value
+//   -f=value           short flag with = separator
+//   --bool-flag        boolean flags (no value needed)
+//   -v                 short boolean flags
+//   --                 stop parsing flags, rest are positional
+//   --help / -h        auto-generated help (if help text provided)
+
+func hasKey(m, k) {
+    return keys(m).contains(k)
+}
+
+func parse(spec, rawArgs) {
+    // Use provided args or fall back to sys.args
+    let argv = rawArgs
+    if (argv == nil) { argv = sys.args }
+
+    // Build lookup maps
+    let longToName = {}   // "--port" -> "port"
+    let shortToName = {}  // "-p" -> "port"
+    let result = { args: [] }
+
+    let specKeys = keys(spec)
+    for (name in specKeys) {
+        let opt = spec[name]
+        longToName["--" + name] = name
+
+        if (hasKey(opt, "short")) {
+            shortToName["-" + opt.short] = name
+        }
+
+        // Set defaults
+        if (hasKey(opt, "default")) {
+            result[name] = opt.default
+        } elif (opt.type == "bool") {
+            result[name] = false
+        } else {
+            result[name] = nil
+        }
+    }
+
+    // Check for --help / -h
+    let hasHelp = false
+    for (name in specKeys) {
+        if (hasKey(spec[name], "help")) { hasHelp = true; break }
+    }
+
+    // Parse argv
+    let i = 0
+    let stopFlags = false
+
+    while (i < len(argv)) {
+        let arg = argv[i]
+
+        if (stopFlags) {
+            push(result.args, arg)
+            i += 1
+            continue
+        }
+
+        if (arg == "--") {
+            stopFlags = true
+            i += 1
+            continue
+        }
+
+        // --help / -h
+        if (hasHelp && (arg == "--help" || arg == "-h")) {
+            printHelp(spec)
+            sys.exit(0)
+        }
+
+        // Long flag with = (--port=8080)
+        if (arg.startsWith("--") && arg.contains("=")) {
+            let eqIdx = arg.indexOf("=")
+            let flag = arg.slice(0, eqIdx)
+            let val = arg.slice(eqIdx + 1, len(arg))
+            if (hasKey(longToName, flag)) {
+                let name = longToName[flag]
+                result[name] = coerce(val, spec[name].type)
+            } else {
+                throw "Unknown flag: " + flag
+            }
+            i += 1
+            continue
+        }
+
+        // Short flag with = (-p=8080)
+        if (arg.startsWith("-") && !arg.startsWith("--") && arg.contains("=")) {
+            let eqIdx = arg.indexOf("=")
+            let flag = arg.slice(0, eqIdx)
+            let val = arg.slice(eqIdx + 1, len(arg))
+            if (hasKey(shortToName, flag)) {
+                let name = shortToName[flag]
+                result[name] = coerce(val, spec[name].type)
+            } else {
+                throw "Unknown flag: " + flag
+            }
+            i += 1
+            continue
+        }
+
+        // Long flag (--port 8080 or --verbose)
+        if (arg.startsWith("--")) {
+            if (hasKey(longToName, arg)) {
+                let name = longToName[arg]
+                let opt = spec[name]
+                if (opt.type == "bool") {
+                    result[name] = true
+                } else {
+                    i += 1
+                    if (i >= len(argv)) {
+                        throw "Flag " + arg + " requires a value"
+                    }
+                    result[name] = coerce(argv[i], opt.type)
+                }
+            } else {
+                throw "Unknown flag: " + arg
+            }
+            i += 1
+            continue
+        }
+
+        // Short flag (-p 8080 or -v)
+        if (arg.startsWith("-") && len(arg) > 1) {
+            // Could be combined bools: -vf -> -v -f
+            let flagChars = arg.slice(1, len(arg))
+            let allBool = true
+            for (ci in 0..len(flagChars)) {
+                let shortFlag = "-" + flagChars[ci]
+                if (!hasKey(shortToName, shortFlag) || spec[shortToName[shortFlag]].type != "bool") {
+                    allBool = false
+                    break
+                }
+            }
+
+            if (allBool && len(flagChars) > 1) {
+                // Combined boolean flags: -vf
+                for (ci in 0..len(flagChars)) {
+                    let shortFlag = "-" + flagChars[ci]
+                    if (hasKey(shortToName, shortFlag)) {
+                        result[shortToName[shortFlag]] = true
+                    }
+                }
+            } elif (hasKey(shortToName, arg)) {
+                let name = shortToName[arg]
+                let opt = spec[name]
+                if (opt.type == "bool") {
+                    result[name] = true
+                } else {
+                    i += 1
+                    if (i >= len(argv)) {
+                        throw "Flag " + arg + " requires a value"
+                    }
+                    result[name] = coerce(argv[i], opt.type)
+                }
+            } else {
+                throw "Unknown flag: " + arg
+            }
+            i += 1
+            continue
+        }
+
+        // Positional argument
+        push(result.args, arg)
+        i += 1
+    }
+
+    return result
+}
+
+func coerce(val, typ) {
+    if (typ == "number") { return num(val) }
+    if (typ == "bool") {
+        if (val == "true" || val == "1") { return true }
+        if (val == "false" || val == "0") { return false }
+        return true
+    }
+    return val
+}
+
+func printHelp(spec) {
+    let specKeys = keys(spec)
+    print("Options:")
+    for (name in specKeys) {
+        let opt = spec[name]
+        let flags = "  --" + name
+        if (hasKey(opt, "short")) {
+            flags = flags + ", -" + opt.short
+        }
+        if (opt.type != "bool") {
+            flags = flags + " <" + opt.type + ">"
+        }
+        let line = flags
+        // Pad to 28 chars
+        while (len(line) < 28) { line = line + " " }
+        if (hasKey(opt, "help")) {
+            line = line + opt.help
+        }
+        if (hasKey(opt, "default")) {
+            line = line + " (default: " + str(opt.default) + ")"
+        }
+        print(line)
+    }
+    print("  --help, -h                Show this help")
+}
+
+export { parse }

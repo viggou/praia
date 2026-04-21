@@ -401,6 +401,21 @@ Value VM::loadGrain(const std::string& importPath, int line) {
         }
     }
 
+    // Fix up VM pointers on all grain closures — they were created in grainVm
+    // which is about to be destroyed. Walk the grain's stack, globals, and
+    // exports to repoint every VMClosureCallable to the parent VM.
+    auto fixupValue = [this, &grainVm](Value& v) {
+        if (v.isCallable()) {
+            auto* vmcc = dynamic_cast<VMClosureCallable*>(v.asCallable().get());
+            if (vmcc && (vmcc->vm == &grainVm || vmcc->vm == nullptr))
+                vmcc->vm = this;
+        }
+    };
+    for (auto& [k, v] : globals) fixupValue(v);
+    if (exports.isMap()) {
+        for (auto& [k, v] : exports.asMap()->entries) fixupValue(v);
+    }
+
     grainCache[resolved] = exports;
     return exports;
 }

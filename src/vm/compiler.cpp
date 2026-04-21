@@ -298,12 +298,15 @@ void Compiler::compileWhileStmt(const WhileStmt* stmt) {
     int exitJump = emitJump(OpCode::OP_POP_JUMP_IF_FALSE, stmt->line);
 
     compileStmt(stmt->body.get());
+
+    // Patch continue jumps to here (just before the loop-back)
+    auto& loop = current->loops.back();
+    for (int j : loop.continueJumps) patchJump(j);
+
     emitLoop(loopStart, stmt->line);
 
     patchJump(exitJump);
 
-    // Patch break jumps
-    auto& loop = current->loops.back();
     for (int j : loop.breakJumps) patchJump(j);
     current->loops.pop_back();
 }
