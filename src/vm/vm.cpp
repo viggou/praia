@@ -1178,10 +1178,24 @@ VM::Result VM::execute(int baseFrameCount_) {
             std::shared_future<Value> sharedFuture;
             if (vmcc && vmcc->vm) {
                 // Deep-copy globals so the async VM doesn't share mutable state.
-                // PraiaMap and PraiaArray are copied recursively.
-                // NativeFunction/Callable shared_ptrs are safe (stateless).
+                // PraiaMap/PraiaArray are copied recursively.
+                // VMClosureCallable wrappers are CLONED (new shared_ptr, same
+                // ObjClosure) so the task's rewire step doesn't mutate the
+                // main VM's callables — preventing a dangling-pointer crash
+                // when the task VM is destroyed.
+                // NativeFunction shared_ptrs are safe to share (no vm pointer).
                 std::function<Value(const Value&)> deepCopy;
                 deepCopy = [&deepCopy](const Value& v) -> Value {
+                    if (v.isCallable()) {
+                        auto* vmcc = dynamic_cast<VMClosureCallable*>(v.asCallable().get());
+                        if (vmcc) {
+                            auto clone = std::make_shared<VMClosureCallable>(vmcc->closure);
+                            clone->ownedPrototype = vmcc->ownedPrototype;
+                            clone->vm = nullptr; // rewire sets this to &taskVm
+                            return Value(std::static_pointer_cast<Callable>(clone));
+                        }
+                        return v; // NativeFunction etc — safe to share
+                    }
                     if (v.isMap()) {
                         auto copy = std::make_shared<PraiaMap>();
                         for (auto& [k, val] : v.asMap()->entries)
@@ -1194,7 +1208,7 @@ VM::Result VM::execute(int baseFrameCount_) {
                             copy->elements.push_back(deepCopy(el));
                         return Value(copy);
                     }
-                    return v; // primitives, strings, callables (safe to share)
+                    return v; // primitives, strings
                 };
 
                 std::unordered_map<std::string, Value> globalsCopy;
