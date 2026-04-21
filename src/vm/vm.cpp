@@ -158,11 +158,11 @@ void VM::closeUpvalues(Value* last) {
 bool VM::callClosure(ObjClosure* closure, int argCount, int line) {
     auto& fn = closure->function;
 
-    // Allow fewer args (defaults to nil) but not more
+    // Allow fewer args (defaults to nil) but not more.
+    // Throw RuntimeError so callers can route through tryHandleError.
     if (argCount > fn->arity) {
-        runtimeError(fn->name + "() expected at most " + std::to_string(fn->arity) +
+        throw RuntimeError(fn->name + "() expected at most " + std::to_string(fn->arity) +
             " argument(s) but got " + std::to_string(argCount), line);
-        return false;
     }
 
     // Pad missing args with nil
@@ -172,8 +172,7 @@ bool VM::callClosure(ObjClosure* closure, int argCount, int line) {
     }
 
     if (frameCount >= FRAMES_MAX) {
-        runtimeError("Stack overflow (too many nested calls)", line);
-        return false;
+        throw RuntimeError("Stack overflow (too many nested calls)", line);
     }
 
     auto& frame = frames[frameCount++];
@@ -189,6 +188,7 @@ bool VM::callValue(Value callee, int argCount, int line) {
     if (callee.isCallable()) {
         auto callable = callee.asCallable();
 
+      try {
         // VM closure
         auto* vmClosure = dynamic_cast<VMClosureCallable*>(callable.get());
         if (vmClosure) {
@@ -200,7 +200,7 @@ bool VM::callValue(Value callee, int argCount, int line) {
         if (bound) {
             // Replace the callee slot with the receiver (this)
             stack[stackTop - argCount - 1] = bound->receiver;
-            if (!callClosure(bound->method, argCount, line)) return false;
+            callClosure(bound->method, argCount, line);
             // Tag the new frame with the defining class for super resolution
             frames[frameCount - 1].definingClass = bound->definingClass;
             return true;
@@ -227,14 +227,13 @@ bool VM::callValue(Value callee, int argCount, int line) {
                 if (initVal.isCallable()) {
                     auto* initVmcc = dynamic_cast<VMClosureCallable*>(initVal.asCallable().get());
                     if (initVmcc) {
-                        if (!callClosure(initVmcc->closure, argCount, line)) return false;
+                        callClosure(initVmcc->closure, argCount, line);
                         frames[frameCount - 1].definingClass = initOwner;
                         return true;
                     }
                 }
             } else if (argCount > 0) {
-                runtimeError(klass->className + "() takes no arguments (no init method)", line);
-                return false;
+                throw RuntimeError(klass->className + "() takes no arguments (no init method)", line);
             }
             return true;
         }
@@ -244,27 +243,30 @@ bool VM::callValue(Value callee, int argCount, int line) {
         if (native) {
             int arity = native->arity();
             if (arity != -1 && argCount != arity) {
-                runtimeError(native->name() + "() expected " + std::to_string(arity) +
+                throw RuntimeError(native->name() + "() expected " + std::to_string(arity) +
                     " argument(s) but got " + std::to_string(argCount), line);
-                return false;
             }
             std::vector<Value> args(argCount);
             for (int i = argCount - 1; i >= 0; i--) args[i] = pop();
             pop(); // the callable
-            try {
-                Value result = native->fn(args);
-                push(std::move(result));
-            } catch (const ExitSignal&) {
-                throw; // propagate sys.exit() to main
-            } catch (const RuntimeError& err) {
-                if (tryHandleError(Value(std::string(err.what())))) return true;
-                runtimeError(err.what(), err.line > 0 ? err.line : line);
-                return false;
-            }
+            Value result = native->fn(args);
+            push(std::move(result));
             return true;
         }
+
+        throw RuntimeError("Can only call functions", line);
+
+      } catch (const ExitSignal&) {
+          throw; // propagate sys.exit() to main
+      } catch (const RuntimeError& err) {
+          if (tryHandleError(Value(std::string(err.what())))) return true;
+          runtimeError(err.what(), err.line > 0 ? err.line : line);
+          return false;
+      }
     }
 
+    // Not callable at all (e.g., 42())
+    if (tryHandleError(Value(std::string("Can only call functions")))) return true;
     runtimeError("Can only call functions", line);
     return false;
 }
@@ -1236,11 +1238,17 @@ VM::Result VM::execute(int baseFrameCount_) {
                 // as slot 0 and set definingClass on the frame.
                 auto fn = bound ? bound->method->function : vmcc->closure->function;
                 auto* closureSrc = bound ? bound->method : vmcc->closure;
+                int arity = fn->arity;
+
+                // Arity check — must match callClosure's behavior
+                if (static_cast<int>(args.size()) > arity) {
+                    RUNTIME_ERR(fn->name + "() expected at most " + std::to_string(arity) +
+                        " argument(s) but got " + std::to_string(args.size()));
+                }
+
                 std::unordered_map<std::string, Value> globalsCopy;
                 for (auto& [k, v] : globals)
                     globalsCopy[k] = deepCopy(v);
-
-                int arity = fn->arity;
 
                 // Snapshot upvalues and deep-copy so captured arrays/maps/instances
                 // are isolated from the caller
