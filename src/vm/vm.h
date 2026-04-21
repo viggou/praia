@@ -31,10 +31,23 @@ struct ObjClosure {
     }
 };
 
+// Shared ownership bag for closures/upvalues returned from async tasks.
+// Attached to VMClosureCallable wrappers in the result so the raw pointers
+// survive after the task VM is destroyed.
+struct TaskOwnership {
+    std::vector<ObjClosure*> closures;
+    std::vector<ObjUpvalue*> upvalues;
+    ~TaskOwnership() {
+        for (auto* c : closures) delete c;
+        for (auto* u : upvalues) delete u;
+    }
+};
+
 // Wrapper to store ObjClosure as a Callable in Value
 struct VMClosureCallable : Callable {
     ObjClosure* closure;
     std::shared_ptr<ObjClosure> ownedPrototype; // keeps compiler prototypes alive (constant pool entries)
+    std::shared_ptr<TaskOwnership> taskOwnership; // keeps async task closures/upvalues alive
     class VM* vm = nullptr; // set when closure is created during VM execution
     VMClosureCallable(ObjClosure* c) : closure(c) {}
     Value call(Interpreter&, const std::vector<Value>& args) override;

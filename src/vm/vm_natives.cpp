@@ -7,9 +7,10 @@
 // Call any Callable within the VM context.
 // Handles VM closures (re-entrant execution), bound methods, and native functions.
 Value callWithVM(VM& vm, std::shared_ptr<Callable> callable, const std::vector<Value>& args) {
-    // VM closure
+    // VM closure — dispatch based on type, not vm pointer (closures from
+    // async tasks may have a stale vm but are still valid VMClosureCallable)
     auto* vmcc = dynamic_cast<VMClosureCallable*>(callable.get());
-    if (vmcc && vmcc->vm) {
+    if (vmcc) {
         int savedFrameCount = vm.frameCount;
         vm.push(Value()); // closure slot
         for (auto& arg : args) vm.push(arg);
@@ -91,7 +92,7 @@ void vmRegisterNatives(VM& vm) {
                         auto it = walk->vmMethods.find("toString");
                         if (it != walk->vmMethods.end() && it->second.isCallable()) {
                             auto* vmcc = dynamic_cast<VMClosureCallable*>(it->second.asCallable().get());
-                            if (vmcc && vmcc->vm) {
+                            if (vmcc) {
                                 vm->push(Value(inst)); // slot for 'this'
                                 if (vm->callClosure(vmcc->closure, 0, 0)) {
                                     int saved = vm->frameCount;

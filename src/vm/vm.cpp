@@ -24,23 +24,24 @@ struct VMScope {
 };
 
 // VMClosureCallable::call — allows native functions (filter, map, etc.)
-// to call VM closures through the tree-walker's Callable interface
+// to call VM closures through the tree-walker's Callable interface.
+// Uses VM::current() so closures returned from async tasks work correctly
+// even after the task VM is destroyed.
 Value VMClosureCallable::call(Interpreter&, const std::vector<Value>& args) {
-    if (!vm) return Value();
+    VM* currentVm = vm ? vm : VM::current();
+    if (!currentVm) return Value();
 
-    int savedFrameCount = vm->frameCount;
+    int savedFrameCount = currentVm->frameCount;
 
-    // Push a placeholder for the closure slot, then args
-    vm->push(Value()); // slot for the closure itself
-    for (auto& arg : args) vm->push(arg);
+    currentVm->push(Value()); // slot for the closure itself
+    for (auto& arg : args) currentVm->push(arg);
 
-    if (!vm->callClosure(closure, static_cast<int>(args.size()), 0)) return Value();
+    if (!currentVm->callClosure(closure, static_cast<int>(args.size()), 0)) return Value();
 
-    // Execute until this closure's frame is done
-    auto result = vm->execute(savedFrameCount);
+    auto result = currentVm->execute(savedFrameCount);
     if (result != VM::Result::OK) return Value();
 
-    return vm->pop();
+    return currentVm->pop();
 }
 
 VM::VM() : stack(std::make_unique<Value[]>(STACK_MAX)) {}
@@ -1230,7 +1231,7 @@ VM::Result VM::execute(int baseFrameCount_) {
             auto* vmcc = dynamic_cast<VMClosureCallable*>(callable.get());
 
             std::shared_future<Value> sharedFuture;
-            if (vmcc && vmcc->vm) {
+            if (vmcc) {
                 std::unordered_map<std::string, Value> globalsCopy;
                 for (auto& [k, v] : globals)
                     globalsCopy[k] = deepCopy(v);
@@ -1304,11 +1305,40 @@ VM::Result VM::execute(int baseFrameCount_) {
                         taskVm.frameCount = 1;
 
                         auto result = taskVm.execute();
-                        if (result == Result::OK && taskVm.stackTop > 0)
-                            return taskVm.pop();
-                        // Propagate the error so await can catch it
-                        throw RuntimeError(
-                            taskVm.lastError_.empty() ? "Async task failed" : taskVm.lastError_, 0);
+                        if (result != Result::OK || taskVm.stackTop <= 0)
+                            throw RuntimeError(
+                                taskVm.lastError_.empty() ? "Async task failed" : taskVm.lastError_, 0);
+
+                        Value retVal = taskVm.pop();
+
+                        // Transfer closure/upvalue ownership from taskVm into a
+                        // shared bag attached to any VMClosureCallable in the result.
+                        // This keeps the raw pointers alive after taskVm is destroyed.
+                        auto ownership = std::make_shared<TaskOwnership>();
+                        ownership->closures = std::move(taskVm.allClosures);
+                        ownership->upvalues = std::move(taskVm.allUpvalues);
+                        taskVm.allClosures.clear();
+                        taskVm.allUpvalues.clear();
+
+                        std::function<void(Value&)> attachOwnership;
+                        attachOwnership = [&ownership, &attachOwnership](Value& v) {
+                            if (v.isCallable()) {
+                                auto* vc = dynamic_cast<VMClosureCallable*>(v.asCallable().get());
+                                if (vc) vc->taskOwnership = ownership;
+                            }
+                            if (v.isMap()) {
+                                for (auto& [k, mv] : v.asMap()->entries) attachOwnership(mv);
+                            }
+                            if (v.isArray()) {
+                                for (auto& el : v.asArray()->elements) attachOwnership(el);
+                            }
+                            if (v.isInstance()) {
+                                for (auto& [k, fv] : v.asInstance()->fields) attachOwnership(fv);
+                            }
+                        };
+                        attachOwnership(retVal);
+
+                        return retVal;
                     }).share();
             } else if (native) {
                 sharedFuture = std::async(std::launch::async,
