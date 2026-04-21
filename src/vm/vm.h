@@ -149,3 +149,6 @@ private:
     bool tryHandleError(Value error);  // returns true if caught, false if uncaught
     std::string formatStackTrace() const;
 };
+
+// Helper: call any Callable within the VM context (handles VM closures, bound methods, natives)
+Value callWithVM(VM& vm, std::shared_ptr<Callable> callable, const std::vector<Value>& args);

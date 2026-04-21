@@ -1,5 +1,6 @@
 #include "builtins.h"
 #include "value.h"
+#include "vm/vm.h"
 #include <algorithm>
 #include <memory>
 #include <regex>
@@ -295,7 +296,7 @@ Value getStringMethod(const std::string& str,
 
 Value getArrayMethod(std::shared_ptr<PraiaArray> arr,
                      const std::string& name, int line,
-                     Interpreter* interp) {
+                     Interpreter* interp, VM* vm) {
     if (name == "push") {
         return Value(makeNative("push", 1, [arr](const std::vector<Value>& args) -> Value {
             arr->elements.push_back(args[0]);
@@ -381,14 +382,13 @@ Value getArrayMethod(std::shared_ptr<PraiaArray> arr,
         }));
     }
     if (name == "find") {
-        return Value(makeNative("find", 1, [arr, interp](const std::vector<Value>& args) -> Value {
+        return Value(makeNative("find", 1, [arr, interp, vm](const std::vector<Value>& args) -> Value {
             if (!args[0].isCallable())
                 throw RuntimeError("find() requires a function", 0);
-            if (!interp)
-                throw RuntimeError("find() not available in this context", 0);
             auto pred = args[0].asCallable();
             for (auto& elem : arr->elements) {
-                Value result = pred->call(*interp, {elem});
+                Value result = vm ? callWithVM(*vm, pred, {elem})
+                                  : pred->call(*interp, {elem});
                 if (result.isTruthy()) return elem;
             }
             return Value();

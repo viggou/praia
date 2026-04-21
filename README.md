@@ -146,7 +146,6 @@ Praia/
 
 Praia is still in active development. The language is generally functional, but some rough edges remain:
 
-* **Higher-order functions with closures** — `filter`, `map`, `each`, and `sort` with a custom comparator don't work reliably when passed VM closures. Use for-in loops with push as a workaround.
 * **REPL uses the tree-walker** — the interactive REPL runs on the tree-walker interpreter, not the bytecode VM.
 * **Async for Praia functions is cooperative** — `async` with native functions (HTTP, exec) runs in real background threads, but `async` with Praia-defined functions runs synchronously. Only native calls get true parallelism.
 * **No native Windows support** — Praia uses POSIX APIs for sockets, terminal I/O, and environment variables. Works on macOS, Linux, and Windows via WSL. Should work on BSD systems but is untested.

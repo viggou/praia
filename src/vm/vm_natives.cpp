@@ -1,7 +1,49 @@
 #include "vm.h"
 #include "../interpreter.h"
 #include "../environment.h"
+#include <algorithm>
 #include <set>
+
+// Call any Callable within the VM context.
+// Handles VM closures (re-entrant execution), bound methods, and native functions.
+Value callWithVM(VM& vm, std::shared_ptr<Callable> callable, const std::vector<Value>& args) {
+    // VM closure
+    auto* vmcc = dynamic_cast<VMClosureCallable*>(callable.get());
+    if (vmcc && vmcc->vm) {
+        int savedFrameCount = vm.frameCount;
+        vm.push(Value()); // closure slot
+        for (auto& arg : args) vm.push(arg);
+        if (!vm.callClosure(vmcc->closure, static_cast<int>(args.size()), 0))
+            return Value();
+        auto result = vm.execute(savedFrameCount);
+        if (result != VM::Result::OK) return Value();
+        return vm.pop();
+    }
+
+    // Bound method
+    auto* bound = dynamic_cast<VMBoundMethod*>(callable.get());
+    if (bound) {
+        int savedFrameCount = vm.frameCount;
+        vm.push(bound->receiver); // slot 0 = this
+        for (auto& arg : args) vm.push(arg);
+        if (!vm.callClosure(bound->method, static_cast<int>(args.size()), 0))
+            return Value();
+        vm.frames[vm.frameCount - 1].definingClass = bound->definingClass;
+        auto result = vm.execute(savedFrameCount);
+        if (result != VM::Result::OK) return Value();
+        return vm.pop();
+    }
+
+    // Native function
+    auto* native = dynamic_cast<NativeFunction*>(callable.get());
+    if (native) {
+        return native->fn(args);
+    }
+
+    // Fallback
+    Interpreter dummy;
+    return callable->call(dummy, args);
+}
 
 // Reuse ALL builtins from the tree-walker by creating an Interpreter
 // and copying its global environment into the VM.
@@ -98,6 +140,75 @@ void vmRegisterNatives(VM& vm) {
                 }
             }
             return Value(args[0].toString());
+        }));
+
+    // Override higher-order functions with VM-aware versions
+    vm.defineNative("filter", makeNat("filter", 2,
+        [&vm](const std::vector<Value>& args) -> Value {
+            if (!args[0].isArray())
+                throw RuntimeError("filter() requires an array as first argument", 0);
+            if (!args[1].isCallable())
+                throw RuntimeError("filter() requires a function as second argument", 0);
+            auto& src = args[0].asArray()->elements;
+            auto result = std::make_shared<PraiaArray>();
+            auto pred = args[1].asCallable();
+            for (auto& elem : src) {
+                Value test = callWithVM(vm, pred, {elem});
+                if (test.isTruthy()) result->elements.push_back(elem);
+            }
+            return Value(result);
+        }));
+
+    vm.defineNative("map", makeNat("map", 2,
+        [&vm](const std::vector<Value>& args) -> Value {
+            if (!args[0].isArray())
+                throw RuntimeError("map() requires an array as first argument", 0);
+            if (!args[1].isCallable())
+                throw RuntimeError("map() requires a function as second argument", 0);
+            auto& src = args[0].asArray()->elements;
+            auto result = std::make_shared<PraiaArray>();
+            auto transform = args[1].asCallable();
+            for (auto& elem : src)
+                result->elements.push_back(callWithVM(vm, transform, {elem}));
+            return Value(result);
+        }));
+
+    vm.defineNative("each", makeNat("each", 2,
+        [&vm](const std::vector<Value>& args) -> Value {
+            if (!args[0].isArray())
+                throw RuntimeError("each() requires an array as first argument", 0);
+            if (!args[1].isCallable())
+                throw RuntimeError("each() requires a function as second argument", 0);
+            auto& src = args[0].asArray()->elements;
+            auto fn = args[1].asCallable();
+            for (auto& elem : src)
+                callWithVM(vm, fn, {elem});
+            return args[0];
+        }));
+
+    vm.defineNative("sort", makeNat("sort", -1,
+        [&vm](const std::vector<Value>& args) -> Value {
+            if (args.empty() || !args[0].isArray())
+                throw RuntimeError("sort() requires an array", 0);
+            auto sorted = std::make_shared<PraiaArray>();
+            sorted->elements = args[0].asArray()->elements;
+            auto& elems = sorted->elements;
+            if (args.size() > 1 && args[1].isCallable()) {
+                auto cmp = args[1].asCallable();
+                std::sort(elems.begin(), elems.end(),
+                    [&vm, &cmp](const Value& a, const Value& b) -> bool {
+                        Value result = callWithVM(vm, cmp, {a, b});
+                        if (result.isNumber()) return result.asNumber() < 0;
+                        return result.isTruthy();
+                    });
+            } else {
+                std::sort(elems.begin(), elems.end(),
+                    [](const Value& a, const Value& b) {
+                        if (a.isNumber() && b.isNumber()) return a.asNumber() < b.asNumber();
+                        return a.toString() < b.toString();
+                    });
+            }
+            return Value(sorted);
         }));
 
     // Convert any iterable to an array for for-in loops.

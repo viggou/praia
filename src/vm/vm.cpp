@@ -769,7 +769,7 @@ VM::Result VM::execute(int baseFrameCount_) {
             }
             if (obj.isArray()) {
                 try {
-                    push(getArrayMethod(obj.asArray(), name, CURRENT_LINE(), nullptr));
+                    push(getArrayMethod(obj.asArray(), name, CURRENT_LINE(), nullptr, this));
                 } catch (const RuntimeError& err) {
                     if (tryHandleError(Value(std::string(err.what())))) break;
                     runtimeError(err.what(), CURRENT_LINE());
