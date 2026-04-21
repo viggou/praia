@@ -1085,21 +1085,68 @@ VM::Result VM::execute(int baseFrameCount_) {
 
             // All async calls run in true background threads.
             // Native functions call fn(args) directly.
-            // VM closures spawn a fresh VM with copied globals.
+            // VM closures spawn a fresh VM with deep-copied globals.
             auto* native = dynamic_cast<NativeFunction*>(callable.get());
             auto* vmcc = dynamic_cast<VMClosureCallable*>(callable.get());
 
             std::shared_future<Value> sharedFuture;
             if (vmcc && vmcc->vm) {
-                // Spawn a fresh VM in a background thread
+                // Deep-copy globals so the async VM doesn't share mutable state.
+                // PraiaMap and PraiaArray are copied recursively.
+                // NativeFunction/Callable shared_ptrs are safe (stateless).
+                std::function<Value(const Value&)> deepCopy;
+                deepCopy = [&deepCopy](const Value& v) -> Value {
+                    if (v.isMap()) {
+                        auto copy = std::make_shared<PraiaMap>();
+                        for (auto& [k, val] : v.asMap()->entries)
+                            copy->entries[k] = deepCopy(val);
+                        return Value(copy);
+                    }
+                    if (v.isArray()) {
+                        auto copy = std::make_shared<PraiaArray>();
+                        for (auto& el : v.asArray()->elements)
+                            copy->elements.push_back(deepCopy(el));
+                        return Value(copy);
+                    }
+                    return v; // primitives, strings, callables (safe to share)
+                };
+
+                std::unordered_map<std::string, Value> globalsCopy;
+                for (auto& [k, v] : globals)
+                    globalsCopy[k] = deepCopy(v);
+
                 auto fn = vmcc->closure->function;
-                auto globalsCopy = globals; // snapshot globals
                 int arity = fn->arity;
 
+                // Snapshot upvalues: copy current values so the async task
+                // doesn't reference the main VM's stack
+                std::vector<Value> upvalueSnapshot;
+                for (int i = 0; i < vmcc->closure->upvalueCount; i++) {
+                    auto* uv = vmcc->closure->upvalues[i];
+                    upvalueSnapshot.push_back(uv ? *uv->location : Value());
+                }
+
                 sharedFuture = std::async(std::launch::async,
-                    [fn, args, globalsCopy, arity]() -> Value {
+                    [fn, args, globalsCopy = std::move(globalsCopy), arity,
+                     upvalueSnapshot = std::move(upvalueSnapshot)]() -> Value {
                         VM taskVm;
-                        taskVm.globals = globalsCopy;
+                        taskVm.globals = std::move(const_cast<std::unordered_map<std::string, Value>&>(globalsCopy));
+
+                        // Rewire any VMClosureCallable in globals to point to taskVm
+                        for (auto& [k, v] : taskVm.globals) {
+                            if (v.isCallable()) {
+                                auto* vc = dynamic_cast<VMClosureCallable*>(v.asCallable().get());
+                                if (vc) vc->vm = &taskVm;
+                            }
+                            if (v.isMap()) {
+                                for (auto& [mk, mv] : v.asMap()->entries) {
+                                    if (mv.isCallable()) {
+                                        auto* vc = dynamic_cast<VMClosureCallable*>(mv.asCallable().get());
+                                        if (vc) vc->vm = &taskVm;
+                                    }
+                                }
+                            }
+                        }
 
                         // Pad args to match arity
                         std::vector<Value> paddedArgs = args;
@@ -1108,6 +1155,15 @@ VM::Result VM::execute(int baseFrameCount_) {
 
                         auto* closure = new ObjClosure(fn);
                         taskVm.allClosures.push_back(closure);
+
+                        // Restore upvalues as closed (self-contained) values
+                        for (int i = 0; i < closure->upvalueCount && i < static_cast<int>(upvalueSnapshot.size()); i++) {
+                            auto* uv = new ObjUpvalue(nullptr);
+                            uv->closed = upvalueSnapshot[i];
+                            uv->location = &uv->closed;
+                            closure->upvalues[i] = uv;
+                            taskVm.allUpvalues.push_back(uv);
+                        }
 
                         auto wrapper = std::make_shared<VMClosureCallable>(closure);
                         wrapper->vm = &taskVm;
