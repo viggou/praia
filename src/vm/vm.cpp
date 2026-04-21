@@ -1183,48 +1183,54 @@ VM::Result VM::execute(int baseFrameCount_) {
             for (int i = argc - 1; i >= 0; i--) args[i] = pop();
             pop(); // callee
 
-            // All async calls run in true background threads.
-            // Native functions call fn(args) directly.
-            // VM closures spawn a fresh VM with deep-copied globals.
+            // Deep-copy heap-allocated values so the async task doesn't share
+            // the caller's mutable state. Handles PraiaMap, PraiaArray,
+            // PraiaInstance (clones fields), and VMClosureCallable (clones
+            // wrapper to prevent dangling vm pointers). NativeFunction and
+            // PraiaFuture are safe to share. Primitives/strings copy by value.
+            std::function<Value(const Value&)> deepCopy;
+            deepCopy = [&deepCopy](const Value& v) -> Value {
+                if (v.isCallable()) {
+                    auto* vmcc = dynamic_cast<VMClosureCallable*>(v.asCallable().get());
+                    if (vmcc) {
+                        auto clone = std::make_shared<VMClosureCallable>(vmcc->closure);
+                        clone->ownedPrototype = vmcc->ownedPrototype;
+                        clone->vm = nullptr; // rewire sets this to &taskVm
+                        return Value(std::static_pointer_cast<Callable>(clone));
+                    }
+                    return v; // NativeFunction etc — safe to share
+                }
+                if (v.isMap()) {
+                    auto copy = std::make_shared<PraiaMap>();
+                    for (auto& [k, val] : v.asMap()->entries)
+                        copy->entries[k] = deepCopy(val);
+                    return Value(copy);
+                }
+                if (v.isArray()) {
+                    auto copy = std::make_shared<PraiaArray>();
+                    for (auto& el : v.asArray()->elements)
+                        copy->elements.push_back(deepCopy(el));
+                    return Value(copy);
+                }
+                if (v.isInstance()) {
+                    auto copy = std::make_shared<PraiaInstance>();
+                    copy->klass = v.asInstance()->klass; // share class (immutable)
+                    for (auto& [k, fv] : v.asInstance()->fields)
+                        copy->fields[k] = deepCopy(fv);
+                    return Value(copy);
+                }
+                return v; // primitives, strings, futures
+            };
+
+            // Deep-copy args so async task can't mutate caller's objects
+            for (auto& arg : args)
+                arg = deepCopy(arg);
+
             auto* native = dynamic_cast<NativeFunction*>(callable.get());
             auto* vmcc = dynamic_cast<VMClosureCallable*>(callable.get());
 
             std::shared_future<Value> sharedFuture;
             if (vmcc && vmcc->vm) {
-                // Deep-copy globals so the async VM doesn't share mutable state.
-                // PraiaMap/PraiaArray are copied recursively.
-                // VMClosureCallable wrappers are CLONED (new shared_ptr, same
-                // ObjClosure) so the task's rewire step doesn't mutate the
-                // main VM's callables — preventing a dangling-pointer crash
-                // when the task VM is destroyed.
-                // NativeFunction shared_ptrs are safe to share (no vm pointer).
-                std::function<Value(const Value&)> deepCopy;
-                deepCopy = [&deepCopy](const Value& v) -> Value {
-                    if (v.isCallable()) {
-                        auto* vmcc = dynamic_cast<VMClosureCallable*>(v.asCallable().get());
-                        if (vmcc) {
-                            auto clone = std::make_shared<VMClosureCallable>(vmcc->closure);
-                            clone->ownedPrototype = vmcc->ownedPrototype;
-                            clone->vm = nullptr; // rewire sets this to &taskVm
-                            return Value(std::static_pointer_cast<Callable>(clone));
-                        }
-                        return v; // NativeFunction etc — safe to share
-                    }
-                    if (v.isMap()) {
-                        auto copy = std::make_shared<PraiaMap>();
-                        for (auto& [k, val] : v.asMap()->entries)
-                            copy->entries[k] = deepCopy(val);
-                        return Value(copy);
-                    }
-                    if (v.isArray()) {
-                        auto copy = std::make_shared<PraiaArray>();
-                        for (auto& el : v.asArray()->elements)
-                            copy->elements.push_back(deepCopy(el));
-                        return Value(copy);
-                    }
-                    return v; // primitives, strings
-                };
-
                 std::unordered_map<std::string, Value> globalsCopy;
                 for (auto& [k, v] : globals)
                     globalsCopy[k] = deepCopy(v);
@@ -1232,12 +1238,12 @@ VM::Result VM::execute(int baseFrameCount_) {
                 auto fn = vmcc->closure->function;
                 int arity = fn->arity;
 
-                // Snapshot upvalues: copy current values so the async task
-                // doesn't reference the main VM's stack
+                // Snapshot upvalues and deep-copy so captured arrays/maps/instances
+                // are isolated from the caller
                 std::vector<Value> upvalueSnapshot;
                 for (int i = 0; i < vmcc->closure->upvalueCount; i++) {
                     auto* uv = vmcc->closure->upvalues[i];
-                    upvalueSnapshot.push_back(uv ? *uv->location : Value());
+                    upvalueSnapshot.push_back(uv ? deepCopy(*uv->location) : Value());
                 }
 
                 sharedFuture = std::async(std::launch::async,
@@ -1261,6 +1267,9 @@ VM::Result VM::execute(int baseFrameCount_) {
                             }
                             if (v.isArray()) {
                                 for (auto& el : v.asArray()->elements) rewire(el);
+                            }
+                            if (v.isInstance()) {
+                                for (auto& [k, fv] : v.asInstance()->fields) rewire(fv);
                             }
                         };
                         for (auto& [k, v] : taskVm.globals) rewire(v);
