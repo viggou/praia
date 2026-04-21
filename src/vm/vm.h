@@ -34,6 +34,7 @@ struct ObjClosure {
 // Wrapper to store ObjClosure as a Callable in Value
 struct VMClosureCallable : Callable {
     ObjClosure* closure;
+    std::shared_ptr<ObjClosure> ownedPrototype; // keeps compiler prototypes alive (constant pool entries)
     class VM* vm = nullptr; // set when closure is created during VM execution
     VMClosureCallable(ObjClosure* c) : closure(c) {}
     Value call(Interpreter&, const std::vector<Value>& args) override;
@@ -83,9 +84,13 @@ public:
     void setCurrentFile(const std::string& path) { currentFile = path; }
     void setArgs(const std::vector<std::string>& args);
 
-private:
+    // Thread-local current VM — used by native functions to find the active VM
+    static VM* current() { return currentVM_; }
+
 public:
     Result execute(int baseFrameCount = 0);
+
+    static thread_local VM* currentVM_; // public for VMScope RAII guard
 private:
 
     // Stack (heap-allocated so VM can be used in threads with small stacks)
@@ -109,6 +114,7 @@ private:
 
     // Globals
     std::unordered_map<std::string, Value> globals;
+    std::set<std::string> builtinNames_; // names registered via defineNative (for grain isolation)
 
     // Open upvalues (linked list, ordered by stack slot desc)
     ObjUpvalue* openUpvalues = nullptr;

@@ -11,12 +11,20 @@ void Compiler::emit(uint8_t byte, int line) { currentChunk().write(byte, line); 
 void Compiler::emitU16(uint16_t val, int line) { currentChunk().writeU16(val, line); }
 
 void Compiler::emitConstant(Value value, int line) {
+    if (currentChunk().constants.size() >= 65535) {
+        error("Too many constants in one chunk (max 65535)", line);
+        return;
+    }
     uint16_t idx = currentChunk().addConstant(std::move(value));
     emit(OpCode::OP_CONSTANT, line);
     emitU16(idx, line);
 }
 
 uint16_t Compiler::identifierConstant(const std::string& name) {
+    if (currentChunk().constants.size() >= 65535) {
+        error("Too many constants in one chunk (max 65535)", 0);
+        return 0;
+    }
     return currentChunk().addConstant(Value(name));
 }
 
@@ -512,11 +520,11 @@ void Compiler::compileFuncStmt(const FuncStmt* stmt) {
     current = funcState.enclosing;
     fn->upvalueCount = static_cast<int>(funcState.upvalues.size());
 
-    // Create a prototype closure to store in the constant pool
-    auto* proto = new ObjClosure(fn);
-    // We need the VM to own this... store via a VMClosureCallable
-    auto wrapper = std::make_shared<VMClosureCallable>(proto);
-    // Note: this proto leaks unless the VM tracks it. For now, acceptable.
+    // Create a prototype closure to store in the constant pool.
+    // The shared_ptr keeps it alive as long as the constant pool entry exists.
+    auto proto = std::make_shared<ObjClosure>(fn);
+    auto wrapper = std::make_shared<VMClosureCallable>(proto.get());
+    wrapper->ownedPrototype = proto;
 
     uint16_t fnIdx = currentChunk().addConstant(
         Value(std::static_pointer_cast<Callable>(wrapper)));
@@ -604,7 +612,7 @@ void Compiler::compileClassStmt(const ClassStmt* stmt) {
             int upval = resolveUpvalue(current, stmt->superclass);
             if (upval != -1) {
                 emit(OpCode::OP_GET_UPVALUE, stmt->line);
-                emit(static_cast<uint8_t>(upval), stmt->line);
+                emitU16(static_cast<uint16_t>(upval), stmt->line);
             } else {
                 emit(OpCode::OP_GET_GLOBAL, stmt->line);
                 emitU16(identifierConstant(stmt->superclass), stmt->line);
@@ -689,8 +697,9 @@ void Compiler::compileClassStmt(const ClassStmt* stmt) {
         fn->upvalueCount = static_cast<int>(methodState.upvalues.size());
 
         // Create closure for the method
-        auto* proto = new ObjClosure(fn);
-        auto wrapper = std::make_shared<VMClosureCallable>(proto);
+        auto proto = std::make_shared<ObjClosure>(fn);
+        auto wrapper = std::make_shared<VMClosureCallable>(proto.get());
+        wrapper->ownedPrototype = proto;
         uint16_t fnIdx = currentChunk().addConstant(
             Value(std::static_pointer_cast<Callable>(wrapper)));
 

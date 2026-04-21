@@ -13,6 +13,16 @@
 
 namespace fs = std::filesystem;
 
+// Thread-local pointer to the currently executing VM
+thread_local VM* VM::currentVM_ = nullptr;
+
+// RAII guard to set/restore currentVM_ across execute() calls
+struct VMScope {
+    VM* prev;
+    VMScope(VM* vm) : prev(VM::currentVM_) { VM::currentVM_ = vm; }
+    ~VMScope() { VM::currentVM_ = prev; }
+};
+
 // VMClosureCallable::call — allows native functions (filter, map, etc.)
 // to call VM closures through the tree-walker's Callable interface
 Value VMClosureCallable::call(Interpreter&, const std::vector<Value>& args) {
@@ -42,6 +52,7 @@ VM::~VM() {
 
 void VM::defineNative(const std::string& name, Value value) {
     globals[name] = std::move(value);
+    builtinNames_.insert(name);
 }
 
 void VM::setArgs(const std::vector<std::string>& args) {
@@ -54,14 +65,30 @@ void VM::setArgs(const std::vector<std::string>& args) {
 
 void VM::push(Value value) {
     if (stackTop >= STACK_MAX) {
-        std::cerr << "Stack overflow" << std::endl;
-        return;
+        std::cerr << "Fatal: Stack overflow (depth " << stackTop << ")" << std::endl;
+        std::cerr << formatStackTrace();
+        resetStack();
+        throw RuntimeError("Stack overflow", 0);
     }
     stack[stackTop++] = std::move(value);
 }
 
-Value VM::pop() { return std::move(stack[--stackTop]); }
-Value& VM::peek(int distance) { return stack[stackTop - 1 - distance]; }
+Value VM::pop() {
+    if (stackTop <= 0) {
+        std::cerr << "Internal error: stack underflow" << std::endl;
+        return Value();
+    }
+    return std::move(stack[--stackTop]);
+}
+
+Value& VM::peek(int distance) {
+    int idx = stackTop - 1 - distance;
+    if (idx < 0) {
+        std::cerr << "Internal error: stack underflow (peek)" << std::endl;
+        idx = 0;
+    }
+    return stack[idx];
+}
 void VM::resetStack() { stackTop = 0; frameCount = 0; }
 
 uint8_t VM::readByte() { return *frames[frameCount - 1].ip++; }
@@ -354,10 +381,14 @@ Value VM::loadGrain(const std::string& importPath, int line) {
     auto script = compiler.compile(program);
     if (!script) { runtimeError("Compile error in grain: " + importPath, line); return Value(); }
 
-    // Execute in a fresh VM with shared globals for builtins
+    // Execute in a fresh VM with only builtins (not user globals)
     VM grainVm;
-    // Copy builtins (but not user globals)
-    grainVm.globals = globals; // copy all globals (includes builtins)
+    for (auto& name : builtinNames_) {
+        auto it = globals.find(name);
+        if (it != globals.end())
+            grainVm.globals[name] = it->second;
+    }
+    grainVm.builtinNames_ = builtinNames_;
     grainVm.currentFile = resolved;
 
     auto* grainClosure = new ObjClosure(script);
@@ -401,20 +432,27 @@ Value VM::loadGrain(const std::string& importPath, int line) {
         }
     }
 
-    // Fix up VM pointers on all grain closures — they were created in grainVm
-    // which is about to be destroyed. Walk the grain's stack, globals, and
-    // exports to repoint every VMClosureCallable to the parent VM.
-    auto fixupValue = [this, &grainVm](Value& v) {
+    // Recursively fix up VM pointers on all grain closures — they were created
+    // in grainVm which is about to be destroyed.
+    std::function<void(Value&)> fixupValue;
+    fixupValue = [this, &grainVm, &fixupValue](Value& v) {
         if (v.isCallable()) {
             auto* vmcc = dynamic_cast<VMClosureCallable*>(v.asCallable().get());
             if (vmcc && (vmcc->vm == &grainVm || vmcc->vm == nullptr))
                 vmcc->vm = this;
         }
+        if (v.isMap()) {
+            for (auto& [k, mv] : v.asMap()->entries) fixupValue(mv);
+        }
+        if (v.isArray()) {
+            for (auto& el : v.asArray()->elements) fixupValue(el);
+        }
+        if (v.isInstance()) {
+            for (auto& [k, fv] : v.asInstance()->fields) fixupValue(fv);
+        }
     };
     for (auto& [k, v] : globals) fixupValue(v);
-    if (exports.isMap()) {
-        for (auto& [k, v] : exports.asMap()->entries) fixupValue(v);
-    }
+    fixupValue(exports);
 
     grainCache[resolved] = exports;
     return exports;
@@ -439,9 +477,10 @@ VM::Result VM::run(std::shared_ptr<CompiledFunction> script) {
 }
 
 VM::Result VM::runRepl(std::shared_ptr<CompiledFunction> script) {
-    // Reset stack/frames for this line but keep globals
+    // Reset stack/frames/handlers for this line but keep globals
     stackTop = 0;
     frameCount = 0;
+    exceptionHandlers.clear();
 
     auto* scriptClosure = new ObjClosure(script);
     allClosures.push_back(scriptClosure);
@@ -461,6 +500,8 @@ VM::Result VM::runRepl(std::shared_ptr<CompiledFunction> script) {
 }
 
 VM::Result VM::execute(int baseFrameCount_) {
+    VMScope vmScope(this); // set thread-local current VM, restores on return
+
     #define FRAME (frames[frameCount - 1])
     #define READ_BYTE() (*FRAME.ip++)
     #define READ_U16() (FRAME.ip += 2, static_cast<uint16_t>((FRAME.ip[-2] << 8) | FRAME.ip[-1]))
@@ -473,6 +514,7 @@ VM::Result VM::execute(int baseFrameCount_) {
         runtimeError(_msg, _line); return Result::RUNTIME_ERROR; \
     }
 
+    try {
     for (;;) {
         uint8_t instruction = READ_BYTE();
 
@@ -483,7 +525,12 @@ VM::Result VM::execute(int baseFrameCount_) {
         case OpCode::OP_TRUE: push(Value(true)); break;
         case OpCode::OP_FALSE: push(Value(false)); break;
         case OpCode::OP_POP: pop(); break;
-        case OpCode::OP_POPN: { uint8_t n = READ_BYTE(); stackTop -= n; break; }
+        case OpCode::OP_POPN: {
+            uint8_t n = READ_BYTE();
+            if (n > stackTop) n = static_cast<uint8_t>(stackTop);
+            stackTop -= n;
+            break;
+        }
 
         // ── Arithmetic ──
         case OpCode::OP_ADD: {
@@ -544,13 +591,52 @@ VM::Result VM::execute(int baseFrameCount_) {
             break;
         }
 
-        // ── Bitwise ──
-        case OpCode::OP_BIT_AND: { Value b=pop(),a=pop(); if(!a.isNumber()||!b.isNumber()){RUNTIME_ERR("Operands of '&' must be numbers");} push(Value(static_cast<int64_t>(a.asNumber())&static_cast<int64_t>(b.asNumber()))); break; }
-        case OpCode::OP_BIT_OR:  { Value b=pop(),a=pop(); if(!a.isNumber()||!b.isNumber()){RUNTIME_ERR("Operands of '|' must be numbers");} push(Value(static_cast<int64_t>(a.asNumber())|static_cast<int64_t>(b.asNumber()))); break; }
-        case OpCode::OP_BIT_XOR: { Value b=pop(),a=pop(); if(!a.isNumber()||!b.isNumber()){RUNTIME_ERR("Operands of '^' must be numbers");} push(Value(static_cast<int64_t>(a.asNumber())^static_cast<int64_t>(b.asNumber()))); break; }
-        case OpCode::OP_BIT_NOT: { if(!peek().isNumber()){RUNTIME_ERR("Operand of '~' must be a number");} push(Value(~static_cast<int64_t>(pop().asNumber()))); break; }
-        case OpCode::OP_SHL: { Value b=pop(),a=pop(); if(!a.isNumber()||!b.isNumber()){RUNTIME_ERR("Operands of '<<' must be numbers");} push(Value(static_cast<int64_t>(a.asNumber())<<static_cast<int64_t>(b.asNumber()))); break; }
-        case OpCode::OP_SHR: { Value b=pop(),a=pop(); if(!a.isNumber()||!b.isNumber()){RUNTIME_ERR("Operands of '>>' must be numbers");} push(Value(static_cast<int64_t>(a.asNumber())>>static_cast<int64_t>(b.asNumber()))); break; }
+        // ── Bitwise (use asInt() directly for int operands to preserve precision) ──
+        #define BITWISE_INTS(a, b) \
+            (a.isInt() && b.isInt()) ? a.asInt() : static_cast<int64_t>(a.asNumber()), \
+            (a.isInt() && b.isInt()) ? b.asInt() : static_cast<int64_t>(b.asNumber())
+        case OpCode::OP_BIT_AND: {
+            Value b=pop(),a=pop();
+            if(!a.isNumber()||!b.isNumber()){RUNTIME_ERR("Operands of '&' must be numbers");}
+            int64_t ai = a.isInt() ? a.asInt() : static_cast<int64_t>(a.asNumber());
+            int64_t bi = b.isInt() ? b.asInt() : static_cast<int64_t>(b.asNumber());
+            push(Value(ai & bi)); break;
+        }
+        case OpCode::OP_BIT_OR: {
+            Value b=pop(),a=pop();
+            if(!a.isNumber()||!b.isNumber()){RUNTIME_ERR("Operands of '|' must be numbers");}
+            int64_t ai = a.isInt() ? a.asInt() : static_cast<int64_t>(a.asNumber());
+            int64_t bi = b.isInt() ? b.asInt() : static_cast<int64_t>(b.asNumber());
+            push(Value(ai | bi)); break;
+        }
+        case OpCode::OP_BIT_XOR: {
+            Value b=pop(),a=pop();
+            if(!a.isNumber()||!b.isNumber()){RUNTIME_ERR("Operands of '^' must be numbers");}
+            int64_t ai = a.isInt() ? a.asInt() : static_cast<int64_t>(a.asNumber());
+            int64_t bi = b.isInt() ? b.asInt() : static_cast<int64_t>(b.asNumber());
+            push(Value(ai ^ bi)); break;
+        }
+        case OpCode::OP_BIT_NOT: {
+            if(!peek().isNumber()){RUNTIME_ERR("Operand of '~' must be a number");}
+            Value v = pop();
+            int64_t vi = v.isInt() ? v.asInt() : static_cast<int64_t>(v.asNumber());
+            push(Value(~vi)); break;
+        }
+        case OpCode::OP_SHL: {
+            Value b=pop(),a=pop();
+            if(!a.isNumber()||!b.isNumber()){RUNTIME_ERR("Operands of '<<' must be numbers");}
+            int64_t ai = a.isInt() ? a.asInt() : static_cast<int64_t>(a.asNumber());
+            int64_t bi = b.isInt() ? b.asInt() : static_cast<int64_t>(b.asNumber());
+            push(Value(ai << bi)); break;
+        }
+        case OpCode::OP_SHR: {
+            Value b=pop(),a=pop();
+            if(!a.isNumber()||!b.isNumber()){RUNTIME_ERR("Operands of '>>' must be numbers");}
+            int64_t ai = a.isInt() ? a.asInt() : static_cast<int64_t>(a.asNumber());
+            int64_t bi = b.isInt() ? b.asInt() : static_cast<int64_t>(b.asNumber());
+            push(Value(ai >> bi)); break;
+        }
+        #undef BITWISE_INTS
 
         // ── Comparison ──
         case OpCode::OP_EQUAL:         { Value b=pop(),a=pop(); push(Value(a==b)); break; }
@@ -690,13 +776,13 @@ VM::Result VM::execute(int baseFrameCount_) {
         }
 
         case OpCode::OP_GET_UPVALUE: {
-            uint8_t slot = READ_BYTE();
+            uint16_t slot = READ_U16();
             push(*FRAME.closure->upvalues[slot]->location);
             break;
         }
 
         case OpCode::OP_SET_UPVALUE: {
-            uint8_t slot = READ_BYTE();
+            uint16_t slot = READ_U16();
             *FRAME.closure->upvalues[slot]->location = peek();
             break;
         }
@@ -1128,25 +1214,27 @@ VM::Result VM::execute(int baseFrameCount_) {
 
                 sharedFuture = std::async(std::launch::async,
                     [fn, args, globalsCopy = std::move(globalsCopy), arity,
-                     upvalueSnapshot = std::move(upvalueSnapshot)]() -> Value {
+                     upvalueSnapshot = std::move(upvalueSnapshot),
+                     builtinNames = builtinNames_]() mutable -> Value {
                         VM taskVm;
-                        taskVm.globals = std::move(const_cast<std::unordered_map<std::string, Value>&>(globalsCopy));
+                        taskVm.globals = std::move(globalsCopy);
+                        taskVm.builtinNames_ = std::move(builtinNames);
 
-                        // Rewire any VMClosureCallable in globals to point to taskVm
-                        for (auto& [k, v] : taskVm.globals) {
+                        // Recursively rewire VMClosureCallable vm pointers to taskVm
+                        std::function<void(Value&)> rewire;
+                        rewire = [&taskVm, &rewire](Value& v) {
                             if (v.isCallable()) {
                                 auto* vc = dynamic_cast<VMClosureCallable*>(v.asCallable().get());
                                 if (vc) vc->vm = &taskVm;
                             }
                             if (v.isMap()) {
-                                for (auto& [mk, mv] : v.asMap()->entries) {
-                                    if (mv.isCallable()) {
-                                        auto* vc = dynamic_cast<VMClosureCallable*>(mv.asCallable().get());
-                                        if (vc) vc->vm = &taskVm;
-                                    }
-                                }
+                                for (auto& [mk, mv] : v.asMap()->entries) rewire(mv);
                             }
-                        }
+                            if (v.isArray()) {
+                                for (auto& el : v.asArray()->elements) rewire(el);
+                            }
+                        };
+                        for (auto& [k, v] : taskVm.globals) rewire(v);
 
                         // Pad args to match arity
                         std::vector<Value> paddedArgs = args;
@@ -1218,6 +1306,12 @@ VM::Result VM::execute(int baseFrameCount_) {
             break;
         }
         }
+    }
+    } catch (const ExitSignal&) {
+        throw; // propagate sys.exit() to main
+    } catch (const RuntimeError& err) {
+        // Fatal error (e.g. stack overflow from push())
+        return Result::RUNTIME_ERROR;
     }
 
     #undef FRAME
