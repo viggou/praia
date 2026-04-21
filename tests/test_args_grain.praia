@@ -1,0 +1,86 @@
+use "testing"
+use "args"
+
+testing.test("parse long flags", lam{ in
+    let cli = args.parse({
+        port: {type: "number", default: 8080},
+        verbose: {type: "bool"}
+    }, ["--port", "3000", "--verbose"])
+    testing.assertEqual(cli.port, 3000, nil)
+    testing.assertEqual(cli.verbose, true, nil)
+})
+
+testing.test("parse short flags", lam{ in
+    let cli = args.parse({
+        port: {type: "number", short: "p", default: 8080},
+        verbose: {type: "bool", short: "v"}
+    }, ["-p", "9090", "-v"])
+    testing.assertEqual(cli.port, 9090, nil)
+    testing.assertEqual(cli.verbose, true, nil)
+})
+
+testing.test("equals syntax", lam{ in
+    let cli = args.parse({
+        port: {type: "number", default: 8080}
+    }, ["--port=4000"])
+    testing.assertEqual(cli.port, 4000, nil)
+})
+
+testing.test("short equals syntax", lam{ in
+    let cli = args.parse({
+        output: {type: "string", short: "o"}
+    }, ["-o=file.txt"])
+    testing.assertEqual(cli.output, "file.txt", nil)
+})
+
+testing.test("combined bool flags", lam{ in
+    let cli = args.parse({
+        verbose: {type: "bool", short: "v"},
+        force: {type: "bool", short: "f"},
+        debug: {type: "bool", short: "d"}
+    }, ["-vfd"])
+    testing.assertEqual(cli.verbose, true, nil)
+    testing.assertEqual(cli.force, true, nil)
+    testing.assertEqual(cli.debug, true, nil)
+})
+
+testing.test("default values", lam{ in
+    let cli = args.parse({
+        port: {type: "number", default: 8080},
+        host: {type: "string", default: "localhost"},
+        verbose: {type: "bool"}
+    }, [])
+    testing.assertEqual(cli.port, 8080, nil)
+    testing.assertEqual(cli.host, "localhost", nil)
+    testing.assertEqual(cli.verbose, false, nil)
+})
+
+testing.test("positional arguments", lam{ in
+    let cli = args.parse({
+        verbose: {type: "bool", short: "v"}
+    }, ["-v", "file1.txt", "file2.txt"])
+    testing.assertEqual(cli.verbose, true, nil)
+    testing.assertEqual(cli.args, ["file1.txt", "file2.txt"], nil)
+})
+
+testing.test("-- stops flag parsing", lam{ in
+    let cli = args.parse({
+        verbose: {type: "bool", short: "v"}
+    }, ["-v", "--", "--not-a-flag", "file"])
+    testing.assertEqual(cli.verbose, true, nil)
+    testing.assertEqual(cli.args, ["--not-a-flag", "file"], nil)
+})
+
+testing.test("unknown flag throws", lam{ in
+    testing.assertThrows(lam{ in
+        args.parse({verbose: {type: "bool"}}, ["--unknown"])
+    }, nil)
+})
+
+testing.test("missing value throws", lam{ in
+    testing.assertThrows(lam{ in
+        args.parse({port: {type: "number"}}, ["--port"])
+    }, nil)
+})
+
+testing.done()

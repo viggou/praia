@@ -1,0 +1,39 @@
+use "testing"
+
+// Test that the built-in grains load correctly
+// (these are single-file grains in the grains/ directory)
+
+testing.test("collections grain loads", lam{ in
+    use "collections"
+    let s = collections.Stack()
+    s.push(1)
+    s.push(2)
+    testing.assertEqual(s.size(), 2, nil)
+    testing.assertEqual(s.pop(), 2, nil)
+    testing.assertEqual(s.peek(), 1, nil)
+
+    let q = collections.Queue()
+    q.enqueue("a")
+    q.enqueue("b")
+    testing.assertEqual(q.dequeue(), "a", nil)
+})
+
+testing.test("math grain loads", lam{ in
+    use "math" as mathGrain
+    testing.assertEqual(mathGrain.square(5), 25, nil)
+    testing.assertEqual(mathGrain.cube(2), 8, nil)
+})
+
+testing.test("strings grain loads", lam{ in
+    use "strings"
+    testing.assert(type(strings) == "map", "strings should be a map")
+})
+
+testing.test("uuid grain loads", lam{ in
+    use "uuid"
+    let id = uuid.v4()
+    testing.assertEqual(len(id), 36, "UUID should be 36 chars")
+    testing.assert(id[8] == "-", "UUID format check")
+})
+
+testing.done()

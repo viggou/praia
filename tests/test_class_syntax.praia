@@ -1,0 +1,64 @@
+use "testing"
+
+testing.test("class requires func before methods", lam{ in
+    // This test verifies the new syntax works
+    class Animal {
+        func init(name) { this.name = name }
+        func speak() { return this.name + " speaks" }
+    }
+    let a = Animal("Rex")
+    testing.assertEqual(a.speak(), "Rex speaks", nil)
+})
+
+testing.test("class with default params", lam{ in
+    class Config {
+        func init(host = "localhost", port = 8080) {
+            this.host = host
+            this.port = port
+        }
+    }
+    let c1 = Config()
+    testing.assertEqual(c1.host, "localhost", nil)
+    testing.assertEqual(c1.port, 8080, nil)
+
+    let c2 = Config("0.0.0.0", 3000)
+    testing.assertEqual(c2.host, "0.0.0.0", nil)
+    testing.assertEqual(c2.port, 3000, nil)
+})
+
+testing.test("inheritance with func syntax", lam{ in
+    class Base {
+        func greet() { return "base" }
+    }
+    class Child extends Base {
+        func greet() { return "child+" + super.greet() }
+    }
+    testing.assertEqual(Child().greet(), "child+base", nil)
+})
+
+testing.test("str() calls toString()", lam{ in
+    class Point {
+        func init(x, y) { this.x = x; this.y = y }
+        func toString() { return "%{this.x},%{this.y}" }
+    }
+    testing.assertEqual(str(Point(3, 4)), "3,4", nil)
+})
+
+testing.test("type() returns int and float", lam{ in
+    testing.assertEqual(type(42), "int", nil)
+    testing.assertEqual(type(3.14), "float", nil)
+    testing.assertEqual(type(0), "int", nil)
+    testing.assertEqual(type(7 / 2), "float", nil)
+})
+
+testing.test("empty string is falsy", lam{ in
+    testing.assert(!"", "empty string should be falsy")
+    testing.assert("x", "non-empty string should be truthy")
+})
+
+testing.test("empty array is falsy", lam{ in
+    testing.assert(![], "empty array should be falsy")
+    testing.assert([0], "non-empty array should be truthy")
+})
+
+testing.done()

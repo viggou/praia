@@ -1,0 +1,35 @@
+use "testing"
+
+testing.test("async native function", lam{ in
+    let f = async sys.exec("echo hello")
+    let r = await f
+    testing.assertEqual(r.stdout, "hello", nil)
+    testing.assertEqual(r.exitCode, 0, nil)
+})
+
+testing.test("futures.all with native", lam{ in
+    let f1 = async sys.exec("echo a")
+    let f2 = async sys.exec("echo b")
+    let f3 = async sys.exec("echo c")
+    let results = futures.all([f1, f2, f3])
+    testing.assertEqual(len(results), 3, nil)
+    testing.assertEqual(results[0].stdout, "a", nil)
+    testing.assertEqual(results[1].stdout, "b", nil)
+    testing.assertEqual(results[2].stdout, "c", nil)
+})
+
+testing.test("future prints as <future>", lam{ in
+    let f = async sys.exec("echo x")
+    testing.assertEqual(str(f), "<future>", nil)
+    await f
+})
+
+testing.test("await precedence", lam{ in
+    let f1 = async sys.exec("echo 3")
+    let f2 = async sys.exec("echo 4")
+    let r1 = await f1
+    let r2 = await f2
+    testing.assertEqual(num(r1.stdout) + num(r2.stdout), 7, nil)
+})
+
+testing.done()

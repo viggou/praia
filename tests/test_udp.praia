@@ -1,0 +1,49 @@
+use "testing"
+
+testing.test("UDP send and receive", lam{ in
+    let server = net.udpBind(19876)
+    let client = net.udp()
+    net.setTimeout(server, 2000)
+    net.sendTo(client, "127.0.0.1", 19876, "hello udp")
+    let msg = net.recvFrom(server)
+    testing.assertEqual(msg.data, "hello udp", nil)
+    testing.assertEqual(msg.host, "127.0.0.1", nil)
+    testing.assert(msg.port > 0, "sender port should be positive")
+    net.close(server)
+    net.close(client)
+})
+
+testing.test("UDP multiple datagrams", lam{ in
+    let server = net.udpBind(19877)
+    let client = net.udp()
+    net.setTimeout(server, 2000)
+    net.sendTo(client, "127.0.0.1", 19877, "msg1")
+    net.sendTo(client, "127.0.0.1", 19877, "msg2")
+    let r1 = net.recvFrom(server)
+    let r2 = net.recvFrom(server)
+    testing.assertEqual(r1.data, "msg1", nil)
+    testing.assertEqual(r2.data, "msg2", nil)
+    net.close(server)
+    net.close(client)
+})
+
+testing.test("DNS resolve localhost", lam{ in
+    let ips = net.resolve("localhost")
+    testing.assert(len(ips) > 0, "should resolve at least one address")
+    testing.assert(ips.contains("127.0.0.1"), "should contain 127.0.0.1")
+})
+
+testing.test("net.setTimeout", lam{ in
+    let sock = net.udpBind(19878)
+    net.setTimeout(sock, 100)
+    let threw = false
+    try {
+        net.recvFrom(sock)
+    } catch (e) {
+        threw = true
+    }
+    testing.assert(threw, "recv should timeout and throw")
+    net.close(sock)
+})
+
+testing.done()
