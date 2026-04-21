@@ -195,8 +195,10 @@ struct ForStmt : Stmt {
 };
 
 // for (varName in iterable) { body }
+// for ({key, value} in iterable) { body }  — map destructuring
 struct ForInStmt : Stmt {
-    std::string varName;
+    std::string varName;                    // simple: "entry"
+    std::vector<std::string> destructureKeys; // destructuring: ["key", "value"]
     ExprPtr iterable;
     StmtPtr body;
 };

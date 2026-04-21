@@ -33,7 +33,7 @@ Value VMClosureCallable::call(Interpreter&, const std::vector<Value>& args) {
     return vm->pop();
 }
 
-VM::VM() {}
+VM::VM() : stack(std::make_unique<Value[]>(STACK_MAX)) {}
 
 VM::~VM() {
     for (auto* c : allClosures) delete c;
@@ -1083,27 +1083,56 @@ VM::Result VM::execute(int baseFrameCount_) {
             for (int i = argc - 1; i >= 0; i--) args[i] = pop();
             pop(); // callee
 
-            // Native functions run truly in parallel in a background thread.
-            // VM closures run synchronously (can't share the VM across threads)
-            // and are wrapped in an already-resolved future.
+            // All async calls run in true background threads.
+            // Native functions call fn(args) directly.
+            // VM closures spawn a fresh VM with copied globals.
             auto* native = dynamic_cast<NativeFunction*>(callable.get());
             auto* vmcc = dynamic_cast<VMClosureCallable*>(callable.get());
 
             std::shared_future<Value> sharedFuture;
             if (vmcc && vmcc->vm) {
-                // Call VM closure synchronously via re-entrant execute
-                Interpreter dummy;
-                Value result = vmcc->call(dummy, args);
-                std::promise<Value> p;
-                p.set_value(std::move(result));
-                sharedFuture = p.get_future().share();
+                // Spawn a fresh VM in a background thread
+                auto fn = vmcc->closure->function;
+                auto globalsCopy = globals; // snapshot globals
+                int arity = fn->arity;
+
+                sharedFuture = std::async(std::launch::async,
+                    [fn, args, globalsCopy, arity]() -> Value {
+                        VM taskVm;
+                        taskVm.globals = globalsCopy;
+
+                        // Pad args to match arity
+                        std::vector<Value> paddedArgs = args;
+                        while (static_cast<int>(paddedArgs.size()) < arity)
+                            paddedArgs.push_back(Value());
+
+                        auto* closure = new ObjClosure(fn);
+                        taskVm.allClosures.push_back(closure);
+
+                        auto wrapper = std::make_shared<VMClosureCallable>(closure);
+                        wrapper->vm = &taskVm;
+                        taskVm.push(Value(std::static_pointer_cast<Callable>(wrapper)));
+                        for (auto& arg : paddedArgs) taskVm.push(arg);
+
+                        taskVm.frames[0].closure = closure;
+                        taskVm.frames[0].function = fn;
+                        taskVm.frames[0].ip = fn->chunk.code.data();
+                        taskVm.frames[0].baseSlot = 0;
+                        taskVm.frames[0].definingClass = nullptr;
+                        taskVm.frameCount = 1;
+
+                        auto result = taskVm.execute();
+                        if (result == Result::OK && taskVm.stackTop > 0)
+                            return taskVm.pop();
+                        return Value();
+                    }).share();
             } else if (native) {
                 sharedFuture = std::async(std::launch::async,
                     [native, args]() -> Value {
                         return native->fn(args);
                     }).share();
             } else {
-                // Other callable types (bound methods, etc.)
+                // Bound methods, etc. — run synchronously
                 Interpreter dummy;
                 Value result = callable->call(dummy, args);
                 std::promise<Value> p;

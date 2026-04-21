@@ -59,7 +59,7 @@ void vmRegisterNatives(VM& vm) {
 
     std::vector<std::string> globalNames = {
         "print", "len", "push", "pop", "type", "str", "num", "fromCharCode",
-        "Lock", "sort", "filter", "map", "each", "keys", "values",
+        "Lock", "Channel", "futures", "sort", "filter", "map", "each", "keys", "values",
         "sys", "http", "json", "yaml", "base64", "path", "url", "net",
         "bytes", "crypto", "random", "time", "math",
 #ifdef HAVE_SQLITE

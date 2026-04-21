@@ -341,25 +341,38 @@ void Interpreter::execute(const Stmt* stmt) {
     } else if (auto* s = dynamic_cast<const ForInStmt*>(stmt)) {
         Value iterable = evaluate(s->iterable.get());
         auto* bodyBlock = static_cast<const BlockStmt*>(s->body.get());
+        bool hasDestructure = !s->destructureKeys.empty();
+
+        // Helper: define loop variables in the iteration env
+        auto defineLoopVar = [&](std::shared_ptr<Environment> iterEnv, const Value& elem) {
+            if (hasDestructure && elem.isMap()) {
+                auto& entries = elem.asMap()->entries;
+                for (auto& dk : s->destructureKeys) {
+                    auto it = entries.find(dk);
+                    iterEnv->define(dk, it != entries.end() ? it->second : Value());
+                }
+            } else {
+                iterEnv->define(s->varName, elem);
+            }
+        };
 
         if (iterable.isArray()) {
             try {
                 for (const auto& elem : iterable.asArray()->elements) {
                     auto iterEnv = std::make_shared<Environment>(env);
-                    iterEnv->define(s->varName, elem);
+                    defineLoopVar(iterEnv, elem);
                     try { executeBlock(bodyBlock, iterEnv); }
                     catch (const ContinueSignal&) {}
                 }
             } catch (const BreakSignal&) {}
         } else if (iterable.isMap()) {
-            // Iterating a map yields {key, value} maps
             try {
                 for (auto& [k, v] : iterable.asMap()->entries) {
                     auto entry = std::make_shared<PraiaMap>();
                     entry->entries["key"] = Value(k);
                     entry->entries["value"] = v;
                     auto iterEnv = std::make_shared<Environment>(env);
-                    iterEnv->define(s->varName, Value(entry));
+                    defineLoopVar(iterEnv, Value(entry));
                     try { executeBlock(bodyBlock, iterEnv); }
                     catch (const ContinueSignal&) {}
                 }
@@ -368,7 +381,7 @@ void Interpreter::execute(const Stmt* stmt) {
             try {
                 for (size_t i = 0; i < iterable.asString().size(); i++) {
                     auto iterEnv = std::make_shared<Environment>(env);
-                    iterEnv->define(s->varName, Value(std::string(1, iterable.asString()[i])));
+                    defineLoopVar(iterEnv, Value(std::string(1, iterable.asString()[i])));
                     try { executeBlock(bodyBlock, iterEnv); }
                     catch (const ContinueSignal&) {}
                 }

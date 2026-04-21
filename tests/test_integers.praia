@@ -2,7 +2,7 @@ use "testing"
 
 testing.test("integer type", lam{ in
     testing.assertEqual(type(42), "int", nil)
-    testing.assertEqual(type(3.14), "number", nil)
+    testing.assertEqual(type(3.14), "float", nil)
     testing.assertEqual(type(0), "int", nil)
 })
 
@@ -15,7 +15,7 @@ testing.test("large integer arithmetic", lam{ in
 
 testing.test("integer division produces float", lam{ in
     testing.assertEqual(7 / 2, 3.5, nil)
-    testing.assertEqual(type(7 / 2), "number", nil)
+    testing.assertEqual(type(7 / 2), "float", nil)
 })
 
 testing.test("integer modulo stays int", lam{ in

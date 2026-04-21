@@ -416,12 +416,27 @@ void Compiler::compileForInStmt(const ForInStmt* stmt) {
     emit(OpCode::OP_GET_LOCAL, stmt->line);
     emitU16(static_cast<uint16_t>(idxSlot), stmt->line);
     emit(OpCode::OP_INDEX_GET, stmt->line);
-    addLocal(stmt->varName);
+
+    if (!stmt->destructureKeys.empty()) {
+        // Destructuring: for ({key, value} in map)
+        // The element is on the stack. Store it as a temp, then extract each key.
+        addLocal("__entry__");
+        int entrySlot = resolveLocal(current, "__entry__");
+        for (auto& dk : stmt->destructureKeys) {
+            emit(OpCode::OP_GET_LOCAL, stmt->line);
+            emitU16(static_cast<uint16_t>(entrySlot), stmt->line);
+            emitConstant(Value(dk), stmt->line);
+            emit(OpCode::OP_INDEX_GET, stmt->line);
+            addLocal(dk);
+        }
+    } else {
+        addLocal(stmt->varName);
+    }
 
     // Body
     compileStmt(stmt->body.get());
 
-    endScope(stmt->line); // pops loop var
+    endScope(stmt->line); // pops loop vars
 
     // Continue target
     current->loops.back().continueTarget = currentChunk().size();

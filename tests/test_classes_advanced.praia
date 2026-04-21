@@ -2,14 +2,14 @@ use "testing"
 
 testing.test("class with init and methods", lam{ in
     class Point {
-        init(x, y) {
+        func init(x, y) {
             this.x = x
             this.y = y
         }
-        magnitude() {
+        func magnitude() {
             return math.sqrt(this.x * this.x + this.y * this.y)
         }
-        format() {
+        func format() {
             return "(%{this.x}, %{this.y})"
         }
     }
@@ -21,13 +21,13 @@ testing.test("class with init and methods", lam{ in
 
 testing.test("multi-level inheritance with super", lam{ in
     class A {
-        greet() { return "A" }
+        func greet() { return "A" }
     }
     class B extends A {
-        greet() { return "B+" + super.greet() }
+        func greet() { return "B+" + super.greet() }
     }
     class C extends B {
-        greet() { return "C+" + super.greet() }
+        func greet() { return "C+" + super.greet() }
     }
     testing.assertEqual(A().greet(), "A", nil)
     testing.assertEqual(B().greet(), "B+A", nil)
@@ -36,20 +36,19 @@ testing.test("multi-level inheritance with super", lam{ in
 
 testing.test("inherited method with super does not recurse", lam{ in
     class Base {
-        m() { return "base" }
+        func m() { return "base" }
     }
     class Mid extends Base {
-        m() { return "mid+" + super.m() }
+        func m() { return "mid+" + super.m() }
     }
     class Leaf extends Mid {}
-    // Leaf inherits Mid.m(), which calls super.m() -> Base.m()
     testing.assertEqual(Leaf().m(), "mid+base", nil)
 })
 
 testing.test("inherited init", lam{ in
     class Animal {
-        init(name) { this.name = name }
-        speak() { return this.name }
+        func init(name) { this.name = name }
+        func speak() { return this.name }
     }
     class Dog extends Animal {}
     let d = Dog("Rex")
@@ -59,7 +58,7 @@ testing.test("inherited init", lam{ in
 
 testing.test("method default params", lam{ in
     class Calc {
-        add(a, b = 10) { return a + b }
+        func add(a, b = 10) { return a + b }
     }
     let c = Calc()
     testing.assertEqual(c.add(5), 15, nil)
@@ -68,8 +67,8 @@ testing.test("method default params", lam{ in
 
 testing.test("str() calls toString()", lam{ in
     class Person {
-        init(name) { this.name = name }
-        toString() { return this.name }
+        func init(name) { this.name = name }
+        func toString() { return this.name }
     }
     let p = Person("Ada")
     testing.assertEqual(str(p), "Ada", nil)

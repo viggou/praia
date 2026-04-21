@@ -1,32 +1,32 @@
 // Stack — LIFO (last in, first out)
 class Stack {
-    init() {
+    func init() {
         this.items = []
     }
 
-    push(val) {
+    func push(val) {
         this.items.push(val)
     }
 
-    pop() {
+    func pop() {
         ensure (len(this.items) > 0) else { throw "pop() on empty stack" }
         return this.items.pop()
     }
 
-    peek() {
+    func peek() {
         ensure (len(this.items) > 0) else { throw "peek() on empty stack" }
         return this.items[len(this.items) - 1]
     }
 
-    size() {
+    func size() {
         return len(this.items)
     }
 
-    isEmpty() {
+    func isEmpty() {
         return len(this.items) == 0
     }
 
-    toArray() {
+    func toArray() {
         let result = []
         for (item in this.items) {
             result.push(item)
@@ -37,15 +37,15 @@ class Stack {
 
 // Queue — FIFO (first in, first out)
 class Queue {
-    init() {
+    func init() {
         this.items = []
     }
 
-    enqueue(val) {
+    func enqueue(val) {
         this.items.push(val)
     }
 
-    dequeue() {
+    func dequeue() {
         ensure (len(this.items) > 0) else { throw "dequeue() on empty queue" }
         let first = this.items[0]
         let newItems = []
@@ -56,20 +56,20 @@ class Queue {
         return first
     }
 
-    peek() {
+    func peek() {
         ensure (len(this.items) > 0) else { throw "peek() on empty queue" }
         return this.items[0]
     }
 
-    size() {
+    func size() {
         return len(this.items)
     }
 
-    isEmpty() {
+    func isEmpty() {
         return len(this.items) == 0
     }
 
-    toArray() {
+    func toArray() {
         let result = []
         for (item in this.items) {
             result.push(item)
@@ -80,21 +80,21 @@ class Queue {
 
 // Set — unique values only
 class Set {
-    init() {
+    func init() {
         this.items = []
     }
 
-    add(val) {
+    func add(val) {
         if (!this.has(val)) {
             this.items.push(val)
         }
     }
 
-    has(val) {
+    func has(val) {
         return this.items.contains(val)
     }
 
-    remove(val) {
+    func remove(val) {
         let newItems = []
         for (item in this.items) {
             if (item != val) {
@@ -104,11 +104,11 @@ class Set {
         this.items = newItems
     }
 
-    size() {
+    func size() {
         return len(this.items)
     }
 
-    toArray() {
+    func toArray() {
         let result = []
         for (item in this.items) {
             result.push(item)
@@ -116,14 +116,14 @@ class Set {
         return result
     }
 
-    union(other) {
+    func union(other) {
         let result = Set()
         for (item in this.items) { result.add(item) }
         for (item in other.items) { result.add(item) }
         return result
     }
 
-    intersect(other) {
+    func intersect(other) {
         let result = Set()
         for (item in this.items) {
             if (other.has(item)) { result.add(item) }
@@ -131,7 +131,7 @@ class Set {
         return result
     }
 
-    difference(other) {
+    func difference(other) {
         let result = Set()
         for (item in this.items) {
             if (!other.has(item)) { result.add(item) }
