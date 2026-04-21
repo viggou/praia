@@ -24,6 +24,7 @@
 #include <termios.h>
 #include <netinet/in.h>
 #include <netdb.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 namespace fs = std::filesystem;
@@ -345,24 +346,64 @@ Interpreter::Interpreter() {
             return Value();
         }));
 
-    sysMap->entries["exec"] = Value(makeNative("sys.exec", 1,
+    auto execImpl = makeNative("sys.exec", 1,
         [](const std::vector<Value>& args) -> Value {
             if (!args[0].isString())
                 throw RuntimeError("sys.exec() requires a string command", 0);
-            FILE* pipe = popen(args[0].asString().c_str(), "r");
-            if (!pipe)
-                throw RuntimeError("sys.exec(): failed to launch `" +
-                                   args[0].asString() + "`", 0);
-            std::string result;
-            char buf[256];
-            while (fgets(buf, sizeof(buf), pipe))
-                result += buf;
-            pclose(pipe);
-            // Strip trailing newline
-            if (!result.empty() && result.back() == '\n')
-                result.pop_back();
-            return Value(std::move(result));
-        }));
+            const std::string& cmd = args[0].asString();
+
+            int stdoutPipe[2], stderrPipe[2];
+            if (pipe(stdoutPipe) != 0 || pipe(stderrPipe) != 0)
+                throw RuntimeError("sys.exec(): failed to create pipes", 0);
+
+            pid_t pid = fork();
+            if (pid < 0) {
+                close(stdoutPipe[0]); close(stdoutPipe[1]);
+                close(stderrPipe[0]); close(stderrPipe[1]);
+                throw RuntimeError("sys.exec(): fork failed", 0);
+            }
+
+            if (pid == 0) {
+                close(stdoutPipe[0]);
+                close(stderrPipe[0]);
+                dup2(stdoutPipe[1], STDOUT_FILENO);
+                dup2(stderrPipe[1], STDERR_FILENO);
+                close(stdoutPipe[1]);
+                close(stderrPipe[1]);
+                execl("/bin/sh", "sh", "-c", cmd.c_str(), nullptr);
+                _exit(127);
+            }
+
+            close(stdoutPipe[1]);
+            close(stderrPipe[1]);
+
+            auto readAll = [](int fd) -> std::string {
+                std::string result;
+                char buf[4096];
+                ssize_t n;
+                while ((n = read(fd, buf, sizeof(buf))) > 0)
+                    result.append(buf, n);
+                close(fd);
+                if (!result.empty() && result.back() == '\n')
+                    result.pop_back();
+                return result;
+            };
+
+            std::string outStr = readAll(stdoutPipe[0]);
+            std::string errStr = readAll(stderrPipe[0]);
+
+            int status = 0;
+            waitpid(pid, &status, 0);
+            int exitCode = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+
+            auto result = std::make_shared<PraiaMap>();
+            result->entries["stdout"] = Value(std::move(outStr));
+            result->entries["stderr"] = Value(std::move(errStr));
+            result->entries["exitCode"] = Value(static_cast<int64_t>(exitCode));
+            return Value(result);
+        });
+    sysMap->entries["exec"] = Value(std::static_pointer_cast<Callable>(execImpl));
+    sysMap->entries["run"] = Value(std::static_pointer_cast<Callable>(execImpl));
 
     sysMap->entries["exit"] = Value(makeNative("sys.exit", 1,
         [](const std::vector<Value>& args) -> Value {

@@ -13,7 +13,7 @@ let r1 = await f1
 let r2 = await f2
 let r3 = await f3
 
-print(r1)
-print(r2)
-print(r3)
+print(r1.stdout)
+print(r2.stdout)
+print(r3.stdout)
 print("All done!")

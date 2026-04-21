@@ -73,9 +73,21 @@ testing.test("sys.platform", lam{ in
     testing.assert(p == "darwin" || p == "linux" || p == "windows", "platform should be valid")
 })
 
-testing.test("sys.exec", lam{ in
-    let result = sys.exec("echo hello").strip()
-    testing.assertEqual(result, "hello", nil)
+testing.test("sys.exec returns map", lam{ in
+    let r = sys.exec("echo hello")
+    testing.assertEqual(r.stdout, "hello", nil)
+    testing.assertEqual(r.exitCode, 0, nil)
+})
+
+testing.test("sys.exec captures stderr", lam{ in
+    let r = sys.exec("echo err >&2")
+    testing.assertEqual(r.stderr, "err", nil)
+    testing.assertEqual(r.exitCode, 0, nil)
+})
+
+testing.test("sys.exec captures exit code", lam{ in
+    let r = sys.exec("exit 42")
+    testing.assertEqual(r.exitCode, 42, nil)
 })
 
 testing.test("sys.remove nonexistent throws", lam{ in

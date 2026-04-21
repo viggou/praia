@@ -1210,12 +1210,21 @@ sys.move("old.txt", "new.txt")      // move / rename a file or directory
 
 ### Running Commands
 
-```
-let result = sys.exec("ls -la")
-print(result)
+`sys.exec(cmd)` (also available as `sys.run(cmd)`) runs a shell command and returns a map with `stdout`, `stderr`, and `exitCode`:
 
-let date = sys.exec("date")
-print("Today is %{date}")
+```
+let r = sys.exec("ls -la")
+print(r.stdout)
+print(r.exitCode)          // 0
+
+let r2 = sys.exec("date")
+print("Today is %{r2.stdout}")
+
+// Check for errors
+let r3 = sys.exec("cat nonexistent.txt")
+if (r3.exitCode != 0) {
+    print("Error:", r3.stderr)
+}
 ```
 
 ### Command-Line Arguments
@@ -1626,6 +1635,7 @@ let f3 = async sys.exec("sleep 1 && echo done3")
 let r1 = await f1
 let r2 = await f2
 let r3 = await f3
+print(r1.stdout, r2.stdout, r3.stdout)
 // Total time: ~1 second (not 3)
 ```
 
@@ -1794,7 +1804,7 @@ let server = http.createServer(lam{ req in
     if (req.method == "GET" && req.path == "/api/time") {
         return {
             status: 200,
-            body: "{\"time\": \"%{sys.exec("date")}\"}",
+            body: "{\"time\": \"%{sys.exec("date").stdout}\"}",
             headers: {"Content-Type": "application/json"}
         }
     }

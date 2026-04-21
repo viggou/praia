@@ -42,7 +42,7 @@ print("after remove?", sys.exists("/tmp/praia_test.txt"))
 
 // Run a command
 let result = sys.exec("echo 'praia says hi'")
-print("exec:", result)
+print("exec:", result.stdout)
 
 // ── Utility functions ──
 print(type(42), type("hi"), type([1]), type({a: 1}), type(nil))
