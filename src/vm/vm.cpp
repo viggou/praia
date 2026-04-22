@@ -4,6 +4,7 @@
 #include "../interpreter.h"
 #include "../lexer.h"
 #include "../parser.h"
+#include <algorithm>
 #include <cmath>
 #include <filesystem>
 #include <fstream>
@@ -17,9 +18,9 @@ namespace fs = std::filesystem;
 // Thread-local pointer to the currently executing VM
 thread_local VM* VM::currentVM_ = nullptr;
 
-// RAII guard to set/restore currentVM_ and executeFloor_ across execute() calls.
-// executeFloor_ scopes exception handlers: handlers pushed before this execute()
-// call belong to an outer scope and must not be consumed here.
+/* RAII guard to set/restore currentVM_ and executeFloor_ across execute() calls.
+executeFloor_ scopes exception handlers: handlers pushed before this execute()
+call belong to an outer scope and must not be consumed here. */
 struct VMScope {
     VM* vm;
     VM* prevVM;
@@ -36,10 +37,10 @@ struct VMScope {
     }
 };
 
-// VMClosureCallable::call — allows native functions (filter, map, etc.)
-// to call VM closures through the tree-walker's Callable interface.
-// Uses VM::current() so closures returned from async tasks work correctly
-// even after the task VM is destroyed.
+/* VMClosureCallable::call — allows native functions (filter, map, etc.)
+to call VM closures through the tree-walker's Callable interface.
+Uses VM::current() so closures returned from async tasks work correctly
+even after the task VM is destroyed. */
 Value VMClosureCallable::call(Interpreter&, const std::vector<Value>& args) {
     // Prefer VM::current() (always the live VM). Fall back to stored vm only
     // when there's no active execute() (tree-walker compatibility path).
@@ -877,6 +878,46 @@ VM::Result VM::execute(int baseFrameCount_) {
             std::string name = READ_STRING();
             Value obj = pop();
 
+            // Universal methods — work on any value type
+            if (name == "toString") {
+                Value captured = obj;
+                auto fn = std::make_shared<NativeFunction>();
+                fn->funcName = "toString";
+                fn->numArgs = 0;
+                fn->fn = [captured](const std::vector<Value>&) -> Value {
+                    return Value(captured.toString());
+                };
+                push(Value(std::static_pointer_cast<Callable>(fn)));
+                break;
+            }
+            if (name == "toNum") {
+                Value captured = obj;
+                auto fn = std::make_shared<NativeFunction>();
+                fn->funcName = "toNum";
+                fn->numArgs = 0;
+                fn->fn = [captured](const std::vector<Value>&) -> Value {
+                    if (captured.isNumber()) return captured;
+                    if (captured.isBool()) return Value(captured.asBool() ? 1.0 : 0.0);
+                    if (captured.isString()) {
+                        auto& s = captured.asString();
+                        std::string lower = s;
+                        std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+                        if (lower == "true") return Value(1.0);
+                        if (lower == "false") return Value(0.0);
+                        try {
+                            size_t pos = 0;
+                            double d = std::stod(s, &pos);
+                            if (pos == s.size()) return Value(d);
+                        } catch (...) {}
+                        throw RuntimeError("toNum: cannot parse \"" + s + "\" as a number", 0);
+                    }
+                    throw RuntimeError("toNum: cannot convert " + captured.toString() +
+                                       " to a number", 0);
+                };
+                push(Value(std::static_pointer_cast<Callable>(fn)));
+                break;
+            }
+
             if (obj.isInstance()) {
                 auto inst = obj.asInstance();
                 // Fields first
@@ -1197,13 +1238,13 @@ VM::Result VM::execute(int baseFrameCount_) {
             for (int i = argc - 1; i >= 0; i--) args[i] = pop();
             pop(); // callee
 
-            // Deep-copy heap-allocated values so the async task doesn't share
-            // the caller's mutable state. Handles PraiaMap, PraiaArray,
-            // PraiaInstance (clones fields), and VMClosureCallable (clones
-            // wrapper to prevent dangling vm pointers). NativeFunction and
-            // PraiaFuture are safe to share. Primitives/strings copy by value.
-            // Track visited heap objects to handle cycles (e.g. a = []; a.push(a)).
-            // Key: raw pointer of the original object. Value: its already-created copy.
+            /* Deep-copy heap-allocated values so the async task doesn't share
+            the caller's mutable state. Handles PraiaMap, PraiaArray,
+            PraiaInstance (clones fields), and VMClosureCallable (clones
+            wrapper to prevent dangling vm pointers). NativeFunction and
+            PraiaFuture are safe to share. Primitives/strings copy by value.
+            Track visited heap objects to handle cycles (e.g. a = []; a.push(a)).
+            Key: raw pointer of the original object. Value: its already-created copy. */
             std::unordered_map<void*, Value> visited;
 
             std::function<Value(const Value&)> deepCopy;
@@ -1272,9 +1313,9 @@ VM::Result VM::execute(int baseFrameCount_) {
 
             std::shared_future<Value> sharedFuture;
             if (vmcc || bound) {
-                // Both VMClosureCallable and VMBoundMethod use the same
-                // task-VM path. The difference: bound methods push receiver
-                // as slot 0 and set definingClass on the frame.
+                /* Both VMClosureCallable and VMBoundMethod use the same
+                task-VM path. The difference: bound methods push receiver
+                as slot 0 and set definingClass on the frame. */
                 auto fn = bound ? bound->method->function : vmcc->closure->function;
                 auto* closureSrc = bound ? bound->method : vmcc->closure;
                 int arity = fn->arity;

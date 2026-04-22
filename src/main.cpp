@@ -457,10 +457,10 @@ static void vmRepl(bool showTokens, bool showAst) {
     }
 }
 
-// Run a single test file in its own interpreter. Returns 0 if the file
-// called sys.exit(0) (convention: testing.done() when all asserts passed),
-// anything else counts as a failure. Errors are kept on stderr so the user
-// can see them in the run log.
+/* Run a single test file in its own interpreter. Returns 0 if the file
+called sys.exit(0) (convention: testing.done() when all asserts passed),
+anything else counts as a failure. Errors are kept on stderr so the user
+can see them in the run log. */
 static int runTestFile(const std::string& path, bool useVm) {
     std::string source = readFile(path);
     bool hadError = false;
