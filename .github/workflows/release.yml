@@ -15,8 +15,8 @@ jobs:
         include:
           - os: macos-14          # Apple Silicon (M1+)
             target: macos-arm64
-          - os: macos-13          # Intel Mac
-            target: macos-x86_64
+          #- os: macos-13          # Intel Mac
+          #  target: macos-x86_64
           - os: ubuntu-24.04      # Linux x86_64
             target: linux-x86_64
           - os: ubuntu-24.04-arm  # Linux arm64
@@ -26,6 +26,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: true
 
       - name: Install dependencies (macOS)
         if: startsWith(matrix.os, 'macos')
@@ -43,10 +45,15 @@ jobs:
       - name: Run tests
         run: make test
 
-      - name: Package binary
+      - name: Package
         run: |
-          mkdir -p dist
+          mkdir -p dist/lib/praia
           cp praia dist/
+          cp -R grains dist/lib/praia/grains
+          mkdir -p dist/lib/praia/sand
+          cp sand/main.praia dist/lib/praia/sand/
+          cp sand/grain.yaml dist/lib/praia/sand/
+          cp -R sand/grains dist/lib/praia/sand/grains
           cp README.md LICENSE dist/ 2>/dev/null || true
           cd dist && tar czf ../praia-${{ matrix.target }}.tar.gz *
 
@@ -56,41 +63,8 @@ jobs:
           name: praia-${{ matrix.target }}
           path: praia-${{ matrix.target }}.tar.gz
 
-  build-i686:
-    runs-on: ubuntu-24.04
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Build in i386 container
-        uses: docker/setup-qemu-action@v3
-
-      - name: Build and test
-        run: |
-          docker run --rm --platform linux/386 \
-            -v ${{ github.workspace }}:/src -w /src \
-            debian:bookworm bash -c "
-              apt-get update && \
-              apt-get install -y g++ make libssl-dev libreadline-dev libsqlite3-dev && \
-              make clean && make && \
-              make test
-            "
-
-      - name: Package binary
-        run: |
-          mkdir -p dist
-          cp praia dist/
-          cp README.md LICENSE dist/ 2>/dev/null || true
-          cd dist && tar czf ../praia-linux-i686.tar.gz *
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: praia-linux-i686
-          path: praia-linux-i686.tar.gz
-
   release:
-    needs: [build, build-i686]
+    needs: build
     runs-on: ubuntu-latest
 
     steps:

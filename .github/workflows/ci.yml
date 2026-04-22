@@ -16,6 +16,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: true
 
       - name: Install dependencies (macOS)
         if: startsWith(matrix.os, 'macos')
@@ -30,12 +32,8 @@ jobs:
       - name: Build
         run: make
 
-      - name: Test (tree-walker)
+      - name: Test (VM — default)
         run: ./praia test
 
-      - name: Test (VM)
-        run: |
-          for f in tests/test_*.praia; do
-            echo "── $f ──"
-            ./praia --vm "$f"
-          done
+      - name: Test (tree-walker)
+        run: ./praia --tree test
