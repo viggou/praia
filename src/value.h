@@ -195,4 +195,5 @@ struct Callable {
     virtual Value call(Interpreter& interp, const std::vector<Value>& args) = 0;
     virtual int arity() const = 0;   // -1 = variadic
     virtual std::string name() const = 0;
+    virtual const std::vector<std::string>* paramNames() const { return nullptr; }
 };

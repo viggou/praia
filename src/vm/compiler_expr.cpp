@@ -161,8 +161,24 @@ void Compiler::compileCallExpr(const CallExpr* expr) {
     for (auto& arg : expr->args) {
         compileExpr(arg.get());
     }
-    emit(OpCode::OP_CALL, expr->line);
-    emit(static_cast<uint8_t>(expr->args.size()), expr->line);
+
+    // Check if any args are named
+    bool hasNamed = false;
+    for (auto& n : expr->argNames) { if (!n.empty()) { hasNamed = true; break; } }
+
+    if (hasNamed) {
+        // Build names array as a constant
+        auto namesArr = std::make_shared<PraiaArray>();
+        for (auto& n : expr->argNames)
+            namesArr->elements.push_back(Value(n));
+        uint16_t namesIdx = currentChunk().addConstant(Value(namesArr));
+        emit(OpCode::OP_CALL_NAMED, expr->line);
+        emit(static_cast<uint8_t>(expr->args.size()), expr->line);
+        emitU16(namesIdx, expr->line);
+    } else {
+        emit(OpCode::OP_CALL, expr->line);
+        emit(static_cast<uint8_t>(expr->args.size()), expr->line);
+    }
 }
 
 void Compiler::compileTernaryExpr(const TernaryExpr* expr) {
@@ -198,6 +214,7 @@ void Compiler::compileLambdaExpr(const LambdaExpr* expr) {
     auto fn = std::make_shared<CompiledFunction>();
     fn->name = "<lambda>";
     fn->arity = static_cast<int>(expr->params.size());
+    fn->paramNames = expr->params;
 
     CompilerState lamState;
     lamState.enclosing = current;

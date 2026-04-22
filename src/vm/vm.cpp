@@ -793,6 +793,53 @@ VM::Result VM::execute(int baseFrameCount_) {
             break;
         }
 
+        case OpCode::OP_CALL_NAMED: {
+            uint8_t argc = READ_BYTE();
+            uint16_t namesIdx = READ_U16();
+            Value namesVal = FRAME.chunk().constants[namesIdx];
+            auto& namesArr = namesVal.asArray()->elements;
+            Value callee = peek(argc);
+
+            if (!callee.isCallable()) { RUNTIME_ERR("Can only call functions"); }
+            const auto* params = callee.asCallable()->paramNames();
+            if (!params) { RUNTIME_ERR("Named arguments not supported for '" + callee.asCallable()->name() + "'"); }
+
+            int paramCount = static_cast<int>(params->size());
+            // Pop args from stack (in reverse order)
+            std::vector<Value> args(argc);
+            for (int i = argc - 1; i >= 0; i--) args[i] = pop();
+            pop(); // pop callee
+
+            // Reorder named args to match parameter positions
+            std::vector<Value> reordered(paramCount);
+            std::vector<bool> filled(paramCount, false);
+            int positionalIdx = 0;
+            for (int i = 0; i < argc; i++) {
+                std::string name = namesArr[i].asString();
+                if (name.empty()) {
+                    if (positionalIdx >= paramCount) { RUNTIME_ERR(callee.asCallable()->name() + "() too many arguments"); }
+                    reordered[positionalIdx] = args[i];
+                    filled[positionalIdx] = true;
+                    positionalIdx++;
+                } else {
+                    int found = -1;
+                    for (int p = 0; p < paramCount; p++) {
+                        if ((*params)[p] == name) { found = p; break; }
+                    }
+                    if (found == -1) { RUNTIME_ERR(callee.asCallable()->name() + "() unknown parameter '" + name + "'"); }
+                    if (filled[found]) { RUNTIME_ERR(callee.asCallable()->name() + "() parameter '" + name + "' specified twice"); }
+                    reordered[found] = args[i];
+                    filled[found] = true;
+                }
+            }
+
+            // Push callee back + reordered args
+            push(callee);
+            for (auto& a : reordered) push(a);
+            if (!callValue(callee, paramCount, CURRENT_LINE())) return Result::RUNTIME_ERROR;
+            break;
+        }
+
         case OpCode::OP_RETURN: {
             Value result = pop();
             int returnBase = FRAME.baseSlot; // save callee's base before popping frame

@@ -51,10 +51,12 @@ Value PraiaMethod::call(Interpreter& interp, const std::vector<Value>& args) {
     auto prevEnv = interp.env;
     interp.env = methodEnv;
     for (size_t i = 0; i < params.size(); i++) {
-        if (i < args.size()) {
+        if (i < args.size() && !args[i].isNil()) {
             methodEnv->define(params[i], args[i]);
         } else if (decl && i < decl->defaults.size() && decl->defaults[i]) {
             methodEnv->define(params[i], interp.evaluate(decl->defaults[i].get()));
+        } else if (i < args.size()) {
+            methodEnv->define(params[i], args[i]);
         } else {
             methodEnv->define(params[i], Value());
         }
@@ -81,10 +83,12 @@ Value PraiaLambda::call(Interpreter& interp, const std::vector<Value>& args) {
     auto prevEnv = interp.env;
     interp.env = lambdaEnv;
     for (size_t i = 0; i < params.size(); i++) {
-        if (i < args.size()) {
+        if (i < args.size() && !args[i].isNil()) {
             lambdaEnv->define(params[i], args[i]);
         } else if (i < expr->defaults.size() && expr->defaults[i]) {
             lambdaEnv->define(params[i], interp.evaluate(expr->defaults[i].get()));
+        } else if (i < args.size()) {
+            lambdaEnv->define(params[i], args[i]);
         } else {
             lambdaEnv->define(params[i], Value());
         }
@@ -113,10 +117,12 @@ Value PraiaFunction::call(Interpreter& interp, const std::vector<Value>& args) {
     auto prevEnv = interp.env;
     interp.env = funcEnv;
     for (size_t i = 0; i < params.size(); i++) {
-        if (i < args.size()) {
+        if (i < args.size() && !args[i].isNil()) {
             funcEnv->define(params[i], args[i]);
         } else if (defaults && i < defaults->size() && (*defaults)[i]) {
             funcEnv->define(params[i], interp.evaluate((*defaults)[i].get()));
+        } else if (i < args.size()) {
+            funcEnv->define(params[i], args[i]);
         } else {
             funcEnv->define(params[i], Value());
         }

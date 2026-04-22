@@ -474,6 +474,7 @@ void Compiler::compileFuncStmt(const FuncStmt* stmt) {
     auto fn = std::make_shared<CompiledFunction>();
     fn->name = stmt->name;
     fn->arity = static_cast<int>(stmt->params.size());
+    fn->paramNames = stmt->params;
 
     CompilerState funcState;
     funcState.enclosing = current;
@@ -659,6 +660,7 @@ void Compiler::compileClassStmt(const ClassStmt* stmt) {
         auto fn = std::make_shared<CompiledFunction>();
         fn->name = method.name;
         fn->arity = static_cast<int>(method.params.size());
+        fn->paramNames = method.params;
 
         CompilerState methodState;
         methodState.enclosing = current;

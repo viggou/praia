@@ -54,6 +54,45 @@ static std::string binaryDunder(TokenType op) {
     }
 }
 
+// Reorder named arguments to match parameter positions.
+// Returns a vector in parameter order with Value() for unfilled positions.
+static std::vector<Value> reorderNamedArgs(
+    const std::shared_ptr<Callable>& callable,
+    const std::vector<Value>& args,
+    const std::vector<std::string>& names,
+    int line) {
+    const auto* params = callable->paramNames();
+    if (!params)
+        throw RuntimeError("Named arguments not supported for '" + callable->name() + "'", line);
+
+    int paramCount = static_cast<int>(params->size());
+    std::vector<Value> result(paramCount);
+    std::vector<bool> filled(paramCount, false);
+    int positionalIdx = 0;
+
+    for (size_t i = 0; i < args.size(); i++) {
+        if (names[i].empty()) {
+            if (positionalIdx >= paramCount)
+                throw RuntimeError(callable->name() + "() too many arguments", line);
+            result[positionalIdx] = args[i];
+            filled[positionalIdx] = true;
+            positionalIdx++;
+        } else {
+            int found = -1;
+            for (int p = 0; p < paramCount; p++) {
+                if ((*params)[p] == names[i]) { found = p; break; }
+            }
+            if (found == -1)
+                throw RuntimeError(callable->name() + "() unknown parameter '" + names[i] + "'", line);
+            if (filled[found])
+                throw RuntimeError(callable->name() + "() parameter '" + names[i] + "' specified twice", line);
+            result[found] = args[i];
+            filled[found] = true;
+        }
+    }
+    return result;
+}
+
 // Invoke a Callable with arity check + line-context for errors.
 // Native functions throw with line=0 because they don't know the caller;
 // we rewrite that to the current call-site line so the user sees a real location.
@@ -790,6 +829,12 @@ Value Interpreter::evaluate(const Expr* expr) {
         std::vector<Value> args;
         for (const auto& arg : e->args)
             args.push_back(evaluate(arg.get()));
+
+        // Reorder named arguments if present
+        bool hasNamed = false;
+        for (auto& n : e->argNames) { if (!n.empty()) { hasNamed = true; break; } }
+        if (hasNamed)
+            args = reorderNamedArgs(callee.asCallable(), args, e->argNames, e->line);
 
         return callWithContext(*this, callee.asCallable(), args, e->line);
     }

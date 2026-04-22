@@ -60,6 +60,7 @@ enum class OpCode : uint8_t {
 
     // ── Functions ──
     OP_CALL,            // [argc:8]
+    OP_CALL_NAMED,      // [argc:8] [names_idx:16] — call with named arguments
     OP_RETURN,
     OP_CLOSURE,         // [fn_idx:16] followed by upvalue descriptors
     OP_GET_UPVALUE,     // [slot:16]

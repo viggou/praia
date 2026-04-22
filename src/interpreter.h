@@ -37,6 +37,7 @@ struct PraiaFunction : Callable {
     Value call(Interpreter& interp, const std::vector<Value>& args) override;
     int arity() const override { return static_cast<int>(params.size()); }
     std::string name() const override { return funcName; }
+    const std::vector<std::string>* paramNames() const override { return &params; }
 };
 
 // A lambda (anonymous function)
@@ -48,6 +49,7 @@ struct PraiaLambda : Callable {
     Value call(Interpreter& interp, const std::vector<Value>& args) override;
     int arity() const override { return static_cast<int>(params.size()); }
     std::string name() const override { return "<lambda>"; }
+    const std::vector<std::string>* paramNames() const override { return &params; }
 };
 
 // A built-in native function
@@ -73,6 +75,7 @@ struct PraiaMethod : Callable {
     Value call(Interpreter& interp, const std::vector<Value>& args) override;
     int arity() const override { return static_cast<int>(params.size()); }
     std::string name() const override { return methodName; }
+    const std::vector<std::string>* paramNames() const override { return &params; }
 };
 
 // A class (callable to create instances)
@@ -86,6 +89,16 @@ struct PraiaClass : Callable, std::enable_shared_from_this<PraiaClass> {
     Value call(Interpreter& interp, const std::vector<Value>& args) override;
     int arity() const override;
     std::string name() const override { return className; }
+    const std::vector<std::string>* paramNames() const override {
+        // Tree-walker path
+        auto* init = findMethod("init");
+        if (init) return &init->params;
+        // VM path: check vmMethods
+        auto it = vmMethods.find("init");
+        if (it != vmMethods.end() && it->second.isCallable())
+            return it->second.asCallable()->paramNames();
+        return nullptr;
+    }
 
     const ClassMethod* findMethod(const std::string& name) const;
 };

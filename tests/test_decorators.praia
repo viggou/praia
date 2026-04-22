@@ -1,0 +1,49 @@
+use "testing"
+
+testing.test("basic decorator", lam{ in
+    func double(fn) { return lam{ x in fn(x) * 2 } }
+
+    @double
+    func add5(x) { return x + 5 }
+
+    testing.assertEqual(add5(10), 30, nil)
+})
+
+testing.test("stacked decorators", lam{ in
+    func bold(fn) { return lam{ in "<b>" + fn() + "</b>" } }
+    func italic(fn) { return lam{ in "<i>" + fn() + "</i>" } }
+
+    @bold
+    @italic
+    func greeting() { return "hi" }
+
+    testing.assertEqual(greeting(), "<b><i>hi</i></b>", nil)
+})
+
+testing.test("decorator with arguments (factory)", lam{ in
+    func repeat(n) {
+        return lam{ fn in
+            return lam{ x in
+                let result = ""
+                for (i in 0..n) { result = result + str(fn(x)) }
+                return result
+            }
+        }
+    }
+
+    @repeat(3)
+    func id(x) { return x }
+
+    testing.assertEqual(id("a"), "aaa", nil)
+})
+
+testing.test("decorator preserves function behavior", lam{ in
+    func noop(fn) { return fn }
+
+    @noop
+    func add(a, b) { return a + b }
+
+    testing.assertEqual(add(1, 2), 3, nil)
+})
+
+testing.done()

@@ -12,6 +12,7 @@ struct CompiledFunction {
     int arity = 0;
     int upvalueCount = 0;
     Chunk chunk;
+    std::vector<std::string> paramNames; // for named argument support
 };
 
 class Compiler {

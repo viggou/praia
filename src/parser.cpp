@@ -521,6 +521,10 @@ StmtPtr Parser::block() {
     while (!check(TokenType::RBRACE) && !isAtEnd()) {
         try {
             blk->statements.push_back(statement());
+            while (!pending_.empty()) {
+                blk->statements.push_back(std::move(pending_.front()));
+                pending_.erase(pending_.begin());
+            }
         } catch (const ParseError&) {
             synchronize();
         }
@@ -823,9 +827,29 @@ ExprPtr Parser::call() {
         if (match(TokenType::LPAREN)) {
             int ln = previous().line;
             std::vector<ExprPtr> args;
+            std::vector<std::string> argNames;
+            bool seenNamed = false;
             if (!check(TokenType::RPAREN)) {
                 do {
-                    args.push_back(expression());
+                    // Named argument: identifier followed by COLON
+                    if (check(TokenType::IDENTIFIER) &&
+                        current + 1 < static_cast<int>(tokens.size()) &&
+                        tokens[current + 1].type == TokenType::COLON) {
+                        seenNamed = true;
+                        std::string argName = advance().lexeme; // consume identifier
+                        advance(); // consume colon
+                        for (auto& existing : argNames) {
+                            if (existing == argName)
+                                throw error(previous(), "Duplicate named argument '" + argName + "'");
+                        }
+                        argNames.push_back(argName);
+                        args.push_back(expression());
+                    } else {
+                        if (seenNamed)
+                            throw error(peek(), "Positional argument after named argument");
+                        argNames.push_back(""); // empty = positional
+                        args.push_back(expression());
+                    }
                 } while (match(TokenType::COMMA));
             }
             consume(TokenType::RPAREN, "Expected ')' after arguments");
@@ -834,6 +858,7 @@ ExprPtr Parser::call() {
             c->line = ln;
             c->callee = std::move(expr);
             c->args = std::move(args);
+            c->argNames = std::move(argNames);
             expr = std::move(c);
         } else if (match(TokenType::LBRACKET)) {
             int ln = previous().line;
@@ -1019,6 +1044,10 @@ ExprPtr Parser::primary() {
         functionDepth++;
         while (!check(TokenType::RBRACE) && !isAtEnd()) {
             lam->body.push_back(statement());
+            while (!pending_.empty()) {
+                lam->body.push_back(std::move(pending_.front()));
+                pending_.erase(pending_.begin());
+            }
         }
         functionDepth--;
         consume(TokenType::RBRACE, "Expected '}' after lambda body");

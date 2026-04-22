@@ -61,6 +61,7 @@ struct AssignExpr : Expr {
 struct CallExpr : Expr {
     ExprPtr callee;
     std::vector<ExprPtr> args;
+    std::vector<std::string> argNames; // parallel to args; empty string = positional
 };
 
 // Parts alternate: string literal, expression, string literal, expression, ..., string literal

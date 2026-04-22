@@ -53,6 +53,7 @@ struct VMClosureCallable : Callable {
     Value call(Interpreter&, const std::vector<Value>& args) override;
     int arity() const override { return closure->function->arity; }
     std::string name() const override { return closure->function->name; }
+    const std::vector<std::string>* paramNames() const override { return &closure->function->paramNames; }
 };
 
 // A method bound to an instance — when called, slot 0 = this
@@ -66,6 +67,7 @@ struct VMBoundMethod : Callable {
     Value call(Interpreter&, const std::vector<Value>&) override { return Value(); } // unused
     int arity() const override { return method->function->arity; }
     std::string name() const override { return method->function->name; }
+    const std::vector<std::string>* paramNames() const override { return &method->function->paramNames; }
 };
 
 struct VMCallFrame {
