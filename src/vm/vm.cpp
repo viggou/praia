@@ -369,19 +369,22 @@ std::string VM::resolveGrainPath(const std::string& path, int line) {
         if (!r.empty()) return r;
     }
 
-    // ~/.praia/grains/ (global)
+    // ~/.praia/ext_grains/ (user-global)
     {
         const char* home = std::getenv("HOME");
         if (home) {
-            auto r = tryResolveGrain(fs::path(home) / ".praia" / "grains", path);
+            auto r = tryResolveGrain(fs::path(home) / ".praia" / "ext_grains", path);
             if (!r.empty()) return r;
         }
     }
 
-    // Bundled stdlib grains
+    // Bundled stdlib grains + system-global ext_grains
     if (g_praiaLibDir) {
-        // Installed layout: LIBDIR/grains/ (baked in at compile time)
-        auto r = tryResolveGrain(fs::path(g_praiaLibDir) / "grains", path);
+        // Installed: LIBDIR/ext_grains/ (system-global)
+        auto r = tryResolveGrain(fs::path(g_praiaLibDir) / "ext_grains", path);
+        if (!r.empty()) return r;
+        // Installed: LIBDIR/grains/ (bundled stdlib)
+        r = tryResolveGrain(fs::path(g_praiaLibDir) / "grains", path);
         if (!r.empty()) return r;
     } else if (!g_praiaInstallDir.empty()) {
         // Development layout: <bindir>/grains/

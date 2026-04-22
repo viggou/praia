@@ -3310,7 +3310,8 @@ When you write `use "math"`, Praia looks for the grain in this order:
 
 1. **`ext_grains/`** — local dependencies (installed by sand), walks up from the current file
 2. **`grains/`** — project-bundled grains, walks up from the current file
-3. **`~/.praia/grains/`** — global grains
+3. **`~/.praia/ext_grains/`** — user-global grains (sand --global)
+4. **`<libdir>/ext_grains/`** — system-global grains (sudo sand --global)
 
 At each location, Praia checks for:
 - `<name>.praia` (single-file grain)

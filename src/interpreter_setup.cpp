@@ -1,4 +1,5 @@
 #include "builtins.h"
+#include "grain_resolve.h"
 #include "interpreter.h"
 #include <algorithm>
 #include <chrono>
@@ -2309,6 +2310,13 @@ Interpreter::Interpreter() {
 #else
     sysMap->entries["platform"] = Value("unknown");
 #endif
+
+    // sys.libdir — the library directory (where grains/stdlib live), or nil in dev mode
+    if (g_praiaLibDir) {
+        sysMap->entries["libdir"] = Value(std::string(g_praiaLibDir));
+    } else {
+        sysMap->entries["libdir"] = Value();
+    }
 
     sysMap->entries["stdout"] = Value(makeNative("sys.stdout", 1,
         [](const std::vector<Value>& args) -> Value {
