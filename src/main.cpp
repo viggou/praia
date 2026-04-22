@@ -559,7 +559,14 @@ int main(int argc, char* argv[]) {
         if (arg == "--tree") useVm = false;
         else if (arg == "--vm") useVm = true;
         else if (arg == "test") {
-            std::string dir = (i + 1 < argc) ? argv[i + 1] : "tests";
+            // Scan remaining args for flags and an optional directory
+            std::string dir = "tests";
+            for (int j = i + 1; j < argc; j++) {
+                std::string a = argv[j];
+                if (a == "--tree") useVm = false;
+                else if (a == "--vm") useVm = true;
+                else if (a[0] != '-') { dir = a; break; }
+            }
             return runTestsCommand(dir, useVm);
         }
         else if (arg[0] != '-') break; // hit a non-flag, non-"test" arg (filename)
