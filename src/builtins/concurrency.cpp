@@ -2,6 +2,7 @@
 #include <condition_variable>
 #include <mutex>
 #include <queue>
+#include <thread>
 
 void registerConcurrencyBuiltins(Interpreter* self, std::shared_ptr<Environment> globals) {
     globals->define("Lock", Value(makeNative("Lock", 0,

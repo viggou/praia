@@ -1309,7 +1309,7 @@ VM::Result VM::execute(int baseFrameCount_) {
         }
 
         case OpCode::OP_EXPORT: {
-            READ_BYTE(); // unused count byte
+            (void)READ_BYTE(); // unused count byte
             // The exports map is on top of the stack.
             // For a grain, this is the return value. Just return from execution.
             {
