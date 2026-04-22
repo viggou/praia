@@ -146,7 +146,7 @@ Praia/
 
 Praia is still in active development. The language is generally functional, but some rough edges remain:
 
-* **Async tasks are isolated** - each `async` call gets its own VM with deep-copied globals, arguments, upvalues, and instances. Tasks run in true parallel but cannot share mutable state. Communicate via return values (`await`) or channels.
+* **Async tasks are isolated (VM only)** - the bytecode VM deep-copies globals, arguments, upvalues, and instances for each `async` call. Tasks run in true parallel with no shared mutable state. The tree-walker (`--tree`) runs async tasks in parallel but shares environments, so concurrent mutation of globals/closures can race. Use the VM (default) for correct async isolation.
 * **No native Windows support** - Praia uses POSIX APIs for sockets, terminal I/O, and environment variables. Works on macOS, Linux, and Windows via WSL. Should work on BSD systems but is untested.
 * **No garbage collector** - memory is managed with reference counting (shared_ptr). Circular references will leak.
 
