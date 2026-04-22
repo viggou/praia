@@ -10,6 +10,7 @@
 #include <future>
 #include <iostream>
 #include <sstream>
+#include <unordered_set>
 
 namespace fs = std::filesystem;
 
@@ -1193,8 +1194,12 @@ VM::Result VM::execute(int baseFrameCount_) {
             // PraiaInstance (clones fields), and VMClosureCallable (clones
             // wrapper to prevent dangling vm pointers). NativeFunction and
             // PraiaFuture are safe to share. Primitives/strings copy by value.
+            // Track visited heap objects to handle cycles (e.g. a = []; a.push(a)).
+            // Key: raw pointer of the original object. Value: its already-created copy.
+            std::unordered_map<void*, Value> visited;
+
             std::function<Value(const Value&)> deepCopy;
-            deepCopy = [&deepCopy](const Value& v) -> Value {
+            deepCopy = [&deepCopy, &visited](const Value& v) -> Value {
                 if (v.isCallable()) {
                     auto* vmcc = dynamic_cast<VMClosureCallable*>(v.asCallable().get());
                     if (vmcc) {
@@ -1213,23 +1218,38 @@ VM::Result VM::execute(int baseFrameCount_) {
                     return v; // NativeFunction etc — safe to share
                 }
                 if (v.isMap()) {
+                    void* key = static_cast<void*>(v.asMap().get());
+                    auto it = visited.find(key);
+                    if (it != visited.end()) return it->second;
                     auto copy = std::make_shared<PraiaMap>();
+                    Value result(copy);
+                    visited[key] = result; // register before recursing
                     for (auto& [k, val] : v.asMap()->entries)
                         copy->entries[k] = deepCopy(val);
-                    return Value(copy);
+                    return result;
                 }
                 if (v.isArray()) {
+                    void* key = static_cast<void*>(v.asArray().get());
+                    auto it = visited.find(key);
+                    if (it != visited.end()) return it->second;
                     auto copy = std::make_shared<PraiaArray>();
+                    Value result(copy);
+                    visited[key] = result; // register before recursing
                     for (auto& el : v.asArray()->elements)
                         copy->elements.push_back(deepCopy(el));
-                    return Value(copy);
+                    return result;
                 }
                 if (v.isInstance()) {
+                    void* key = static_cast<void*>(v.asInstance().get());
+                    auto it = visited.find(key);
+                    if (it != visited.end()) return it->second;
                     auto copy = std::make_shared<PraiaInstance>();
                     copy->klass = v.asInstance()->klass; // share class (immutable)
+                    Value result(copy);
+                    visited[key] = result; // register before recursing
                     for (auto& [k, fv] : v.asInstance()->fields)
                         copy->fields[k] = deepCopy(fv);
-                    return Value(copy);
+                    return result;
                 }
                 return v; // primitives, strings, futures
             };
@@ -1285,21 +1305,29 @@ VM::Result VM::execute(int baseFrameCount_) {
                         taskVm.builtinNames_ = std::move(builtinNames);
                         taskVm.suppressErrors_ = true; // errors propagate to await, not stderr
 
-                        // Recursively rewire VMClosureCallable vm pointers to taskVm
+                        // Recursively rewire VMClosureCallable vm pointers to taskVm.
+                        // Track visited objects to handle cycles.
+                        std::unordered_set<void*> rewireVisited;
                         std::function<void(Value&)> rewire;
-                        rewire = [&taskVm, &rewire](Value& v) {
+                        rewire = [&taskVm, &rewire, &rewireVisited](Value& v) {
                             if (v.isCallable()) {
                                 auto* vc = dynamic_cast<VMClosureCallable*>(v.asCallable().get());
                                 if (vc) vc->vm = &taskVm;
                             }
                             if (v.isMap()) {
-                                for (auto& [mk, mv] : v.asMap()->entries) rewire(mv);
+                                void* p = static_cast<void*>(v.asMap().get());
+                                if (rewireVisited.insert(p).second)
+                                    for (auto& [mk, mv] : v.asMap()->entries) rewire(mv);
                             }
                             if (v.isArray()) {
-                                for (auto& el : v.asArray()->elements) rewire(el);
+                                void* p = static_cast<void*>(v.asArray().get());
+                                if (rewireVisited.insert(p).second)
+                                    for (auto& el : v.asArray()->elements) rewire(el);
                             }
                             if (v.isInstance()) {
-                                for (auto& [k, fv] : v.asInstance()->fields) rewire(fv);
+                                void* p = static_cast<void*>(v.asInstance().get());
+                                if (rewireVisited.insert(p).second)
+                                    for (auto& [k, fv] : v.asInstance()->fields) rewire(fv);
                             }
                         };
                         for (auto& [k, v] : taskVm.globals) rewire(v);
@@ -1355,17 +1383,21 @@ VM::Result VM::execute(int baseFrameCount_) {
                         taskVm.allClosures.clear();
                         taskVm.allUpvalues.clear();
 
-                        // Helper to walk a PraiaClass chain's vmMethods
+                        // Helper to walk a PraiaClass chain's vmMethods.
+                        // Track visited objects to handle cycles.
+                        std::unordered_set<void*> attachVisited;
                         std::function<void(Value&)> attachOwnership;
-                        auto walkClassChain = [&ownership, &attachOwnership](std::shared_ptr<PraiaClass> klass) {
+                        auto walkClassChain = [&ownership, &attachOwnership, &attachVisited](std::shared_ptr<PraiaClass> klass) {
                             while (klass) {
+                                void* p = static_cast<void*>(klass.get());
+                                if (!attachVisited.insert(p).second) break;
                                 for (auto& [k, mv] : klass->vmMethods)
                                     attachOwnership(mv);
                                 klass = klass->superclass;
                             }
                         };
 
-                        attachOwnership = [&ownership, &attachOwnership, &walkClassChain](Value& v) {
+                        attachOwnership = [&ownership, &attachOwnership, &walkClassChain, &attachVisited](Value& v) {
                             if (v.isCallable()) {
                                 auto* vc = dynamic_cast<VMClosureCallable*>(v.asCallable().get());
                                 if (vc) {
@@ -1377,19 +1409,25 @@ VM::Result VM::execute(int baseFrameCount_) {
                                     bm->taskOwnership = ownership;
                                     attachOwnership(bm->receiver);
                                 }
-                                // Walk PraiaClass vmMethods (class used as a value)
                                 auto klass = std::dynamic_pointer_cast<PraiaClass>(v.asCallable());
                                 if (klass) walkClassChain(klass);
                             }
                             if (v.isMap()) {
-                                for (auto& [k, mv] : v.asMap()->entries) attachOwnership(mv);
+                                void* p = static_cast<void*>(v.asMap().get());
+                                if (attachVisited.insert(p).second)
+                                    for (auto& [k, mv] : v.asMap()->entries) attachOwnership(mv);
                             }
                             if (v.isArray()) {
-                                for (auto& el : v.asArray()->elements) attachOwnership(el);
+                                void* p = static_cast<void*>(v.asArray().get());
+                                if (attachVisited.insert(p).second)
+                                    for (auto& el : v.asArray()->elements) attachOwnership(el);
                             }
                             if (v.isInstance()) {
-                                for (auto& [k, fv] : v.asInstance()->fields) attachOwnership(fv);
-                                walkClassChain(v.asInstance()->klass);
+                                void* p = static_cast<void*>(v.asInstance().get());
+                                if (attachVisited.insert(p).second) {
+                                    for (auto& [k, fv] : v.asInstance()->fields) attachOwnership(fv);
+                                    walkClassChain(v.asInstance()->klass);
+                                }
                             }
                         };
                         attachOwnership(retVal);
