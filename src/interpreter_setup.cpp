@@ -1155,6 +1155,58 @@ Interpreter::Interpreter() {
             return Value(std::move(result));
         }));
 
+    // base64.encodeURL — URL-safe base64 (RFC 4648 §5): +/ replaced with -_, no padding
+    base64Map->entries["encodeURL"] = Value(makeNative("base64.encodeURL", 1,
+        [](const std::vector<Value>& args) -> Value {
+            if (!args[0].isString())
+                throw RuntimeError("base64.encodeURL() requires a string", 0);
+            auto& input = args[0].asString();
+            static const char table[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+            std::string result;
+            int val = 0, valb = -6;
+            for (unsigned char c : input) {
+                val = (val << 8) + c;
+                valb += 8;
+                while (valb >= 0) {
+                    result += table[(val >> valb) & 0x3F];
+                    valb -= 6;
+                }
+            }
+            if (valb > -6) result += table[((val << 8) >> (valb + 8)) & 0x3F];
+            // No padding for URL-safe variant
+            return Value(std::move(result));
+        }));
+
+    // base64.decodeURL — decode URL-safe base64
+    base64Map->entries["decodeURL"] = Value(makeNative("base64.decodeURL", 1,
+        [](const std::vector<Value>& args) -> Value {
+            if (!args[0].isString())
+                throw RuntimeError("base64.decodeURL() requires a string", 0);
+            auto& input = args[0].asString();
+            auto decodeChar = [](char c) -> int {
+                if (c >= 'A' && c <= 'Z') return c - 'A';
+                if (c >= 'a' && c <= 'z') return c - 'a' + 26;
+                if (c >= '0' && c <= '9') return c - '0' + 52;
+                if (c == '-') return 62;
+                if (c == '_') return 63;
+                return -1;
+            };
+            std::string result;
+            int val = 0, valb = -8;
+            for (unsigned char c : input) {
+                if (c == '=') break;
+                int d = decodeChar(c);
+                if (d < 0) continue;
+                val = (val << 6) + d;
+                valb += 6;
+                if (valb >= 0) {
+                    result += static_cast<char>((val >> valb) & 0xFF);
+                    valb -= 8;
+                }
+            }
+            return Value(std::move(result));
+        }));
+
     globals->define("base64", Value(base64Map));
 
     // ── path namespace ──

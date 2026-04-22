@@ -1685,12 +1685,18 @@ print("Listening on port %{config.server.port}")
 
 | Function | Description |
 |----------|-------------|
-| `base64.encode(str)` | Encode string to base64 |
-| `base64.decode(str)` | Decode base64 to string |
+| `base64.encode(str)` | Encode string to standard base64 |
+| `base64.decode(str)` | Decode standard base64 to string |
+| `base64.encodeURL(str)` | URL-safe base64 (RFC 4648 §5): `-_` instead of `+/`, no padding |
+| `base64.decodeURL(str)` | Decode URL-safe base64 |
 
 ```
 base64.encode("hello")         // "aGVsbG8="
 base64.decode("aGVsbG8=")     // "hello"
+
+// URL-safe variant — safe for URLs, filenames, JWT tokens
+base64.encodeURL("hello")     // "aGVsbG8"  (no padding)
+base64.decodeURL("aGVsbG8")   // "hello"
 ```
 
 ---
