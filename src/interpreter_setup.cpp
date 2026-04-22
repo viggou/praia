@@ -31,8 +31,43 @@
 #include <sys/wait.h>
 #include <poll.h>
 #include <unistd.h>
+#include <csignal>
+#include <atomic>
 
 namespace fs = std::filesystem;
+
+// ── Signal handling infrastructure ──
+// Registered Praia callbacks per signal, invoked from the main thread.
+// The C signal handler just sets a flag; the callbacks run at safe points.
+static std::mutex g_signalMutex;
+static std::unordered_map<int, std::shared_ptr<Callable>> g_signalHandlers;
+static std::atomic<uint32_t> g_pendingSignals{0}; // bitmask of pending signals
+
+static int signalNameToNum(const std::string& name) {
+    if (name == "SIGINT" || name == "INT") return SIGINT;
+    if (name == "SIGTERM" || name == "TERM") return SIGTERM;
+    if (name == "SIGHUP" || name == "HUP") return SIGHUP;
+    if (name == "SIGUSR1" || name == "USR1") return SIGUSR1;
+    if (name == "SIGUSR2" || name == "USR2") return SIGUSR2;
+    return -1;
+}
+
+static std::string signalNumToName(int sig) {
+    switch (sig) {
+        case SIGINT: return "SIGINT";
+        case SIGTERM: return "SIGTERM";
+        case SIGHUP: return "SIGHUP";
+        case SIGUSR1: return "SIGUSR1";
+        case SIGUSR2: return "SIGUSR2";
+        default: return "SIG" + std::to_string(sig);
+    }
+}
+
+static void praiaSignalHandler(int sig) {
+    // Async-signal-safe: only set atomic flag
+    if (sig >= 0 && sig < 32)
+        g_pendingSignals.fetch_or(1u << sig);
+}
 
 Interpreter::Interpreter() {
     globals = std::make_shared<Environment>();
@@ -1877,6 +1912,71 @@ Interpreter::Interpreter() {
                 throw RuntimeError("sys.stdout() requires a string", 0);
             std::cout << args[0].asString() << std::flush;
             return Value();
+        }));
+
+    // ── Signal handling ──
+
+    // sys.onSignal(name, handler) — register a callback for a signal
+    // handler receives the signal name as an argument
+    sysMap->entries["onSignal"] = Value(makeNative("sys.onSignal", 2,
+        [](const std::vector<Value>& args) -> Value {
+            if (!args[0].isString())
+                throw RuntimeError("sys.onSignal() first argument must be a signal name string", 0);
+            if (!args[1].isCallable() && !args[1].isNil())
+                throw RuntimeError("sys.onSignal() second argument must be a function or nil", 0);
+
+            int sig = signalNameToNum(args[0].asString());
+            if (sig < 0)
+                throw RuntimeError("sys.onSignal(): unknown signal '" + args[0].asString() +
+                    "'. Valid: SIGINT, SIGTERM, SIGHUP, SIGUSR1, SIGUSR2", 0);
+
+            std::lock_guard<std::mutex> lock(g_signalMutex);
+            if (args[1].isNil()) {
+                // Remove handler, restore default
+                g_signalHandlers.erase(sig);
+                signal(sig, SIG_DFL);
+            } else {
+                g_signalHandlers[sig] = args[1].asCallable();
+                struct sigaction sa = {};
+                sa.sa_handler = praiaSignalHandler;
+                sigemptyset(&sa.sa_mask);
+                sa.sa_flags = 0;
+                sigaction(sig, &sa, nullptr);
+            }
+            return Value();
+        }));
+
+    // sys.signal(name) — send a signal to the current process (for testing)
+    sysMap->entries["signal"] = Value(makeNative("sys.signal", 1,
+        [](const std::vector<Value>& args) -> Value {
+            if (!args[0].isString())
+                throw RuntimeError("sys.signal() requires a signal name string", 0);
+            int sig = signalNameToNum(args[0].asString());
+            if (sig < 0)
+                throw RuntimeError("sys.signal(): unknown signal '" + args[0].asString() + "'", 0);
+            raise(sig);
+            return Value();
+        }));
+
+    // sys.checkSignals() — process any pending signals by calling registered handlers.
+    // Call this in long-running loops to allow signal callbacks to run.
+    sysMap->entries["checkSignals"] = Value(makeNative("sys.checkSignals", 0,
+        [self](const std::vector<Value>&) -> Value {
+            uint32_t pending = g_pendingSignals.exchange(0);
+            if (pending == 0) return Value(false);
+
+            std::lock_guard<std::mutex> lock(g_signalMutex);
+            for (int sig = 0; sig < 32 && pending; sig++) {
+                if (pending & (1u << sig)) {
+                    pending &= ~(1u << sig);
+                    auto it = g_signalHandlers.find(sig);
+                    if (it != g_signalHandlers.end()) {
+                        std::string name = signalNumToName(sig);
+                        callSafe(*self, it->second, {Value(name)});
+                    }
+                }
+            }
+            return Value(true);
         }));
 
     // ── Terminal I/O ──

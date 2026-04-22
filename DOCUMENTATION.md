@@ -1359,6 +1359,40 @@ if (ans != nil && ans.lower() == "y") {
 The line is returned without its trailing newline. Use `.strip()` if you
 want to also drop leading/trailing whitespace.
 
+### Signal handling
+
+Register callbacks for OS signals. The signal handler sets a flag; callbacks run when you call `sys.checkSignals()`.
+
+| Function | Description |
+|----------|-------------|
+| `sys.onSignal(name, fn)` | Register a handler for a signal. Pass `nil` to restore default. |
+| `sys.checkSignals()` | Process pending signals by calling registered handlers. Returns `true` if any fired. |
+| `sys.signal(name)` | Send a signal to the current process (for testing). |
+
+Supported signals: `SIGINT`, `SIGTERM`, `SIGHUP`, `SIGUSR1`, `SIGUSR2`. Short names (`INT`, `TERM`, etc.) also work.
+
+```
+let running = true
+sys.onSignal("SIGINT", lam{ sig in
+    print("shutting down...")
+    running = false
+})
+
+while (running) {
+    // ... do work ...
+    sys.checkSignals()
+}
+print("cleanup done")
+```
+
+Call `sys.checkSignals()` in long-running loops so signal callbacks get a chance to run. Signals of the same type coalesce (matching POSIX semantics) — if SIGINT arrives twice before `checkSignals()`, the handler fires once.
+
+To remove a handler and restore default behavior:
+
+```
+sys.onSignal("SIGINT", nil)
+```
+
 ---
 
 ## Terminal I/O
