@@ -181,6 +181,18 @@ bool Lexer::isAtEnd() const {
 // --- Token scanners ---
 
 void Lexer::number() {
+    // Hex literal: 0x or 0X
+    if (source[start] == '0' && (peek() == 'x' || peek() == 'X')) {
+        advance(); // consume 'x'
+        if (!std::isxdigit(peek())) {
+            error("Expected hex digit after '0x'");
+            return;
+        }
+        while (std::isxdigit(peek())) advance();
+        addToken(TokenType::NUMBER);
+        return;
+    }
+
     while (std::isdigit(peek())) advance();
 
     if (peek() == '.' && std::isdigit(peekNext())) {

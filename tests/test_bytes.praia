@@ -45,26 +45,39 @@ testing.test("bytes.len", lam{ in
     testing.assertEqual(bytes.len(fromCharCode(0) + fromCharCode(0)), 2, nil)
 })
 
-testing.test("bytes.pack u8", lam{ in
-    let packed = bytes.pack("u8", [65, 66, 67])
+testing.test("bytes.pack B", lam{ in
+    let packed = bytes.pack("3B", [65, 66, 67])
     testing.assertEqual(packed, "ABC", nil)
 })
 
-testing.test("bytes.unpack u8", lam{ in
-    let vals = bytes.unpack("u8", "ABC")
+testing.test("bytes.unpack B", lam{ in
+    let vals = bytes.unpack("3B", "ABC")
     testing.assertEqual(vals, [65, 66, 67], nil)
 })
 
-testing.test("bytes.pack/unpack u16be roundtrip", lam{ in
-    let packed = bytes.pack("u16be", [8080, 443])
-    let unpacked = bytes.unpack("u16be", packed)
+testing.test("bytes.pack/unpack >H roundtrip", lam{ in
+    let packed = bytes.pack(">2H", [8080, 443])
+    let unpacked = bytes.unpack(">2H", packed)
     testing.assertEqual(unpacked, [8080, 443], nil)
 })
 
-testing.test("bytes.pack/unpack u32le roundtrip", lam{ in
-    let packed = bytes.pack("u32le", [123456789])
-    let unpacked = bytes.unpack("u32le", packed)
+testing.test("bytes.pack/unpack <I roundtrip", lam{ in
+    let packed = bytes.pack("<I", [123456789])
+    let unpacked = bytes.unpack("<I", packed)
     testing.assertEqual(unpacked, [123456789], nil)
+})
+
+testing.test("bytes.pack struct multi-field", lam{ in
+    let data = bytes.pack(">BHI", [0xFF, 1234, 100000])
+    testing.assertEqual(bytes.len(data), 7, nil)
+    let vals = bytes.unpack(">BHI", data)
+    testing.assertEqual(vals, [0xFF, 1234, 100000], nil)
+})
+
+testing.test("bytes.calcsize", lam{ in
+    testing.assertEqual(bytes.calcsize(">BHI"), 7, nil)
+    testing.assertEqual(bytes.calcsize(">3B2Hd"), 15, nil)
+    testing.assertEqual(bytes.calcsize("4x"), 4, nil)
 })
 
 testing.done()

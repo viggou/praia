@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <cstdint>
 #include <cstdlib>
+#include <cstring>
 #include <ctime>
 #include <filesystem>
 #include <fstream>
@@ -1293,81 +1294,158 @@ Interpreter::Interpreter() {
 
     auto bytesMap = std::make_shared<PraiaMap>();
 
-    // bytes.pack(format, values) — format: "u8","i8","u16be","u16le","u32be","u32le","i32be","i32le"
+    // ── Struct format helpers ──
+    // Format: optional endian prefix (> big, < little, default big-endian)
+    // followed by type chars with optional repeat counts:
+    //   b/B = i8/u8, h/H = i16/u16, i/I = i32/u32, q/Q = i64/u64,
+    //   f = f32, d = f64, x = pad byte. Example: ">3BHI" = 3 bytes + u16 + u32.
+
+    struct StructField { char type; int size; };
+
+    auto parseStructFmt = [](const std::string& fmt, bool& bigEndian) -> std::vector<StructField> {
+        std::vector<StructField> fields;
+        size_t i = 0;
+        bigEndian = true; // default big-endian
+        if (!fmt.empty() && (fmt[0] == '>' || fmt[0] == '!' || fmt[0] == '<' || fmt[0] == '=')) {
+            bigEndian = (fmt[0] == '>' || fmt[0] == '!');
+            i = 1;
+        }
+        while (i < fmt.size()) {
+            int count = 0;
+            while (i < fmt.size() && fmt[i] >= '0' && fmt[i] <= '9') {
+                count = count * 10 + (fmt[i] - '0');
+                i++;
+            }
+            if (count == 0) count = 1;
+            if (i >= fmt.size()) throw RuntimeError("Incomplete struct format", 0);
+            char c = fmt[i++];
+            int sz = 0;
+            switch (c) {
+                case 'b': case 'B': sz = 1; break;
+                case 'h': case 'H': sz = 2; break;
+                case 'i': case 'I': sz = 4; break;
+                case 'q': case 'Q': sz = 8; break;
+                case 'f': sz = 4; break;
+                case 'd': sz = 8; break;
+                case 'x': sz = 1; break;
+                default: throw RuntimeError(std::string("Unknown struct format char: '") + c + "'", 0);
+            }
+            for (int j = 0; j < count; j++) fields.push_back({c, sz});
+        }
+        return fields;
+    };
+
+    // bytes.pack(format, values)
     bytesMap->entries["pack"] = Value(makeNative("bytes.pack", 2,
-        [](const std::vector<Value>& args) -> Value {
+        [parseStructFmt](const std::vector<Value>& args) -> Value {
             if (!args[0].isString() || !args[1].isArray())
                 throw RuntimeError("bytes.pack(format, values) requires a format string and array", 0);
             auto& fmt = args[0].asString();
             auto& vals = args[1].asArray()->elements;
             std::string result;
 
-            // Split format by commas or just use single format for all values
-            for (auto& v : vals) {
-                if (!v.isNumber())
-                    throw RuntimeError("bytes.pack values must be numbers", 0);
-                int64_t n = static_cast<int64_t>(v.asNumber());
+            bool big;
+            auto fields = parseStructFmt(fmt, big);
+            size_t vi = 0;
+            for (auto& f : fields) {
+                if (f.type == 'x') { result += '\0'; continue; }
+                if (vi >= vals.size())
+                    throw RuntimeError("bytes.pack: not enough values for format", 0);
+                if (!vals[vi].isNumber())
+                    throw RuntimeError("bytes.pack: values must be numbers", 0);
 
-                if (fmt == "u8" || fmt == "i8") {
-                    result += static_cast<char>(n & 0xFF);
-                } else if (fmt == "u16be" || fmt == "i16be") {
-                    result += static_cast<char>((n >> 8) & 0xFF);
-                    result += static_cast<char>(n & 0xFF);
-                } else if (fmt == "u16le" || fmt == "i16le") {
-                    result += static_cast<char>(n & 0xFF);
-                    result += static_cast<char>((n >> 8) & 0xFF);
-                } else if (fmt == "u32be" || fmt == "i32be") {
-                    result += static_cast<char>((n >> 24) & 0xFF);
-                    result += static_cast<char>((n >> 16) & 0xFF);
-                    result += static_cast<char>((n >> 8) & 0xFF);
-                    result += static_cast<char>(n & 0xFF);
-                } else if (fmt == "u32le" || fmt == "i32le") {
-                    result += static_cast<char>(n & 0xFF);
-                    result += static_cast<char>((n >> 8) & 0xFF);
-                    result += static_cast<char>((n >> 16) & 0xFF);
-                    result += static_cast<char>((n >> 24) & 0xFF);
-                } else {
-                    throw RuntimeError("Unknown pack format: " + fmt, 0);
+                if (f.type == 'f') {
+                    float fv = static_cast<float>(vals[vi].asNumber());
+                    uint32_t bits; std::memcpy(&bits, &fv, 4);
+                    for (int j = 0; j < 4; j++)
+                        result += static_cast<char>((bits >> (big ? (24 - j*8) : j*8)) & 0xFF);
+                    vi++; continue;
                 }
+                if (f.type == 'd') {
+                    double dv = vals[vi].asNumber();
+                    uint64_t bits; std::memcpy(&bits, &dv, 8);
+                    for (int j = 0; j < 8; j++)
+                        result += static_cast<char>((bits >> (big ? (56 - j*8) : j*8)) & 0xFF);
+                    vi++; continue;
+                }
+
+                int64_t n = vals[vi].isInt() ? vals[vi].asInt()
+                                             : static_cast<int64_t>(vals[vi].asNumber());
+                for (int j = 0; j < f.size; j++)
+                    result += static_cast<char>((n >> (big ? ((f.size-1-j)*8) : (j*8))) & 0xFF);
+                vi++;
             }
             return Value(std::move(result));
         }));
 
     // bytes.unpack(format, data) — returns array of numbers
     bytesMap->entries["unpack"] = Value(makeNative("bytes.unpack", 2,
-        [](const std::vector<Value>& args) -> Value {
+        [parseStructFmt](const std::vector<Value>& args) -> Value {
             if (!args[0].isString() || !args[1].isString())
                 throw RuntimeError("bytes.unpack(format, data) requires strings", 0);
             auto& fmt = args[0].asString();
             auto& data = args[1].asString();
             auto result = std::make_shared<PraiaArray>();
+
+            bool big;
+            auto fields = parseStructFmt(fmt, big);
             size_t pos = 0;
-            int size = 0;
+            auto b = [&](size_t i) -> uint8_t { return static_cast<uint8_t>(data[pos + i]); };
 
-            if (fmt == "u8" || fmt == "i8") size = 1;
-            else if (fmt == "u16be" || fmt == "u16le" || fmt == "i16be" || fmt == "i16le") size = 2;
-            else if (fmt == "u32be" || fmt == "u32le" || fmt == "i32be" || fmt == "i32le") size = 4;
-            else throw RuntimeError("Unknown unpack format: " + fmt, 0);
+            for (auto& f : fields) {
+                if (pos + f.size > data.size())
+                    throw RuntimeError("bytes.unpack: data too short for format", 0);
+                if (f.type == 'x') { pos += 1; continue; }
 
-            while (pos + size <= data.size()) {
-                auto b = [&](size_t i) -> uint8_t { return static_cast<uint8_t>(data[pos + i]); };
-                int64_t val = 0;
+                if (f.type == 'f') {
+                    uint32_t bits = 0;
+                    for (int j = 0; j < 4; j++)
+                        bits |= static_cast<uint32_t>(b(big ? (3-j) : j)) << (j*8);
+                    float fv; std::memcpy(&fv, &bits, 4);
+                    result->elements.push_back(Value(static_cast<double>(fv)));
+                    pos += 4; continue;
+                }
+                if (f.type == 'd') {
+                    uint64_t bits = 0;
+                    for (int j = 0; j < 8; j++)
+                        bits |= static_cast<uint64_t>(b(big ? (7-j) : j)) << (j*8);
+                    double dv; std::memcpy(&dv, &bits, 8);
+                    result->elements.push_back(Value(dv));
+                    pos += 8; continue;
+                }
 
-                if (fmt == "u8") val = b(0);
-                else if (fmt == "i8") val = static_cast<int8_t>(b(0));
-                else if (fmt == "u16be") val = (b(0) << 8) | b(1);
-                else if (fmt == "u16le") val = b(0) | (b(1) << 8);
-                else if (fmt == "i16be") val = static_cast<int16_t>((b(0) << 8) | b(1));
-                else if (fmt == "i16le") val = static_cast<int16_t>(b(0) | (b(1) << 8));
-                else if (fmt == "u32be") val = (static_cast<int64_t>(b(0)) << 24) | (b(1) << 16) | (b(2) << 8) | b(3);
-                else if (fmt == "u32le") val = b(0) | (b(1) << 8) | (b(2) << 16) | (static_cast<int64_t>(b(3)) << 24);
-                else if (fmt == "i32be") val = static_cast<int32_t>((b(0) << 24) | (b(1) << 16) | (b(2) << 8) | b(3));
-                else if (fmt == "i32le") val = static_cast<int32_t>(b(0) | (b(1) << 8) | (b(2) << 16) | (b(3) << 24));
+                // Integer types
+                uint64_t raw = 0;
+                for (int j = 0; j < f.size; j++)
+                    raw |= static_cast<uint64_t>(b(big ? (f.size-1-j) : j)) << (j*8);
 
-                result->elements.push_back(Value(static_cast<double>(val)));
-                pos += size;
+                int64_t val;
+                bool isSigned = (f.type >= 'a' && f.type <= 'z'); // b,h,i,q are signed
+                if (isSigned) {
+                    int bits = f.size * 8;
+                    if (raw & (1ULL << (bits - 1)))
+                        val = static_cast<int64_t>(raw | (~0ULL << bits));
+                    else
+                        val = static_cast<int64_t>(raw);
+                } else {
+                    val = static_cast<int64_t>(raw);
+                }
+                result->elements.push_back(Value(val));
+                pos += f.size;
             }
             return Value(result);
+        }));
+
+    // bytes.calcsize(format) — return total byte size of a struct format
+    bytesMap->entries["calcsize"] = Value(makeNative("bytes.calcsize", 1,
+        [parseStructFmt](const std::vector<Value>& args) -> Value {
+            if (!args[0].isString())
+                throw RuntimeError("bytes.calcsize() requires a format string", 0);
+            bool big;
+            auto fields = parseStructFmt(args[0].asString(), big);
+            int64_t total = 0;
+            for (auto& f : fields) total += f.size;
+            return Value(total);
         }));
 
     // bytes.from([72, 101, 108]) → "Hel" — array of byte values to string

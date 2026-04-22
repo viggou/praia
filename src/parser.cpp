@@ -826,7 +826,7 @@ ExprPtr Parser::primary() {
         if (lex.find('.') == std::string::npos) {
             try {
                 e->isInt = true;
-                e->intValue = std::stoll(lex);
+                e->intValue = std::stoll(lex, nullptr, 0); // base 0: auto-detect hex/oct/dec
             } catch (const std::out_of_range&) {
                 error(previous(), "Integer literal too large: " + lex);
                 e->isInt = true;

@@ -2653,32 +2653,81 @@ Note: `|` (single pipe) is bitwise OR. `|>` is the pipe operator. `||` is logica
 
 The `bytes` namespace provides binary data packing and unpacking for working with binary protocols.
 
+### Struct format strings
+
+`bytes.pack` and `bytes.unpack` accept Python-style struct format strings. The format starts with an endianness prefix, followed by type characters with optional repeat counts.
+
+**Endian prefix** (required for struct format):
+
+| Prefix | Byte order |
+|--------|------------|
+| `>` or `!` | Big-endian (network) |
+| `<` or `=` | Little-endian |
+
+**Type characters:**
+
+| Char | Size | Description |
+|------|------|-------------|
+| `B` | 1 | Unsigned 8-bit |
+| `b` | 1 | Signed 8-bit |
+| `H` | 2 | Unsigned 16-bit |
+| `h` | 2 | Signed 16-bit |
+| `I` | 4 | Unsigned 32-bit |
+| `i` | 4 | Signed 32-bit |
+| `Q` | 8 | Unsigned 64-bit |
+| `q` | 8 | Signed 64-bit |
+| `f` | 4 | 32-bit float |
+| `d` | 8 | 64-bit double |
+| `x` | 1 | Pad byte (no value consumed) |
+
+Repeat counts: `3B` means three unsigned bytes, `4x` means four pad bytes.
+
 ### bytes.pack(format, values)
 
-Packs an array of numbers into a binary string.
-
 ```
-let data = bytes.pack("u32be", [256])      // 4-byte big-endian
-let msg = bytes.pack("u16be", [1234, 5678]) // two 16-bit values
+// Struct format: big-endian u8 + u16 + u32
+let data = bytes.pack(">BHI", [255, 1234, 100000])
+
+// Little-endian two u16s
+let data2 = bytes.pack("<2H", [1, 256])
+
+// Float and double
+let data3 = bytes.pack(">fd", [3.14, 2.718])
+
+// With padding
+let header = bytes.pack(">BxxH", [1, 1000])  // 1 byte, 2 pad, 2 bytes
 ```
 
 ### bytes.unpack(format, data)
 
-Unpacks a binary string into an array of numbers.
+```
+let vals = bytes.unpack(">BHI", data)     // [255, 1234, 100000]
+let floats = bytes.unpack(">fd", data3)   // [3.14, 2.718]
+```
+
+### bytes.calcsize(format)
+
+Returns the total byte size of a struct format string:
 
 ```
-let vals = bytes.unpack("u32be", data)     // [256]
+bytes.calcsize(">BHI")    // 7
+bytes.calcsize(">3B2Hd")  // 15
 ```
 
-### Formats
+### Practical: DNS query header
 
-| Format | Size | Description |
-|--------|------|-------------|
-| `u8`, `i8` | 1 byte | Unsigned/signed 8-bit |
-| `u16be`, `u16le` | 2 bytes | Unsigned 16-bit big/little endian |
-| `i16be`, `i16le` | 2 bytes | Signed 16-bit big/little endian |
-| `u32be`, `u32le` | 4 bytes | Unsigned 32-bit big/little endian |
-| `i32be`, `i32le` | 4 bytes | Signed 32-bit big/little endian |
+```
+// Pack: ID, flags, qdcount, ancount, nscount, arcount
+let header = bytes.pack(">6H", [4660, 256, 1, 0, 0, 0])
+let parsed = bytes.unpack(">6H", header)
+print(parsed[0], parsed[1], parsed[2])   // 4660 256 1
+```
+
+When no endian prefix is given, big-endian is the default:
+
+```
+bytes.pack("2H", [1234, 5678])    // same as ">2H"
+```
 
 ### Byte conversion
 
