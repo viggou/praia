@@ -129,7 +129,7 @@ Praia/
 │   ├── builtins_yaml.cpp        # YAML parser + stringifier
 │   ├── builtins_methods.cpp     # string/array dot-methods
 │   ├── main.cpp                 # entry point + REPL
-│   └── vm/                      # bytecode VM (--vm flag)
+│   └── vm/                      # bytecode VM (default engine)
 │       ├── opcode.h             # ~60 opcodes
 │       ├── chunk.h/cpp          # bytecode container + constant pool
 │       ├── compiler.h/cpp       # AST -> bytecode compiler
@@ -146,7 +146,7 @@ Praia/
 
 Praia is still in active development. The language is generally functional, but some rough edges remain:
 
-* **Async tasks are isolated** - each `async` call gets its own VM with a snapshot of globals. Tasks run in true parallel but cannot share mutable state. Communicate via return values (`await`).
+* **Async tasks are isolated** - each `async` call gets its own VM with deep-copied globals, arguments, upvalues, and instances. Tasks run in true parallel but cannot share mutable state. Communicate via return values (`await`) or channels.
 * **No native Windows support** - Praia uses POSIX APIs for sockets, terminal I/O, and environment variables. Works on macOS, Linux, and Windows via WSL. Should work on BSD systems but is untested.
 * **No garbage collector** - memory is managed with reference counting (shared_ptr). Circular references will leak.
 
