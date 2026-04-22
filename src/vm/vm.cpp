@@ -310,8 +310,8 @@ std::string VM::formatStackTrace() const {
     std::string trace;
     for (int i = frameCount - 1; i >= 0; i--) {
         auto& frame = frames[i];
-        int offset = static_cast<int>(frame.ip - frame.chunk().code.data());
-        int line = frame.chunk().getLine(offset);
+        int offset = static_cast<int>(frame.ip - frame.chunk().code.data()) - 1;
+        int line = frame.chunk().getLine(offset > 0 ? offset : 0);
         trace += "  at " + frame.name() + "() line " + std::to_string(line) + "\n";
     }
     return trace;
@@ -533,7 +533,7 @@ VM::Result VM::execute(int baseFrameCount_) {
     #define READ_U16() (FRAME.ip += 2, static_cast<uint16_t>((FRAME.ip[-2] << 8) | FRAME.ip[-1]))
     #define READ_CONSTANT() (FRAME.chunk().constants[READ_U16()])
     #define READ_STRING() (READ_CONSTANT().asString())
-    #define CURRENT_LINE() (FRAME.chunk().getLine(static_cast<int>(FRAME.ip - FRAME.chunk().code.data())))
+    #define CURRENT_LINE() (FRAME.chunk().getLine(static_cast<int>(FRAME.ip - FRAME.chunk().code.data()) - 1))
     #define RUNTIME_ERR(msg) { \
         std::string _msg = (msg); int _line = CURRENT_LINE(); \
         if (tryHandleError(Value(_msg))) continue; \
