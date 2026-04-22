@@ -146,13 +146,18 @@ Praia/
 │   ├── grain_resolve.h          # grain/module resolution logic
 │   ├── interpreter.h            # Interpreter class + Callable subtypes
 │   ├── interpreter.cpp          # grain loading, execute(), evaluate()
-│   ├── interpreter_setup.cpp    # constructor wiring up all builtins
+│   ├── interpreter_setup.cpp    # constructor: globals, sys, http, base64, path, etc.
 │   ├── interpreter_callables.cpp # PraiaFunction/Lambda/Method/Class::call
-│   ├── builtins.h               # shared helpers (makeNative, etc.)
-│   ├── builtins_http.cpp        # http client + server
-│   ├── builtins_json.cpp        # JSON parser + stringifier
-│   ├── builtins_yaml.cpp        # YAML parser + stringifier
-│   ├── builtins_methods.cpp     # string/array dot-methods
+│   ├── builtins.h               # shared helpers (makeNative, callSafe, etc.)
+│   ├── builtins/                # built-in namespace implementations
+│   │   ├── net.cpp              # TCP, UDP, raw sockets, DNS
+│   │   ├── bytes.cpp            # struct pack/unpack, hex, binary data
+│   │   ├── crypto.cpp           # MD5, SHA-256
+│   │   ├── concurrency.cpp      # Lock, Channel, futures.all/race
+│   │   ├── http.cpp             # HTTP client + server
+│   │   ├── json.cpp             # JSON parser + stringifier
+│   │   ├── yaml.cpp             # YAML parser + stringifier
+│   │   └── methods.cpp          # string/array dot-methods
 │   ├── main.cpp                 # entry point + REPL
 │   └── vm/                      # bytecode VM (default engine)
 │       ├── opcode.h             # ~60 opcodes
@@ -160,7 +165,8 @@ Praia/
 │       ├── compiler.h/cpp       # AST -> bytecode compiler
 │       ├── vm.h/cpp             # stack-based virtual machine
 │       └── debug.h/cpp          # bytecode disassembler
-├── grains/                      # standard library modules
+├── sand/                        # package manager (git submodule)
+├── grains/                      # standard library grains
 ├── examples/                    # example programs
 ├── tests/                       # test suite (run via `make test`)
 ├── Makefile

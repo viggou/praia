@@ -3,7 +3,7 @@ CXXFLAGS = -std=c++17 -Wall -Wextra -g -MMD -MP
 SRC_DIR = src
 BUILD_DIR = build
 
-SOURCES = $(wildcard $(SRC_DIR)/*.cpp) $(wildcard $(SRC_DIR)/vm/*.cpp)
+SOURCES = $(wildcard $(SRC_DIR)/*.cpp) $(wildcard $(SRC_DIR)/vm/*.cpp) $(wildcard $(SRC_DIR)/builtins/*.cpp)
 OBJECTS = $(patsubst $(SRC_DIR)/%.cpp,$(BUILD_DIR)/%.o,$(SOURCES))
 DEPS = $(OBJECTS:.o=.d)
 TARGET = praia
@@ -56,7 +56,7 @@ $(BUILD_DIR)/%.o: $(SRC_DIR)/%.cpp | $(BUILD_DIR)
 -include $(DEPS)
 
 $(BUILD_DIR):
-	mkdir -p $(BUILD_DIR) $(BUILD_DIR)/vm
+	mkdir -p $(BUILD_DIR) $(BUILD_DIR)/vm $(BUILD_DIR)/builtins
 
 clean:
 	rm -rf $(BUILD_DIR) $(TARGET)
@@ -78,8 +78,8 @@ LIBDIR  ?= $(PREFIX)/lib/praia
 BINDIR   = $(PREFIX)/bin
 SAND_DIR = sand
 
-install: clean
-	$(MAKE) CXXFLAGS='$(CXXFLAGS) -DPRAIA_LIBDIR="\"$(LIBDIR)\""'
+install:
+	$(MAKE) BUILD_DIR=/tmp/praia-install-build CXXFLAGS='$(CXXFLAGS) -DPRAIA_LIBDIR="\"$(LIBDIR)\""'
 	install -d $(DESTDIR)$(BINDIR)
 	install -m 755 $(TARGET) $(DESTDIR)$(BINDIR)/$(TARGET)
 	install -d $(DESTDIR)$(LIBDIR)/grains
@@ -90,6 +90,7 @@ install: clean
 	cp -R $(SAND_DIR)/grain.yaml $(DESTDIR)$(LIBDIR)/sand/
 	@printf '#!/bin/sh\nexec "$(BINDIR)/praia" "$(LIBDIR)/sand/main.praia" "$$@"\n' > $(DESTDIR)$(BINDIR)/sand
 	chmod 755 $(DESTDIR)$(BINDIR)/sand
+	rm -rf /tmp/praia-install-build
 	@echo "Installed praia -> $(DESTDIR)$(BINDIR)/praia"
 	@echo "Installed sand  -> $(DESTDIR)$(BINDIR)/sand"
 	@echo "Installed grains -> $(DESTDIR)$(LIBDIR)/grains/"

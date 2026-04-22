@@ -39,21 +39,27 @@ inline Value callSafe(Interpreter& interp, std::shared_ptr<Callable> callable,
     return callable->call(interp, args);
 }
 
-// ── HTTP (builtins_http.cpp) ─────────────────────────────────
+// ── Builtin registration functions (each in src/builtins/*.cpp) ──
+void registerNetBuiltins(std::shared_ptr<PraiaMap> netMap);
+void registerBytesBuiltins(std::shared_ptr<PraiaMap> bytesMap);
+void registerCryptoBuiltins(std::shared_ptr<PraiaMap> cryptoMap);
+void registerConcurrencyBuiltins(Interpreter* self, std::shared_ptr<Environment> globals);
+
+// ── HTTP (builtins/http.cpp) ─────────────────────────────────
 Value doHttpRequest(const std::string& method, const std::string& url,
                     const std::string& body,
                     const std::unordered_map<std::string, std::string>& extraHeaders);
 void httpServerListen(int port, std::shared_ptr<Callable> handler, Interpreter& interp);
 
-// ── JSON (builtins_json.cpp) ─────────────────────────────────
+// ── JSON (builtins/json.cpp) ─────────────────────────────────
 Value jsonParse(const std::string& src);
 std::string jsonStringify(const Value& val, int indent = 0, int depth = 0);
 
-// ── YAML (builtins_yaml.cpp) ─────────────────────────────────
+// ── YAML (builtins/yaml.cpp) ─────────────────────────────────
 Value yamlParse(const std::string& src);
 std::string yamlStringify(const Value& val, int depth = 0);
 
-// ── String / Array dot-method dispatch (builtins_methods.cpp) ─
+// ── String / Array dot-method dispatch (builtins/methods.cpp) ─
 class VM;
 Value getStringMethod(const std::string& str, const std::string& name, int line);
 Value getArrayMethod(std::shared_ptr<PraiaArray> arr, const std::string& name, int line,

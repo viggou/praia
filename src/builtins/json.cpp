@@ -1,5 +1,5 @@
-#include "builtins.h"
-#include "value.h"
+#include "../builtins.h"
+#include "../value.h"
 #include <cctype>
 #include <iomanip>
 #include <memory>

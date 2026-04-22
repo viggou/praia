@@ -237,7 +237,7 @@ static void printAst(const std::vector<StmtPtr>& program) {
 
 // ── Main ─────────────────────────────────────────────────────
 
-static constexpr const char* PRAIA_VERSION = "0.2.2";
+static constexpr const char* PRAIA_VERSION = "0.2.3";
 
 static std::string readFile(const std::string& path) {
     std::ifstream file(path);
@@ -568,8 +568,26 @@ int main(int argc, char* argv[]) {
     // Used by grain resolution to find bundled stdlib grains.
     {
         namespace fs = std::filesystem;
-        fs::path binPath = fs::canonical(fs::path(argv[0]));
-        g_praiaInstallDir = binPath.parent_path().string();
+        fs::path arg0(argv[0]);
+        if (arg0.is_absolute() || arg0.string().find('/') != std::string::npos) {
+            // Absolute or relative path — resolve directly
+            try { g_praiaInstallDir = fs::canonical(arg0).parent_path().string(); }
+            catch (...) {}
+        } else {
+            // Bare name (e.g. "praia") — search PATH
+            const char* pathEnv = std::getenv("PATH");
+            if (pathEnv) {
+                std::istringstream paths(pathEnv);
+                std::string dir;
+                while (std::getline(paths, dir, ':')) {
+                    auto candidate = fs::path(dir) / arg0;
+                    if (fs::exists(candidate)) {
+                        g_praiaInstallDir = fs::canonical(candidate).parent_path().string();
+                        break;
+                    }
+                }
+            }
+        }
     }
 
     bool showTokens = false;

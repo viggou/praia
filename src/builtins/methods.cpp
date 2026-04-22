@@ -1,6 +1,6 @@
-#include "builtins.h"
-#include "value.h"
-#include "vm/vm.h"
+#include "../builtins.h"
+#include "../value.h"
+#include "../vm/vm.h"
 #include <algorithm>
 #include <memory>
 #include <regex>

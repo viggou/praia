@@ -1,5 +1,5 @@
-#include "builtins.h"
-#include "interpreter.h"
+#include "../builtins.h"
+#include "../interpreter.h"
 #include <algorithm>
 #include <atomic>
 #include <csignal>
