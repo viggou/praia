@@ -1080,7 +1080,32 @@ Value Interpreter::evaluate(const Expr* expr) {
     if (auto* e = dynamic_cast<const DotExpr*>(expr)) {
         Value obj = evaluate(e->object.get());
 
-        // Universal methods — work on any type
+        if (obj.isInstance()) {
+            auto inst = obj.asInstance();
+            // Fields first
+            auto fit = inst->fields.find(e->field);
+            if (fit != inst->fields.end()) return fit->second;
+            // Then methods
+            auto* methodDecl = inst->klass->findMethod(e->field);
+            if (methodDecl) {
+                auto bound = std::make_shared<PraiaMethod>();
+                bound->methodName = e->field;
+                bound->params = methodDecl->params;
+                bound->decl = methodDecl;
+                bound->instance = inst;
+                // Find which class in the hierarchy defines this method
+                auto walk = inst->klass;
+                while (walk && !walk->methods.count(e->field))
+                    walk = walk->superclass;
+                bound->definingClass = walk ? walk : inst->klass;
+                bound->closure = bound->definingClass->closure;
+                return Value(std::static_pointer_cast<Callable>(bound));
+            }
+            // Fall through to universal methods below
+        }
+
+        // Universal methods — work on any type, but instance
+        // fields/methods take priority (checked above).
         if (e->field == "toString") {
             Value captured = obj;
             return Value(makeNative("toString", 0,
@@ -1115,26 +1140,6 @@ Value Interpreter::evaluate(const Expr* expr) {
         }
 
         if (obj.isInstance()) {
-            auto inst = obj.asInstance();
-            // Fields first
-            auto fit = inst->fields.find(e->field);
-            if (fit != inst->fields.end()) return fit->second;
-            // Then methods
-            auto* methodDecl = inst->klass->findMethod(e->field);
-            if (methodDecl) {
-                auto bound = std::make_shared<PraiaMethod>();
-                bound->methodName = e->field;
-                bound->params = methodDecl->params;
-                bound->decl = methodDecl;
-                bound->instance = inst;
-                // Find which class in the hierarchy defines this method
-                auto walk = inst->klass;
-                while (walk && !walk->methods.count(e->field))
-                    walk = walk->superclass;
-                bound->definingClass = walk ? walk : inst->klass;
-                bound->closure = bound->definingClass->closure;
-                return Value(std::static_pointer_cast<Callable>(bound));
-            }
             throw RuntimeError("Instance has no property '" + e->field + "'", e->line);
         }
         if (obj.isMap()) {

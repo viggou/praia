@@ -974,7 +974,45 @@ VM::Result VM::execute(int baseFrameCount_) {
             std::string name = READ_STRING();
             Value obj = pop();
 
-            // Universal methods — work on any value type
+            if (obj.isInstance()) {
+                auto inst = obj.asInstance();
+                // Fields first
+                auto fit = inst->fields.find(name);
+                if (fit != inst->fields.end()) { push(fit->second); break; }
+
+                // Then methods — walk class chain, track which class owns it
+                std::shared_ptr<PraiaClass> methodOwner;
+                Value methodVal;
+                {
+                    auto walk = inst->klass;
+                    while (walk) {
+                        auto sit = walk->vmMethods.find(name);
+                        if (sit != walk->vmMethods.end()) {
+                            methodOwner = walk;
+                            methodVal = sit->second;
+                            break;
+                        }
+                        walk = walk->superclass;
+                    }
+                }
+                if (methodOwner) {
+                    if (methodVal.isCallable()) {
+                        auto* vmcc = dynamic_cast<VMClosureCallable*>(methodVal.asCallable().get());
+                        if (vmcc) {
+                            auto bm = std::make_shared<VMBoundMethod>(obj, vmcc->closure, methodOwner);
+                            push(Value(std::static_pointer_cast<Callable>(bm)));
+                            break;
+                        }
+                    }
+                    push(methodVal);
+                    break;
+                }
+
+                // Fall through to universal methods below
+            }
+
+            // Universal methods — work on any value type, but instance
+            // fields/methods take priority (checked above).
             if (name == "toString") {
                 Value captured = obj;
                 auto fn = std::make_shared<NativeFunction>();
@@ -1014,40 +1052,8 @@ VM::Result VM::execute(int baseFrameCount_) {
                 break;
             }
 
+            // If we fell through from an instance with no match, error now
             if (obj.isInstance()) {
-                auto inst = obj.asInstance();
-                // Fields first
-                auto fit = inst->fields.find(name);
-                if (fit != inst->fields.end()) { push(fit->second); break; }
-
-                // Then methods — walk class chain, track which class owns it
-                std::shared_ptr<PraiaClass> methodOwner;
-                Value methodVal;
-                {
-                    auto walk = inst->klass;
-                    while (walk) {
-                        auto sit = walk->vmMethods.find(name);
-                        if (sit != walk->vmMethods.end()) {
-                            methodOwner = walk;
-                            methodVal = sit->second;
-                            break;
-                        }
-                        walk = walk->superclass;
-                    }
-                }
-                if (methodOwner) {
-                    if (methodVal.isCallable()) {
-                        auto* vmcc = dynamic_cast<VMClosureCallable*>(methodVal.asCallable().get());
-                        if (vmcc) {
-                            auto bm = std::make_shared<VMBoundMethod>(obj, vmcc->closure, methodOwner);
-                            push(Value(std::static_pointer_cast<Callable>(bm)));
-                            break;
-                        }
-                    }
-                    push(methodVal);
-                    break;
-                }
-
                 RUNTIME_ERR("Instance has no property '" + name + "'");
             }
 
