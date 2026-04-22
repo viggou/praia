@@ -910,10 +910,18 @@ Value Interpreter::evaluate(const Expr* expr) {
 
         auto callable = callee.asCallable();
         int arity = callable->arity();
-        // Only reject too many args — fewer is fine (defaults/nil fill the rest)
-        if (arity != -1 && static_cast<int>(args.size()) > arity)
-            throw RuntimeError(callable->name() + "() expected at most " + std::to_string(arity) +
-                " argument(s) but got " + std::to_string(args.size()), e->line);
+        bool isNative = dynamic_cast<NativeFunction*>(callable.get()) != nullptr;
+        if (isNative) {
+            // Natives have no defaults — require exact arity
+            if (arity != -1 && static_cast<int>(args.size()) != arity)
+                throw RuntimeError(callable->name() + "() expected " + std::to_string(arity) +
+                    " argument(s) but got " + std::to_string(args.size()), e->line);
+        } else {
+            // Praia functions: reject too many args, fewer is fine (defaults/nil fill the rest)
+            if (arity != -1 && static_cast<int>(args.size()) > arity)
+                throw RuntimeError(callable->name() + "() expected at most " + std::to_string(arity) +
+                    " argument(s) but got " + std::to_string(args.size()), e->line);
+        }
 
         // Spawn the call in a background thread.
         // Native functions run directly — they don't touch interpreter state.

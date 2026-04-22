@@ -1588,6 +1588,11 @@ VM::Result VM::execute(int baseFrameCount_) {
                         return retVal;
                     }).share();
             } else if (native) {
+                int arity = native->arity();
+                if (arity != -1 && static_cast<int>(args.size()) != arity) {
+                    RUNTIME_ERR(native->name() + "() expected " + std::to_string(arity) +
+                        " argument(s) but got " + std::to_string(args.size()));
+                }
                 sharedFuture = std::async(std::launch::async,
                     [native, args]() -> Value {
                         return native->fn(args);
