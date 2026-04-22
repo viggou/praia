@@ -2,6 +2,7 @@
 #include "interpreter.h"
 #include <algorithm>
 #include <chrono>
+#include <cerrno>
 #include <cmath>
 #include <cstdio>
 #include <cstdint>
@@ -1615,6 +1616,117 @@ Interpreter::Interpreter() {
             return Value();
         }));
 
+    // ── Raw sockets ──
+
+    // Helper: map protocol name to IPPROTO_* constant
+    auto protoFromName = [](const std::string& name) -> int {
+        if (name == "icmp")  return IPPROTO_ICMP;
+        if (name == "icmp6") return IPPROTO_ICMPV6;
+        if (name == "tcp")   return IPPROTO_TCP;
+        if (name == "udp")   return IPPROTO_UDP;
+        if (name == "raw")   return IPPROTO_RAW;
+        return -1;
+    };
+
+    // net.rawSocket(protocol) — create a raw socket.
+    // protocol: "icmp", "icmp6", "tcp", "udp", "raw", or a number.
+    // Requires root/CAP_NET_RAW. On macOS, ICMP falls back to SOCK_DGRAM (unprivileged).
+    netMap->entries["rawSocket"] = Value(makeNative("net.rawSocket", 1,
+        [protoFromName](const std::vector<Value>& args) -> Value {
+            int proto;
+            if (args[0].isString()) {
+                proto = protoFromName(args[0].asString());
+                if (proto < 0)
+                    throw RuntimeError("net.rawSocket(): unknown protocol '" + args[0].asString() +
+                        "'. Valid: icmp, icmp6, tcp, udp, raw, or a number", 0);
+            } else if (args[0].isNumber()) {
+                proto = static_cast<int>(args[0].asNumber());
+            } else {
+                throw RuntimeError("net.rawSocket() requires a protocol string or number", 0);
+            }
+
+            int family = (proto == IPPROTO_ICMPV6) ? AF_INET6 : AF_INET;
+
+            // Try SOCK_RAW first (requires root)
+            int sock = socket(family, SOCK_RAW, proto);
+            if (sock >= 0) return Value(static_cast<int64_t>(sock));
+
+#ifdef __APPLE__
+            // macOS: SOCK_DGRAM with IPPROTO_ICMP works unprivileged
+            if (proto == IPPROTO_ICMP || proto == IPPROTO_ICMPV6) {
+                sock = socket(family, SOCK_DGRAM, proto);
+                if (sock >= 0) return Value(static_cast<int64_t>(sock));
+            }
+#endif
+
+            if (errno == EPERM || errno == EACCES)
+                throw RuntimeError("net.rawSocket(): permission denied — requires root or CAP_NET_RAW", 0);
+            throw RuntimeError("net.rawSocket(): cannot create socket (errno " + std::to_string(errno) + ")", 0);
+        }));
+
+    // net.rawSend(sock, host, data) — send raw data to a host
+    netMap->entries["rawSend"] = Value(makeNative("net.rawSend", 3,
+        [](const std::vector<Value>& args) -> Value {
+            if (!args[0].isNumber()) throw RuntimeError("net.rawSend() requires a socket", 0);
+            if (!args[1].isString()) throw RuntimeError("net.rawSend() requires a host string", 0);
+            if (!args[2].isString()) throw RuntimeError("net.rawSend() requires data string", 0);
+            int sock = static_cast<int>(args[0].asNumber());
+            std::string host = args[1].asString();
+            auto& data = args[2].asString();
+
+            // Detect socket family
+            struct sockaddr_storage ss;
+            socklen_t sslen = sizeof(ss);
+            int family = AF_INET;
+            if (getsockname(sock, (struct sockaddr*)&ss, &sslen) == 0 && ss.ss_family != 0)
+                family = ss.ss_family;
+
+            struct addrinfo hints = {}, *res;
+            hints.ai_family = family;
+            if (getaddrinfo(host.c_str(), nullptr, &hints, &res) != 0)
+                throw RuntimeError("net.rawSend(): cannot resolve host: " + host, 0);
+            ssize_t sent = sendto(sock, data.data(), data.size(), 0, res->ai_addr, res->ai_addrlen);
+            freeaddrinfo(res);
+            if (sent < 0)
+                throw RuntimeError("net.rawSend() failed", 0);
+            return Value(static_cast<int64_t>(sent));
+        }));
+
+    // net.rawRecv(sock, maxBytes?) — receive raw data, returns {data, host}
+    netMap->entries["rawRecv"] = Value(makeNative("net.rawRecv", -1,
+        [](const std::vector<Value>& args) -> Value {
+            if (args.empty() || !args[0].isNumber())
+                throw RuntimeError("net.rawRecv() requires a socket", 0);
+            int sock = static_cast<int>(args[0].asNumber());
+            int maxBytes = 65536;
+            if (args.size() > 1 && args[1].isNumber())
+                maxBytes = static_cast<int>(args[1].asNumber());
+
+            std::vector<char> buf(maxBytes);
+            struct sockaddr_storage from = {};
+            socklen_t fromLen = sizeof(from);
+            ssize_t n = recvfrom(sock, buf.data(), buf.size(), 0,
+                                  (struct sockaddr*)&from, &fromLen);
+            if (n < 0)
+                throw RuntimeError("net.rawRecv() failed", 0);
+
+            char addrBuf[INET6_ADDRSTRLEN];
+            if (from.ss_family == AF_INET) {
+                auto* s = (struct sockaddr_in*)&from;
+                inet_ntop(AF_INET, &s->sin_addr, addrBuf, sizeof(addrBuf));
+            } else if (from.ss_family == AF_INET6) {
+                auto* s = (struct sockaddr_in6*)&from;
+                inet_ntop(AF_INET6, &s->sin6_addr, addrBuf, sizeof(addrBuf));
+            } else {
+                std::snprintf(addrBuf, sizeof(addrBuf), "unknown");
+            }
+
+            auto result = std::make_shared<PraiaMap>();
+            result->entries["data"] = Value(std::string(buf.data(), n));
+            result->entries["host"] = Value(std::string(addrBuf));
+            return Value(result);
+        }));
+
     globals->define("net", Value(netMap));
 
     // ── bytes namespace ──
@@ -2204,6 +2316,18 @@ Interpreter::Interpreter() {
                 throw RuntimeError("sys.stdout() requires a string", 0);
             std::cout << args[0].asString() << std::flush;
             return Value();
+        }));
+
+    // ── Process identity ──
+
+    sysMap->entries["uid"] = Value(makeNative("sys.uid", 0,
+        [](const std::vector<Value>&) -> Value {
+            return Value(static_cast<int64_t>(geteuid()));
+        }));
+
+    sysMap->entries["isRoot"] = Value(makeNative("sys.isRoot", 0,
+        [](const std::vector<Value>&) -> Value {
+            return Value(geteuid() == 0);
         }));
 
     // ── Signal handling ──

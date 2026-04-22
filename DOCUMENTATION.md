@@ -2693,6 +2693,8 @@ In addition to file/directory operations, `sys` provides:
 | `sys.env(name)` | Read environment variable (returns nil if not set) |
 | `sys.setenv(name, value)` | Set an environment variable |
 | `sys.cwd()` | Current working directory |
+| `sys.uid()` | Effective user ID (`geteuid()`) |
+| `sys.isRoot()` | `true` if running as root (uid 0) |
 | `sys.platform` | `"darwin"`, `"linux"`, or `"windows"` |
 | `sys.stdout(str)` | Write to stdout without a trailing newline |
 | `sys.rawMode(bool)` | Enable/disable raw terminal mode (no line buffering) |
@@ -3172,10 +3174,44 @@ net.setTimeout(sock, 5000)     // 5 second timeout for send/recv
 | `net.udpBind(port)` | Create and bind a UDP socket to a port |
 | `net.sendTo(sock, host, port, data)` | Send a UDP datagram |
 | `net.recvFrom(sock, maxBytes?)` | Receive a datagram, returns `{data, host, port}` |
+| **Raw sockets** | |
+| `net.rawSocket(protocol)` | Create a raw socket. Protocol: `"icmp"`, `"icmp6"`, `"tcp"`, `"udp"`, `"raw"`, or a number |
+| `net.rawSend(sock, host, data)` | Send raw data to a host |
+| `net.rawRecv(sock, maxBytes?)` | Receive raw data, returns `{data, host}` |
 | **General** | |
-| `net.resolve(host)` | DNS lookup, returns array of IP strings |
+| `net.resolve(host)` | DNS lookup, returns array of IP strings (IPv4 and IPv6) |
 | `net.setTimeout(sock, ms)` | Set send/recv timeout in milliseconds |
 | `net.close(sock)` | Close a socket |
+
+### Raw Sockets
+
+Raw sockets allow sending and receiving custom protocol packets (ICMP, etc.). Requires root or `CAP_NET_RAW` on Linux. On macOS, unprivileged ICMP echo is supported via a `SOCK_DGRAM` fallback.
+
+```
+if (!sys.isRoot()) { print("warning: raw sockets may need root") }
+
+let sock = net.rawSocket("icmp")
+net.setTimeout(sock, 2000)
+
+// Build ICMP echo request with bytes.pack
+let packet = bytes.pack(">BBHHh", [8, 0, 0, 1, 1])  // type, code, checksum, id, seq
+// ... compute checksum, send, receive reply ...
+net.rawSend(sock, "127.0.0.1", packet)
+let reply = net.rawRecv(sock)
+print("reply from:", reply.host)
+net.close(sock)
+```
+
+With `SOCK_RAW`, received packets include the IP header (first 20 bytes for IPv4). Parse with `bytes.unpack`.
+
+Use `sys.isRoot()` to check privileges before attempting raw socket operations:
+
+```
+if (!sys.isRoot()) {
+    print("This tool requires root. Run with sudo.")
+    sys.exit(1)
+}
+```
 
 ---
 
