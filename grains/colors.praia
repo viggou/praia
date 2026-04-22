@@ -1,0 +1,75 @@
+// colors — ANSI color and style helpers for terminal output
+
+let ESC = "\x1b["
+let RESET = ESC + "0m"
+
+// Foreground colors
+func black(s)   { return ESC + "30m" + s + RESET }
+func red(s)     { return ESC + "31m" + s + RESET }
+func green(s)   { return ESC + "32m" + s + RESET }
+func yellow(s)  { return ESC + "33m" + s + RESET }
+func blue(s)    { return ESC + "34m" + s + RESET }
+func magenta(s) { return ESC + "35m" + s + RESET }
+func cyan(s)    { return ESC + "36m" + s + RESET }
+func white(s)   { return ESC + "37m" + s + RESET }
+func gray(s)    { return ESC + "90m" + s + RESET }
+
+// Bright foreground
+func brightRed(s)     { return ESC + "91m" + s + RESET }
+func brightGreen(s)   { return ESC + "92m" + s + RESET }
+func brightYellow(s)  { return ESC + "93m" + s + RESET }
+func brightBlue(s)    { return ESC + "94m" + s + RESET }
+func brightMagenta(s) { return ESC + "95m" + s + RESET }
+func brightCyan(s)    { return ESC + "96m" + s + RESET }
+func brightWhite(s)   { return ESC + "97m" + s + RESET }
+
+// Background colors
+func bgBlack(s)   { return ESC + "40m" + s + RESET }
+func bgRed(s)     { return ESC + "41m" + s + RESET }
+func bgGreen(s)   { return ESC + "42m" + s + RESET }
+func bgYellow(s)  { return ESC + "43m" + s + RESET }
+func bgBlue(s)    { return ESC + "44m" + s + RESET }
+func bgMagenta(s) { return ESC + "45m" + s + RESET }
+func bgCyan(s)    { return ESC + "46m" + s + RESET }
+func bgWhite(s)   { return ESC + "47m" + s + RESET }
+
+// Styles
+func bold(s)      { return ESC + "1m" + s + RESET }
+func dim(s)       { return ESC + "2m" + s + RESET }
+func italic(s)    { return ESC + "3m" + s + RESET }
+func underline(s) { return ESC + "4m" + s + RESET }
+func inverse(s)   { return ESC + "7m" + s + RESET }
+func strike(s)    { return ESC + "9m" + s + RESET }
+
+// 256-color and RGB
+func fg256(s, n)        { return ESC + "38;5;" + str(n) + "m" + s + RESET }
+func bg256(s, n)        { return ESC + "48;5;" + str(n) + "m" + s + RESET }
+func rgb(s, r, g, b)    { return ESC + "38;2;" + str(r) + ";" + str(g) + ";" + str(b) + "m" + s + RESET }
+func bgRgb(s, r, g, b)  { return ESC + "48;2;" + str(r) + ";" + str(g) + ";" + str(b) + "m" + s + RESET }
+
+// Strip all ANSI escape sequences from a string
+func strip(s) {
+    let result = ""
+    let i = 0
+    let sLen = len(s)
+    while (i < sLen) {
+        if (s[i] == "\x1b" && i + 1 < sLen && s[i + 1] == "[") {
+            i = i + 2
+            while (i < sLen && s[i] != "m") { i++ }
+            if (i < sLen) { i++ }
+        } else {
+            result = result + s[i]
+            i++
+        }
+    }
+    return result
+}
+
+export {
+    black, red, green, yellow, blue, magenta, cyan, white, gray,
+    brightRed, brightGreen, brightYellow, brightBlue, brightMagenta, brightCyan, brightWhite,
+    bgBlack, bgRed, bgGreen, bgYellow, bgBlue, bgMagenta, bgCyan, bgWhite,
+    bold, dim, italic, underline, inverse, strike,
+    fg256, bg256, rgb, bgRgb,
+    strip, RESET
+}

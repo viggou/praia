@@ -576,6 +576,169 @@ Interpreter::Interpreter() {
     sysMap->entries["exec"] = Value(std::static_pointer_cast<Callable>(execImpl));
     sysMap->entries["run"] = Value(std::static_pointer_cast<Callable>(execImpl));
 
+    // sys.spawn(cmd) — launch a child process with stdin/stdout/stderr pipes.
+    // Returns a process handle map with write/read/readErr/readLine/closeStdin/wait methods.
+    sysMap->entries["spawn"] = Value(makeNative("sys.spawn", 1,
+        [](const std::vector<Value>& args) -> Value {
+            if (!args[0].isString())
+                throw RuntimeError("sys.spawn() requires a command string", 0);
+            auto cmd = args[0].asString();
+
+            int stdinPipe[2], stdoutPipe[2], stderrPipe[2];
+            if (pipe(stdinPipe) < 0 || pipe(stdoutPipe) < 0 || pipe(stderrPipe) < 0)
+                throw RuntimeError("sys.spawn(): pipe creation failed", 0);
+
+            pid_t pid = fork();
+            if (pid < 0) {
+                close(stdinPipe[0]); close(stdinPipe[1]);
+                close(stdoutPipe[0]); close(stdoutPipe[1]);
+                close(stderrPipe[0]); close(stderrPipe[1]);
+                throw RuntimeError("sys.spawn(): fork failed", 0);
+            }
+
+            if (pid == 0) {
+                // Child
+                close(stdinPipe[1]);   // close write end of stdin
+                close(stdoutPipe[0]);  // close read end of stdout
+                close(stderrPipe[0]);  // close read end of stderr
+                dup2(stdinPipe[0], STDIN_FILENO);
+                dup2(stdoutPipe[1], STDOUT_FILENO);
+                dup2(stderrPipe[1], STDERR_FILENO);
+                close(stdinPipe[0]);
+                close(stdoutPipe[1]);
+                close(stderrPipe[1]);
+                execl("/bin/sh", "sh", "-c", cmd.c_str(), nullptr);
+                _exit(127);
+            }
+
+            // Parent
+            close(stdinPipe[0]);   // close read end of stdin
+            close(stdoutPipe[1]);  // close write end of stdout
+            close(stderrPipe[1]);  // close write end of stderr
+
+            // Shared state for the process handle
+            struct SpawnState {
+                pid_t pid;
+                int stdinFd;   // write end
+                int stdoutFd;  // read end
+                int stderrFd;  // read end
+                bool stdinOpen = true;
+                bool waited = false;
+                int exitCode = -1;
+                std::mutex mtx;
+            };
+            auto state = std::make_shared<SpawnState>();
+            state->pid = pid;
+            state->stdinFd = stdinPipe[1];
+            state->stdoutFd = stdoutPipe[0];
+            state->stderrFd = stderrPipe[0];
+
+            auto proc = std::make_shared<PraiaMap>();
+
+            proc->entries["pid"] = Value(static_cast<int64_t>(pid));
+
+            // proc.write(data) — write to child's stdin
+            proc->entries["write"] = Value(makeNative("proc.write", 1,
+                [state](const std::vector<Value>& args) -> Value {
+                    if (!args[0].isString())
+                        throw RuntimeError("proc.write() requires a string", 0);
+                    std::lock_guard<std::mutex> lock(state->mtx);
+                    if (!state->stdinOpen)
+                        throw RuntimeError("proc.write(): stdin is closed", 0);
+                    auto& data = args[0].asString();
+                    ssize_t written = ::write(state->stdinFd, data.data(), data.size());
+                    if (written < 0)
+                        throw RuntimeError("proc.write() failed", 0);
+                    return Value(static_cast<int64_t>(written));
+                }));
+
+            // proc.closeStdin() — close the write end, signaling EOF to child
+            proc->entries["closeStdin"] = Value(makeNative("proc.closeStdin", 0,
+                [state](const std::vector<Value>&) -> Value {
+                    std::lock_guard<std::mutex> lock(state->mtx);
+                    if (state->stdinOpen) {
+                        close(state->stdinFd);
+                        state->stdinOpen = false;
+                    }
+                    return Value();
+                }));
+
+            // Helper: read all from an fd
+            auto readAllFd = [](int fd) -> std::string {
+                std::string result;
+                char buf[4096];
+                ssize_t n;
+                while ((n = ::read(fd, buf, sizeof(buf))) > 0)
+                    result.append(buf, n);
+                return result;
+            };
+
+            // proc.read() — read all of child's stdout (blocks until EOF)
+            proc->entries["read"] = Value(makeNative("proc.read", 0,
+                [state, readAllFd](const std::vector<Value>&) -> Value {
+                    return Value(readAllFd(state->stdoutFd));
+                }));
+
+            // proc.readErr() — read all of child's stderr (blocks until EOF)
+            proc->entries["readErr"] = Value(makeNative("proc.readErr", 0,
+                [state, readAllFd](const std::vector<Value>&) -> Value {
+                    return Value(readAllFd(state->stderrFd));
+                }));
+
+            // proc.readLine() — read one line from stdout (blocks until \n or EOF)
+            // Returns nil on EOF.
+            proc->entries["readLine"] = Value(makeNative("proc.readLine", 0,
+                [state](const std::vector<Value>&) -> Value {
+                    std::string line;
+                    char c;
+                    while (true) {
+                        ssize_t n = ::read(state->stdoutFd, &c, 1);
+                        if (n <= 0) {
+                            // EOF — return nil if nothing read, partial line otherwise
+                            if (line.empty()) return Value();
+                            return Value(std::move(line));
+                        }
+                        if (c == '\n') return Value(std::move(line));
+                        line += c;
+                    }
+                }));
+
+            // proc.wait() — wait for child to exit, return exitCode
+            proc->entries["wait"] = Value(makeNative("proc.wait", 0,
+                [state](const std::vector<Value>&) -> Value {
+                    std::lock_guard<std::mutex> lock(state->mtx);
+                    if (state->waited)
+                        return Value(static_cast<int64_t>(state->exitCode));
+                    // Close stdin if still open
+                    if (state->stdinOpen) {
+                        close(state->stdinFd);
+                        state->stdinOpen = false;
+                    }
+                    int status = 0;
+                    waitpid(state->pid, &status, 0);
+                    state->exitCode = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+                    state->waited = true;
+                    return Value(static_cast<int64_t>(state->exitCode));
+                }));
+
+            // proc.kill(signal?) — send a signal to the child (default SIGTERM)
+            proc->entries["kill"] = Value(makeNative("proc.kill", -1,
+                [state](const std::vector<Value>& args) -> Value {
+                    int sig = SIGTERM;
+                    if (!args.empty() && args[0].isString()) {
+                        int s = signalNameToNum(args[0].asString());
+                        if (s < 0) throw RuntimeError("proc.kill(): unknown signal", 0);
+                        sig = s;
+                    } else if (!args.empty() && args[0].isNumber()) {
+                        sig = static_cast<int>(args[0].asNumber());
+                    }
+                    ::kill(state->pid, sig);
+                    return Value();
+                }));
+
+            return Value(proc);
+        }));
+
     sysMap->entries["exit"] = Value(makeNative("sys.exit", 1,
         [](const std::vector<Value>& args) -> Value {
             int code = 0;

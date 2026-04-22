@@ -1317,6 +1317,53 @@ if (r3.exitCode != 0) {
 }
 ```
 
+### Process Spawning
+
+`sys.spawn(cmd)` launches a child process with piped stdin/stdout/stderr, returning a process handle for interactive communication.
+
+```
+let proc = sys.spawn("cat -n")
+proc.write("hello\n")
+proc.write("world\n")
+proc.closeStdin()         // signal EOF to child
+print(proc.read())        // read all stdout
+print("exit:", proc.wait())
+```
+
+#### Process handle methods
+
+| Method | Description |
+|--------|-------------|
+| `proc.write(data)` | Write a string to the child's stdin |
+| `proc.closeStdin()` | Close stdin (signals EOF to the child) |
+| `proc.read()` | Read all of stdout (blocks until EOF) |
+| `proc.readErr()` | Read all of stderr (blocks until EOF) |
+| `proc.readLine()` | Read one line from stdout (returns nil on EOF) |
+| `proc.wait()` | Wait for exit, returns exit code |
+| `proc.kill(signal?)` | Send a signal (default SIGTERM). Accepts name or number |
+| `proc.pid` | The child's process ID |
+
+#### Line-by-line reading
+
+```
+let proc = sys.spawn("grep -i error")
+proc.write("INFO all good\n")
+proc.write("ERROR disk full\n")
+proc.write("ERROR timeout\n")
+proc.closeStdin()
+
+let line = proc.readLine()
+while (line != nil) {
+    print("match:", line)
+    line = proc.readLine()
+}
+proc.wait()
+// match: ERROR disk full
+// match: ERROR timeout
+```
+
+Use `sys.exec` for fire-and-forget commands. Use `sys.spawn` when you need to pipe input, read output line-by-line, or interact with a long-running process.
+
 ### Command-Line Arguments
 
 Arguments passed after the script name are available in `sys.args`:
@@ -2854,6 +2901,75 @@ print(hex.dump("Hello, World!\n"))
 ```
 
 Non-printable bytes show as `.` in the ASCII column. Optional second argument sets columns (default 16).
+
+---
+
+## colors Grain
+
+The `colors` grain provides ANSI color and style helpers for terminal output.
+
+```
+use "colors"
+```
+
+### Foreground colors
+
+```
+print(colors.red("error:") + " something went wrong")
+print(colors.green("ok"))
+print(colors.yellow("warning"))
+print(colors.blue("info"))
+print(colors.gray("debug output"))
+```
+
+Available: `black`, `red`, `green`, `yellow`, `blue`, `magenta`, `cyan`, `white`, `gray`, `brightRed`, `brightGreen`, `brightYellow`, `brightBlue`, `brightMagenta`, `brightCyan`, `brightWhite`
+
+### Background colors
+
+```
+print(colors.bgRed(colors.white(" FAIL ")))
+print(colors.bgGreen(colors.black(" PASS ")))
+```
+
+Available: `bgBlack`, `bgRed`, `bgGreen`, `bgYellow`, `bgBlue`, `bgMagenta`, `bgCyan`, `bgWhite`
+
+### Styles
+
+```
+print(colors.bold("important"))
+print(colors.underline("link"))
+print(colors.dim("muted"))
+print(colors.italic("emphasis"))
+print(colors.strike("deleted"))
+print(colors.inverse("inverted"))
+```
+
+### 256-color and RGB
+
+```
+print(colors.fg256("orange-ish", 208))
+print(colors.bg256("highlighted", 226))
+print(colors.rgb("any color", 255, 128, 0))
+print(colors.bgRgb("bg color", 50, 50, 50))
+```
+
+### Composing styles
+
+Functions nest naturally:
+
+```
+print(colors.bold(colors.red("bold red error")))
+print(colors.bgYellow(colors.black(" WARNING ")))
+```
+
+### Stripping colors
+
+Remove all ANSI escape sequences from a string (useful for logging to files):
+
+```
+let colored = colors.red("error")
+let plain = colors.strip(colored)    // "error" (no escapes)
+```
 
 ---
 
