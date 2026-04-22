@@ -1,0 +1,122 @@
+// re — regular expression utilities with named groups, split, and escape
+
+// Parse (?<name>...) groups from a pattern, returning {clean, names}
+// where clean has (?<name>...) replaced with (...) and names is an
+// ordered array of group names (nil for unnamed groups).
+func parseNamedGroups(pattern) {
+    let clean = ""
+    let names = []
+    let i = 0
+    let pLen = len(pattern)
+
+    while (i < pLen) {
+        // Check for named group: (?<name>
+        if (i + 3 < pLen && pattern[i] == "(" && pattern[i + 1] == "?" && pattern[i + 2] == "<") {
+            // Make sure it's not a lookbehind (?<=...) or (?<!...)
+            if (i + 3 < pLen && pattern[i + 3] != "=" && pattern[i + 3] != "!") {
+                // Extract group name
+                let nameStart = i + 3
+                let j = nameStart
+                while (j < pLen && pattern[j] != ">") { j++ }
+                if (j < pLen) {
+                    let groupName = pattern.slice(nameStart, j)
+                    names.push(groupName)
+                    clean = clean + "("
+                    i = j + 1
+                    continue
+                }
+            }
+        }
+
+        // Track unnamed capture groups for correct name indexing
+        if (pattern[i] == "(" && i + 1 < pLen && pattern[i + 1] != "?") {
+            names.push(nil)
+        }
+
+        // Handle escaped characters (skip next char)
+        if (pattern[i] == "\\" && i + 1 < pLen) {
+            clean = clean + pattern[i] + pattern[i + 1]
+            i = i + 2
+            continue
+        }
+
+        clean = clean + pattern[i]
+        i++
+    }
+
+    return {clean: clean, names: names}
+}
+
+// Build a named map from match groups and name list
+func buildNamed(groups, names) {
+    let named = {}
+    for (i in 0..len(names)) {
+        if (names[i] != nil && i < len(groups)) {
+            named[names[i]] = groups[i]
+        }
+    }
+    return named
+}
+
+// Test if a pattern matches anywhere in the string
+func test(str, pattern) {
+    return str.test(pattern)
+}
+
+// Find the first match with full group and named group support
+func match(str, pattern) {
+    let parsed = parseNamedGroups(pattern)
+    let m = str.match(parsed.clean)
+    if (m == nil) { return nil }
+    m.named = buildNamed(m.groups, parsed.names)
+    return m
+}
+
+// Find all matches with full group and named group support
+func matchAll(str, pattern) {
+    let parsed = parseNamedGroups(pattern)
+    let matches = str.matchAll(parsed.clean)
+    if (len(parsed.names) > 0) {
+        for (m in matches) {
+            m.named = buildNamed(m.groups, parsed.names)
+        }
+    }
+    return matches
+}
+
+// Replace all matches with a replacement string (supports $1, $2, etc.)
+func replace(str, pattern, replacement) {
+    let parsed = parseNamedGroups(pattern)
+    return str.replacePattern(parsed.clean, replacement)
+}
+
+// Split a string by a regex pattern
+func split(str, pattern) {
+    let matches = str.matchAll(pattern)
+    if (len(matches) == 0) { return [str] }
+
+    let result = []
+    let pos = 0
+    for (m in matches) {
+        result.push(str.slice(pos, m.index))
+        pos = m.index + len(m.match)
+    }
+    result.push(str.slice(pos))
+    return result
+}
+
+// Escape special regex characters in a string so it matches literally
+func escape(str) {
+    let special = "\\^$.|?*+()[]{}"
+    let result = ""
+    for (c in str) {
+        if (special.contains(c)) {
+            result = result + "\\" + c
+        } else {
+            result = result + c
+        }
+    }
+    return result
+}
+
+export { test, match, matchAll, replace, split, escape }

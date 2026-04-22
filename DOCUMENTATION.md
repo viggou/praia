@@ -1159,6 +1159,87 @@ print(clean)    // "too many spaces"
 
 ---
 
+## re Grain (Advanced Regex)
+
+The `re` grain provides named capture groups, regex split, and escape — features not available on the built-in string methods.
+
+```
+use "re"
+```
+
+### Functions
+
+| Function | Description |
+|----------|-------------|
+| `re.test(str, pattern)` | Returns `true` if pattern matches anywhere |
+| `re.match(str, pattern)` | First match with `groups`, `named`, and `index` (or `nil`) |
+| `re.matchAll(str, pattern)` | Array of all matches, each with `groups` and `named` |
+| `re.replace(str, pattern, repl)` | Replace all matches (`$1`, `$2` back-references work) |
+| `re.split(str, pattern)` | Split string by regex pattern |
+| `re.escape(str)` | Escape special regex characters for literal matching |
+
+### Named groups
+
+Use `(?<name>...)` syntax. Named groups appear in `m.named` as a map:
+
+```
+let m = re.match("2026-04-22", "(?<year>\\d{4})-(?<month>\\d{2})-(?<day>\\d{2})")
+print(m.named.year)    // "2026"
+print(m.named.month)   // "04"
+print(m.named.day)     // "22"
+print(m.groups)         // ["2026", "04", "22"]
+```
+
+Named and unnamed groups can be mixed. Unnamed groups get `nil` in the name list and don't appear in `named`.
+
+### matchAll with named groups
+
+```
+let text = "name=Alice age=30 city=London"
+let matches = re.matchAll(text, "(?<key>\\w+)=(?<val>\\w+)")
+for (m in matches) {
+    print(m.named.key, "=>", m.named.val)
+}
+// name => Alice
+// age => 30
+// city => London
+```
+
+### split
+
+```
+re.split("one,,two,,,three", ",+")       // ["one", "two", "three"]
+re.split("hello world  foo", "\\s+")     // ["hello", "world", "foo"]
+re.split("a1b2c3", "\\d")                // ["a", "b", "c", ""]
+```
+
+### escape
+
+Escape user input for safe inclusion in a regex pattern:
+
+```
+let literal = re.escape("file (1).txt")
+print(literal)                             // "file \\(1\\)\\.txt"
+re.test("file (1).txt", literal)          // true
+```
+
+### Practical: parsing log lines
+
+```
+use "re"
+
+let log = "2026-04-22 ERROR [auth] Login failed user=admin"
+let m = re.match(log, "(?<date>\\S+) (?<level>\\w+) \\[(?<mod>\\w+)\\] (?<msg>.*)")
+print(m.named.level)    // "ERROR"
+
+let pairs = re.matchAll(m.named.msg, "(?<key>\\w+)=(?<val>\\S+)")
+for (p in pairs) {
+    print(p.named.key, "=", p.named.val)   // user = admin
+}
+```
+
+---
+
 ## Array Methods
 
 Methods are called with dot notation on array values.
