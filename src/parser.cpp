@@ -833,8 +833,14 @@ ExprPtr Parser::primary() {
                 e->intValue = 0;
             }
         } else {
-            e->isInt = false;
-            e->floatValue = std::stod(lex);
+            try {
+                e->isInt = false;
+                e->floatValue = std::stod(lex);
+            } catch (const std::out_of_range&) {
+                error(previous(), "Float literal too large: " + lex);
+                e->isInt = false;
+                e->floatValue = 0.0;
+            }
         }
         return e;
     }
