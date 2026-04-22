@@ -50,7 +50,13 @@ Value VMClosureCallable::call(Interpreter&, const std::vector<Value>& args) {
 
     int savedFrameCount = currentVm->frameCount;
 
-    currentVm->push(Value()); // slot for the closure itself
+    // Slot 0 = the callable itself (functions reference slot 0 for recursion).
+    // Build a lightweight wrapper pointing to the same ObjClosure.
+    auto self = std::make_shared<VMClosureCallable>(closure);
+    self->vm = currentVm;
+    self->ownedPrototype = ownedPrototype;
+    self->taskOwnership = taskOwnership;
+    currentVm->push(Value(std::static_pointer_cast<Callable>(self)));
     for (auto& arg : args) currentVm->push(arg);
 
     if (!currentVm->callClosure(closure, static_cast<int>(args.size()), 0)) return Value();
