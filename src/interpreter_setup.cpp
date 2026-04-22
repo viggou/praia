@@ -79,9 +79,28 @@ Interpreter::Interpreter() {
     // ── Global functions ──
 
     globals->define("print", Value(makeNative("print", -1,
-        [](const std::vector<Value>& args) -> Value {
+        [self](const std::vector<Value>& args) -> Value {
             for (size_t i = 0; i < args.size(); i++) {
                 if (i > 0) std::cout << " ";
+                if (args[i].isInstance() && args[i].asInstance()->klass) {
+                    auto inst = args[i].asInstance();
+                    auto* method = inst->klass->findMethod("__str");
+                    if (!method) method = inst->klass->findMethod("toString");
+                    if (method) {
+                        auto bound = std::make_shared<PraiaMethod>();
+                        bound->methodName = method->name;
+                        bound->params = method->params;
+                        bound->decl = method;
+                        bound->instance = inst;
+                        auto walk = inst->klass;
+                        while (walk && !walk->methods.count(method->name))
+                            walk = walk->superclass;
+                        bound->definingClass = walk ? walk : inst->klass;
+                        bound->closure = bound->definingClass->closure;
+                        std::cout << bound->call(*self, {}).toString();
+                        continue;
+                    }
+                }
                 std::cout << args[i].toString();
             }
             std::cout << "\n";
@@ -89,7 +108,24 @@ Interpreter::Interpreter() {
         })));
 
     globals->define("len", Value(makeNative("len", 1,
-        [](const std::vector<Value>& args) -> Value {
+        [self](const std::vector<Value>& args) -> Value {
+            if (args[0].isInstance()) {
+                auto inst = args[0].asInstance();
+                auto* decl = inst->klass->findMethod("__len");
+                if (decl) {
+                    auto bound = std::make_shared<PraiaMethod>();
+                    bound->methodName = "__len";
+                    bound->params = decl->params;
+                    bound->decl = decl;
+                    bound->instance = inst;
+                    auto walk = inst->klass;
+                    while (walk && !walk->methods.count("__len"))
+                        walk = walk->superclass;
+                    bound->definingClass = walk ? walk : inst->klass;
+                    bound->closure = bound->definingClass->closure;
+                    return bound->call(*self, {});
+                }
+            }
             if (args[0].isArray())
                 return Value(static_cast<int64_t>(args[0].asArray()->elements.size()));
             if (args[0].isString())
@@ -138,16 +174,22 @@ Interpreter::Interpreter() {
         [self](const std::vector<Value>& args) -> Value {
             if (args[0].isInstance()) {
                 auto inst = args[0].asInstance();
-                // Check for a toString() method
                 if (inst->klass) {
-                    auto* method = inst->klass->findMethod("toString");
+                    // Check __str first, then toString (backwards compat)
+                    auto* method = inst->klass->findMethod("__str");
+                    if (!method) method = inst->klass->findMethod("toString");
                     if (method) {
                         auto bound = std::make_shared<PraiaMethod>();
-                        bound->methodName = "toString";
+                        bound->methodName = method == inst->klass->findMethod("__str") ? "__str" : "toString";
                         bound->params = method->params;
                         bound->decl = method;
-                        bound->closure = inst->klass->closure;
                         bound->instance = inst;
+                        auto walk = inst->klass;
+                        std::string mname = bound->methodName;
+                        while (walk && !walk->methods.count(mname))
+                            walk = walk->superclass;
+                        bound->definingClass = walk ? walk : inst->klass;
+                        bound->closure = bound->definingClass->closure;
                         return bound->call(*self, {});
                     }
                 }

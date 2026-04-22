@@ -86,34 +86,75 @@ void vmRegisterNatives(VM& vm) {
 
     // Override str() to call toString() on VM instances.
     // Uses VM::current() so it always targets the active VM (safe for async).
+    // Helper: find and call a dunder/named method on a VM instance
+    auto vmCallInstanceMethod = [](VM* vm, std::shared_ptr<PraiaInstance> inst,
+                                    const std::string& methodName,
+                                    const std::vector<Value>& args) -> std::pair<bool, Value> {
+        auto walk = inst->klass;
+        while (walk) {
+            auto it = walk->vmMethods.find(methodName);
+            if (it != walk->vmMethods.end() && it->second.isCallable()) {
+                auto* vmcc = dynamic_cast<VMClosureCallable*>(it->second.asCallable().get());
+                if (vmcc) {
+                    auto bm = std::make_shared<VMBoundMethod>(Value(inst), vmcc->closure, walk);
+                    Value result = callWithVM(*vm, std::static_pointer_cast<Callable>(bm), args);
+                    return {true, result};
+                }
+                break;
+            }
+            walk = walk->superclass;
+        }
+        return {false, Value()};
+    };
+
+    // Override str() — checks __str, then toString
     vm.defineNative("str", makeNat("str", 1,
-        [](const std::vector<Value>& args) -> Value {
+        [vmCallInstanceMethod](const std::vector<Value>& args) -> Value {
             VM* vm = VM::current();
             if (args[0].isInstance() && vm) {
                 auto inst = args[0].asInstance();
-                if (inst->klass) {
-                    auto walk = inst->klass;
-                    while (walk) {
-                        auto it = walk->vmMethods.find("toString");
-                        if (it != walk->vmMethods.end() && it->second.isCallable()) {
-                            auto* vmcc = dynamic_cast<VMClosureCallable*>(it->second.asCallable().get());
-                            if (vmcc) {
-                                vm->push(Value(inst)); // slot for 'this'
-                                vm->callClosure(vmcc->closure, 0, 0); // throws on failure
-                                int saved = vm->frameCount;
-                                auto result = vm->execute(saved - 1);
-                                if (result == VM::Result::OK)
-                                    return vm->pop();
-                                throw RuntimeError(
-                                    vm->lastError().empty() ? "toString() failed" : vm->lastError(), 0);
-                            }
-                            break;
-                        }
-                        walk = walk->superclass;
-                    }
-                }
+                auto [ok, r] = vmCallInstanceMethod(vm, inst, "__str", {});
+                if (ok) return r;
+                auto [ok2, r2] = vmCallInstanceMethod(vm, inst, "toString", {});
+                if (ok2) return r2;
             }
             return Value(args[0].toString());
+        }));
+
+    // Override len() — checks __len
+    vm.defineNative("len", makeNat("len", 1,
+        [vmCallInstanceMethod](const std::vector<Value>& args) -> Value {
+            VM* vm = VM::current();
+            if (args[0].isInstance() && vm) {
+                auto inst = args[0].asInstance();
+                auto [ok, r] = vmCallInstanceMethod(vm, inst, "__len", {});
+                if (ok) return r;
+            }
+            if (args[0].isArray())
+                return Value(static_cast<int64_t>(args[0].asArray()->elements.size()));
+            if (args[0].isString())
+                return Value(static_cast<int64_t>(args[0].asString().size()));
+            if (args[0].isMap())
+                return Value(static_cast<int64_t>(args[0].asMap()->entries.size()));
+            throw RuntimeError("len() requires an array, string, or map", 0);
+        }));
+
+    // Override print() — checks __str/toString on instances
+    vm.defineNative("print", makeNat("print", -1,
+        [vmCallInstanceMethod](const std::vector<Value>& args) -> Value {
+            VM* vm = VM::current();
+            for (size_t i = 0; i < args.size(); i++) {
+                if (i > 0) std::cout << " ";
+                if (args[i].isInstance() && vm) {
+                    auto inst = args[i].asInstance();
+                    auto [ok, r] = vmCallInstanceMethod(vm, inst, "__str", {});
+                    if (!ok) std::tie(ok, r) = vmCallInstanceMethod(vm, inst, "toString", {});
+                    if (ok) { std::cout << r.toString(); continue; }
+                }
+                std::cout << args[i].toString();
+            }
+            std::cout << "\n";
+            return Value();
         }));
 
     // Override higher-order functions with VM-aware versions.

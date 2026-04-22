@@ -15,6 +15,45 @@
 
 namespace fs = std::filesystem;
 
+// ── Operator overloading helpers ──
+// Call a dunder method on an instance if it exists. Returns {true, result} if found.
+static std::pair<bool, Value> callDunder(Interpreter& interp,
+                                          const std::shared_ptr<PraiaInstance>& inst,
+                                          const std::string& methodName,
+                                          const std::vector<Value>& args) {
+    auto* decl = inst->klass->findMethod(methodName);
+    if (!decl) return {false, Value()};
+    auto bound = std::make_shared<PraiaMethod>();
+    bound->methodName = methodName;
+    bound->params = decl->params;
+    bound->decl = decl;
+    bound->instance = inst;
+    auto walk = inst->klass;
+    while (walk && !walk->methods.count(methodName))
+        walk = walk->superclass;
+    bound->definingClass = walk ? walk : inst->klass;
+    bound->closure = bound->definingClass->closure;
+    return {true, bound->call(interp, args)};
+}
+
+// Map binary operator token to dunder method name
+static std::string binaryDunder(TokenType op) {
+    switch (op) {
+        case TokenType::PLUS:    return "__add";
+        case TokenType::MINUS:   return "__sub";
+        case TokenType::STAR:    return "__mul";
+        case TokenType::SLASH:   return "__div";
+        case TokenType::PERCENT: return "__mod";
+        case TokenType::EQ:      return "__eq";
+        case TokenType::NEQ:     return "__eq";
+        case TokenType::LT:      return "__lt";
+        case TokenType::GT:      return "__gt";
+        case TokenType::LTE:     return "__gt"; // !(a > b) → !(a.__gt(b))
+        case TokenType::GTE:     return "__lt"; // !(a < b) → !(a.__lt(b))
+        default: return "";
+    }
+}
+
 // Invoke a Callable with arity check + line-context for errors.
 // Native functions throw with line=0 because they don't know the caller;
 // we rewrite that to the current call-site line so the user sees a real location.
@@ -572,6 +611,10 @@ Value Interpreter::evaluate(const Expr* expr) {
     if (auto* e = dynamic_cast<const UnaryExpr*>(expr)) {
         Value operand = evaluate(e->operand.get());
         if (e->op == TokenType::MINUS) {
+            if (operand.isInstance()) {
+                auto [found, result] = callDunder(*this, operand.asInstance(), "__neg", {});
+                if (found) return result;
+            }
             if (!operand.isNumber())
                 throw RuntimeError("Operand of '-' must be a number", e->line);
             if (operand.isInt()) return Value(-operand.asInt());
@@ -624,6 +667,20 @@ Value Interpreter::evaluate(const Expr* expr) {
 
         Value left  = evaluate(e->left.get());
         Value right = evaluate(e->right.get());
+
+        // Operator overloading: check for dunder methods on instances
+        if (left.isInstance()) {
+            std::string dunder = binaryDunder(e->op);
+            if (!dunder.empty()) {
+                auto [found, result] = callDunder(*this, left.asInstance(), dunder, {right});
+                if (found) {
+                    // NEQ, LTE, GTE negate the result of __eq, __gt, __lt
+                    if (e->op == TokenType::NEQ || e->op == TokenType::LTE || e->op == TokenType::GTE)
+                        return Value(!result.isTruthy());
+                    return result;
+                }
+            }
+        }
 
         switch (e->op) {
         case TokenType::PLUS:
@@ -910,6 +967,10 @@ Value Interpreter::evaluate(const Expr* expr) {
                 throw RuntimeError("Map has no key '" + idx.asString() + "'", e->line);
             return it->second;
         }
+        if (obj.isInstance()) {
+            auto [found, result] = callDunder(*this, obj.asInstance(), "__index", {idx});
+            if (found) return result;
+        }
         throw RuntimeError("Can only index into arrays, strings, and maps", e->line);
     }
 
@@ -935,6 +996,10 @@ Value Interpreter::evaluate(const Expr* expr) {
                 throw RuntimeError("Map key must be a string", e->line);
             obj.asMap()->entries[idx.asString()] = val;
             return val;
+        }
+        if (obj.isInstance()) {
+            auto [found, result] = callDunder(*this, obj.asInstance(), "__indexSet", {idx, val});
+            if (found) return result;
         }
         if (obj.isString())
             throw RuntimeError("Strings are immutable — cannot assign to index", e->line);

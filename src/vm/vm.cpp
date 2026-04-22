@@ -15,6 +15,30 @@
 
 namespace fs = std::filesystem;
 
+// ── Operator overloading helper ──
+// Try to call a dunder method on a VM instance. Returns {true, result} if found.
+static std::pair<bool, Value> vmCallDunder(VM& vm, const Value& instance,
+                                            const std::string& methodName,
+                                            const std::vector<Value>& args) {
+    if (!instance.isInstance()) return {false, Value()};
+    auto inst = instance.asInstance();
+    auto walk = inst->klass;
+    while (walk) {
+        auto it = walk->vmMethods.find(methodName);
+        if (it != walk->vmMethods.end() && it->second.isCallable()) {
+            auto* vmcc = dynamic_cast<VMClosureCallable*>(it->second.asCallable().get());
+            if (vmcc) {
+                auto bm = std::make_shared<VMBoundMethod>(instance, vmcc->closure, walk);
+                Value result = callWithVM(vm, std::static_pointer_cast<Callable>(bm), args);
+                return {true, result};
+            }
+            break;
+        }
+        walk = walk->superclass;
+    }
+    return {false, Value()};
+}
+
 // Thread-local pointer to the currently executing VM
 thread_local VM* VM::currentVM_ = nullptr;
 
@@ -584,6 +608,7 @@ VM::Result VM::execute(int baseFrameCount_) {
         // ── Arithmetic ──
         case OpCode::OP_ADD: {
             Value b = pop(), a = pop();
+            if (a.isInstance()) { auto [ok, r] = vmCallDunder(*this, a, "__add", {b}); if (ok) { push(r); break; } }
             if (a.isInt() && b.isInt()) { push(Value(a.asInt() + b.asInt())); break; }
             if (a.isNumber() && b.isNumber()) { push(Value(a.asNumber() + b.asNumber())); break; }
             if (a.isArray() && b.isArray()) {
@@ -603,18 +628,21 @@ VM::Result VM::execute(int baseFrameCount_) {
         }
         case OpCode::OP_SUBTRACT: {
             Value b = pop(), a = pop();
+            if (a.isInstance()) { auto [ok, r] = vmCallDunder(*this, a, "__sub", {b}); if (ok) { push(r); break; } }
             if (a.isInt() && b.isInt()) { push(Value(a.asInt() - b.asInt())); break; }
             if (a.isNumber() && b.isNumber()) { push(Value(a.asNumber() - b.asNumber())); break; }
             RUNTIME_ERR("Operands of '-' must be numbers");
         }
         case OpCode::OP_MULTIPLY: {
             Value b = pop(), a = pop();
+            if (a.isInstance()) { auto [ok, r] = vmCallDunder(*this, a, "__mul", {b}); if (ok) { push(r); break; } }
             if (a.isInt() && b.isInt()) { push(Value(a.asInt() * b.asInt())); break; }
             if (a.isNumber() && b.isNumber()) { push(Value(a.asNumber() * b.asNumber())); break; }
             RUNTIME_ERR("Operands of '*' must be numbers");
         }
         case OpCode::OP_DIVIDE: {
             Value b = pop(), a = pop();
+            if (a.isInstance()) { auto [ok, r] = vmCallDunder(*this, a, "__div", {b}); if (ok) { push(r); break; } }
             if (a.isNumber() && b.isNumber()) {
                 if (b.asNumber() == 0) { RUNTIME_ERR("Division by zero"); }
                 push(Value(a.asNumber() / b.asNumber())); break;
@@ -623,6 +651,7 @@ VM::Result VM::execute(int baseFrameCount_) {
         }
         case OpCode::OP_MODULO: {
             Value b = pop(), a = pop();
+            if (a.isInstance()) { auto [ok, r] = vmCallDunder(*this, a, "__mod", {b}); if (ok) { push(r); break; } }
             if (a.isInt() && b.isInt()) {
                 if (b.asInt() == 0) { RUNTIME_ERR("Modulo by zero"); }
                 push(Value(a.asInt() % b.asInt())); break;
@@ -634,6 +663,12 @@ VM::Result VM::execute(int baseFrameCount_) {
             RUNTIME_ERR("Operands of '%' must be numbers");
         }
         case OpCode::OP_NEGATE: {
+            if (peek().isInstance()) {
+                Value v = pop();
+                auto [ok, r] = vmCallDunder(*this, v, "__neg", {});
+                if (ok) { push(r); break; }
+                push(v);
+            }
             if (!peek().isNumber()) { RUNTIME_ERR("Operand of '-' must be a number"); }
             if (peek().isInt()) push(Value(-pop().asInt()));
             else push(Value(-pop().asNumber()));
@@ -688,12 +723,12 @@ VM::Result VM::execute(int baseFrameCount_) {
         #undef BITWISE_INTS
 
         // ── Comparison ──
-        case OpCode::OP_EQUAL:         { Value b=pop(),a=pop(); push(Value(a==b)); break; }
-        case OpCode::OP_NOT_EQUAL:     { Value b=pop(),a=pop(); push(Value(a!=b)); break; }
-        case OpCode::OP_LESS:          { Value b=pop(),a=pop(); if(!a.isNumber()||!b.isNumber()){RUNTIME_ERR("Operands of '<' must be numbers");} push(Value(a.asNumber()<b.asNumber())); break; }
-        case OpCode::OP_GREATER:       { Value b=pop(),a=pop(); if(!a.isNumber()||!b.isNumber()){RUNTIME_ERR("Operands of '>' must be numbers");} push(Value(a.asNumber()>b.asNumber())); break; }
-        case OpCode::OP_LESS_EQUAL:    { Value b=pop(),a=pop(); if(!a.isNumber()||!b.isNumber()){RUNTIME_ERR("Operands of '<=' must be numbers");} push(Value(a.asNumber()<=b.asNumber())); break; }
-        case OpCode::OP_GREATER_EQUAL: { Value b=pop(),a=pop(); if(!a.isNumber()||!b.isNumber()){RUNTIME_ERR("Operands of '>=' must be numbers");} push(Value(a.asNumber()>=b.asNumber())); break; }
+        case OpCode::OP_EQUAL:         { Value b=pop(),a=pop(); if(a.isInstance()){auto[ok,r]=vmCallDunder(*this,a,"__eq",{b});if(ok){push(r);break;}} push(Value(a==b)); break; }
+        case OpCode::OP_NOT_EQUAL:     { Value b=pop(),a=pop(); if(a.isInstance()){auto[ok,r]=vmCallDunder(*this,a,"__eq",{b});if(ok){push(Value(!r.isTruthy()));break;}} push(Value(a!=b)); break; }
+        case OpCode::OP_LESS:          { Value b=pop(),a=pop(); if(a.isInstance()){auto[ok,r]=vmCallDunder(*this,a,"__lt",{b});if(ok){push(r);break;}} if(!a.isNumber()||!b.isNumber()){RUNTIME_ERR("Operands of '<' must be numbers");} push(Value(a.asNumber()<b.asNumber())); break; }
+        case OpCode::OP_GREATER:       { Value b=pop(),a=pop(); if(a.isInstance()){auto[ok,r]=vmCallDunder(*this,a,"__gt",{b});if(ok){push(r);break;}} if(!a.isNumber()||!b.isNumber()){RUNTIME_ERR("Operands of '>' must be numbers");} push(Value(a.asNumber()>b.asNumber())); break; }
+        case OpCode::OP_LESS_EQUAL:    { Value b=pop(),a=pop(); if(a.isInstance()){auto[ok,r]=vmCallDunder(*this,a,"__gt",{b});if(ok){push(Value(!r.isTruthy()));break;}} if(!a.isNumber()||!b.isNumber()){RUNTIME_ERR("Operands of '<=' must be numbers");} push(Value(a.asNumber()<=b.asNumber())); break; }
+        case OpCode::OP_GREATER_EQUAL: { Value b=pop(),a=pop(); if(a.isInstance()){auto[ok,r]=vmCallDunder(*this,a,"__lt",{b});if(ok){push(Value(!r.isTruthy()));break;}} if(!a.isNumber()||!b.isNumber()){RUNTIME_ERR("Operands of '>=' must be numbers");} push(Value(a.asNumber()>=b.asNumber())); break; }
         case OpCode::OP_NOT: { push(Value(!pop().isTruthy())); break; }
 
         // ── Variables ──
@@ -1133,6 +1168,10 @@ VM::Result VM::execute(int baseFrameCount_) {
                 auto it = entries.find(idx.asString());
                 if (it == entries.end()) { RUNTIME_ERR("Map has no key '" + idx.asString() + "'"); }
                 push(it->second);
+            } else if (obj.isInstance()) {
+                auto [ok, r] = vmCallDunder(*this, obj, "__index", {idx});
+                if (ok) { push(r); }
+                else { RUNTIME_ERR("Can only index into arrays, strings, and maps"); }
             } else {
                 RUNTIME_ERR("Can only index into arrays, strings, and maps");
             }
@@ -1143,6 +1182,10 @@ VM::Result VM::execute(int baseFrameCount_) {
             Value val = pop();
             Value idx = pop();
             Value obj = pop();
+            if (obj.isInstance()) {
+                auto [ok, r] = vmCallDunder(*this, obj, "__indexSet", {idx, val});
+                if (ok) { push(val); break; }
+            }
             if (obj.isArray()) {
                 if (!idx.isNumber()) { RUNTIME_ERR("Array index must be a number"); }
                 auto& elems = obj.asArray()->elements;
