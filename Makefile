@@ -76,7 +76,7 @@ clean:
 PREFIX  ?= /usr/local
 LIBDIR  ?= $(PREFIX)/lib/praia
 BINDIR   = $(PREFIX)/bin
-SAND_DIR ?= $(wildcard ../sand)
+SAND_DIR = sand
 
 install: clean
 	$(MAKE) CXXFLAGS='$(CXXFLAGS) -DPRAIA_LIBDIR="\"$(LIBDIR)\""'
@@ -84,16 +84,14 @@ install: clean
 	install -m 755 $(TARGET) $(DESTDIR)$(BINDIR)/$(TARGET)
 	install -d $(DESTDIR)$(LIBDIR)/grains
 	cp -R grains/* $(DESTDIR)$(LIBDIR)/grains/
-ifneq ($(SAND_DIR),)
 	install -d $(DESTDIR)$(LIBDIR)/sand
 	cp -R $(SAND_DIR)/main.praia $(DESTDIR)$(LIBDIR)/sand/
 	cp -R $(SAND_DIR)/grains $(DESTDIR)$(LIBDIR)/sand/
 	cp -R $(SAND_DIR)/grain.yaml $(DESTDIR)$(LIBDIR)/sand/
 	@printf '#!/bin/sh\nexec "$(BINDIR)/praia" "$(LIBDIR)/sand/main.praia" "$$@"\n' > $(DESTDIR)$(BINDIR)/sand
 	chmod 755 $(DESTDIR)$(BINDIR)/sand
-	@echo "Installed sand -> $(DESTDIR)$(BINDIR)/sand"
-endif
 	@echo "Installed praia -> $(DESTDIR)$(BINDIR)/praia"
+	@echo "Installed sand  -> $(DESTDIR)$(BINDIR)/sand"
 	@echo "Installed grains -> $(DESTDIR)$(LIBDIR)/grains/"
 
 uninstall:

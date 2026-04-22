@@ -1,0 +1,3 @@
+[submodule "sand"]
+	path = sand
+	url = git@github.com:praia-lang/sand.git
