@@ -205,6 +205,21 @@ Value jsonParse(const std::string& src) {
     return parser.parse();
 }
 
+static std::string jsonQuote(const std::string& s) {
+    std::string r = "\"";
+    for (char c : s) {
+        switch (c) {
+            case '"': r += "\\\""; break;
+            case '\\': r += "\\\\"; break;
+            case '\n': r += "\\n"; break;
+            case '\t': r += "\\t"; break;
+            case '\r': r += "\\r"; break;
+            default: r += c;
+        }
+    }
+    return r + "\"";
+}
+
 std::string jsonStringify(const Value& val, int indent, int depth) {
     std::string pad(depth * indent, ' ');
     std::string childPad((depth + 1) * indent, ' ');
@@ -220,18 +235,7 @@ std::string jsonStringify(const Value& val, int indent, int depth) {
         return o.str();
     }
     if (val.isString()) {
-        std::string r = "\"";
-        for (char c : val.asString()) {
-            switch (c) {
-                case '"': r += "\\\""; break;
-                case '\\': r += "\\\\"; break;
-                case '\n': r += "\\n"; break;
-                case '\t': r += "\\t"; break;
-                case '\r': r += "\\r"; break;
-                default: r += c;
-            }
-        }
-        return r + "\"";
+        return jsonQuote(val.asString());
     }
     if (val.isArray()) {
         auto& elems = val.asArray()->elements;
@@ -251,7 +255,7 @@ std::string jsonStringify(const Value& val, int indent, int depth) {
         for (auto& [k, v] : entries) {
             if (!first) r += "," + nl;
             first = false;
-            r += childPad + "\"" + k + "\":" + (pretty ? " " : "");
+            r += childPad + jsonQuote(k) + ":" + (pretty ? " " : "");
             r += jsonStringify(v, indent, depth + 1);
         }
         return r + nl + pad + "}";

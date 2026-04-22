@@ -244,10 +244,42 @@ std::string yamlStringify(const Value& val, int depth) {
     if (val.isMap()) {
         auto& entries = val.asMap()->entries;
         if (entries.empty()) return "{}";
+
+        // Quote YAML keys that contain special characters
+        auto yamlQuoteKey = [](const std::string& key) -> std::string {
+            if (key.empty()) return "\"\"";
+            bool needsQuote = false;
+            for (char c : key) {
+                if (c == ':' || c == '#' || c == '{' || c == '}' ||
+                    c == '[' || c == ']' || c == ',' || c == '&' ||
+                    c == '*' || c == '?' || c == '|' || c == '>' ||
+                    c == '\'' || c == '"' || c == '\\' || c == '\n' ||
+                    c == '\r' || c == '\t') {
+                    needsQuote = true;
+                    break;
+                }
+            }
+            if (!needsQuote && (key.front() == ' ' || key.back() == ' ' ||
+                                key.front() == '-' || key.front() == '!'))
+                needsQuote = true;
+            if (!needsQuote) return key;
+            // Double-quote with escapes
+            std::string r = "\"";
+            for (char c : key) {
+                if (c == '"') r += "\\\"";
+                else if (c == '\\') r += "\\\\";
+                else if (c == '\n') r += "\\n";
+                else if (c == '\t') r += "\\t";
+                else if (c == '\r') r += "\\r";
+                else r += c;
+            }
+            return r + "\"";
+        };
+
         std::string r;
         for (auto& [k, v] : entries) {
             if (depth > 0) r += pad;
-            r += k + ":";
+            r += yamlQuoteKey(k) + ":";
             if (v.isMap() || v.isArray()) {
                 r += "\n" + yamlStringify(v, depth + 1);
             } else {
