@@ -30,30 +30,49 @@ let adults = sys.read("users.json")
 
 More examples in the [examples directory](examples/).
 
-## Building
+## Installing
 
-Requires a C++17 compiler. Optional dependencies are auto-detected at build time:
+```sh
+git clone --recursive https://github.com/praia-lang/praia.git
+cd praia
+```
 
-| Dependency | Enables | Required? |
-|------------|---------|-----------|
-| OpenSSL | HTTPS client (`http.get("https://...")`) | Optional |
-| SQLite | `sqlite.open()` built-in | Optional |
-| readline/libedit | REPL history and line editing | Optional |
-
-Install them with your package manager:
+Install dependencies (optional - Praia builds without them, you just won't have HTTPS, SQLite, or REPL history):
 
 ```sh
 # macOS
 brew install openssl@3 readline sqlite
 
 # Ubuntu / Debian
-sudo apt install libssl-dev libreadline-dev libsqlite3-dev
+sudo apt install g++ make libssl-dev libreadline-dev libsqlite3-dev
 
 # Fedora / RHEL
-sudo dnf install openssl-devel readline-devel sqlite-devel
+sudo dnf install gcc-c++ make openssl-devel readline-devel sqlite-devel
 ```
 
-Then build:
+Build and install:
+
+```sh
+make
+sudo make install
+```
+
+This installs `praia` and `sand` (the package manager) to `/usr/local/bin/`, with stdlib grains in `/usr/local/lib/praia/`. To customize:
+
+```sh
+sudo make install PREFIX=/usr              # /usr/bin/praia, /usr/lib/praia/
+sudo make install LIBDIR=/opt/praia/lib    # custom lib path
+```
+
+Uninstall:
+
+```sh
+sudo make uninstall
+```
+
+## Building from source
+
+If you just want to build and run locally without installing system-wide:
 
 ```sh
 make
@@ -62,7 +81,13 @@ make
 ./praia -v                # print version
 ```
 
-Praia builds and runs without any of the optional dependencies, you just won't have HTTPS, SQLite, or REPL history.
+### Optional dependencies
+
+| Dependency | Enables | Required? |
+|------------|---------|-----------|
+| OpenSSL | HTTPS client (`http.get("https://...")`) | Optional |
+| SQLite | `sqlite.open()` built-in | Optional |
+| readline/libedit | REPL history and line editing | Optional |
 
 ## Testing
 
