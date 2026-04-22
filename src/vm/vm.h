@@ -31,9 +31,23 @@ struct ObjClosure {
     }
 };
 
+// Shared ownership bag for closures/upvalues returned from async tasks.
+// Attached to VMClosureCallable wrappers in the result so the raw pointers
+// survive after the task VM is destroyed.
+struct TaskOwnership {
+    std::vector<ObjClosure*> closures;
+    std::vector<ObjUpvalue*> upvalues;
+    ~TaskOwnership() {
+        for (auto* c : closures) delete c;
+        for (auto* u : upvalues) delete u;
+    }
+};
+
 // Wrapper to store ObjClosure as a Callable in Value
 struct VMClosureCallable : Callable {
     ObjClosure* closure;
+    std::shared_ptr<ObjClosure> ownedPrototype; // keeps compiler prototypes alive (constant pool entries)
+    std::shared_ptr<TaskOwnership> taskOwnership; // keeps async task closures/upvalues alive
     class VM* vm = nullptr; // set when closure is created during VM execution
     VMClosureCallable(ObjClosure* c) : closure(c) {}
     Value call(Interpreter&, const std::vector<Value>& args) override;
@@ -46,6 +60,7 @@ struct VMBoundMethod : Callable {
     Value receiver;
     ObjClosure* method;
     std::shared_ptr<PraiaClass> definingClass; // which class owns this method (for super resolution)
+    std::shared_ptr<TaskOwnership> taskOwnership; // keeps async task closures/upvalues alive
     VMBoundMethod(Value recv, ObjClosure* m, std::shared_ptr<PraiaClass> dc = nullptr)
         : receiver(std::move(recv)), method(m), definingClass(std::move(dc)) {}
     Value call(Interpreter&, const std::vector<Value>&) override { return Value(); } // unused
@@ -69,6 +84,7 @@ struct VMCallFrame {
 };
 
 class VM {
+    friend struct VMScope;
 public:
     VM();
     ~VM();
@@ -83,9 +99,15 @@ public:
     void setCurrentFile(const std::string& path) { currentFile = path; }
     void setArgs(const std::vector<std::string>& args);
 
-private:
+    // Thread-local current VM — used by native functions to find the active VM
+    static VM* current() { return currentVM_; }
+
 public:
     Result execute(int baseFrameCount = 0);
+
+    static thread_local VM* currentVM_; // public for VMScope RAII guard
+    int executeFloor_ = 0; // handler stack floor for current execute() — handlers below this belong to outer calls
+    int executeDepth_ = 0; // nesting depth — 0 before first execute(), 1 during initial, 2+ during re-entrant
 private:
 
     // Stack (heap-allocated so VM can be used in threads with small stacks)
@@ -109,6 +131,7 @@ private:
 
     // Globals
     std::unordered_map<std::string, Value> globals;
+    std::set<std::string> builtinNames_; // names registered via defineNative (for grain isolation)
 
     // Open upvalues (linked list, ordered by stack slot desc)
     ObjUpvalue* openUpvalues = nullptr;
@@ -149,6 +172,14 @@ private:
     void runtimeError(const std::string& msg, int line);
     bool tryHandleError(Value error);  // returns true if caught, false if uncaught
     std::string formatStackTrace() const;
+
+    // Error capture — suppresses stderr output in re-entrant/async contexts
+    // so errors propagate instead of being printed prematurely
+    std::string lastError_;
+    bool suppressErrors_ = false;
+public:
+    const std::string& lastError() const { return lastError_; }
+private:
 };
 
 // Helper: call any Callable within the VM context (handles VM closures, bound methods, natives)

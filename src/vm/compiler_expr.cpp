@@ -59,7 +59,7 @@ void Compiler::compileIdentifierExpr(const IdentifierExpr* expr) {
         int upvalue = resolveUpvalue(current, expr->name);
         if (upvalue != -1) {
             emit(OpCode::OP_GET_UPVALUE, expr->line);
-            emit(static_cast<uint8_t>(upvalue), expr->line);
+            emitU16(static_cast<uint16_t>(upvalue), expr->line);
         } else {
             uint16_t nameIdx = identifierConstant(expr->name);
             emit(OpCode::OP_GET_GLOBAL, expr->line);
@@ -79,7 +79,7 @@ void Compiler::compileAssignExpr(const AssignExpr* expr) {
         int upvalue = resolveUpvalue(current, expr->name);
         if (upvalue != -1) {
             emit(OpCode::OP_SET_UPVALUE, expr->line);
-            emit(static_cast<uint8_t>(upvalue), expr->line);
+            emitU16(static_cast<uint16_t>(upvalue), expr->line);
         } else {
             uint16_t nameIdx = identifierConstant(expr->name);
             emit(OpCode::OP_SET_GLOBAL, expr->line);
@@ -238,8 +238,9 @@ void Compiler::compileLambdaExpr(const LambdaExpr* expr) {
     current = lamState.enclosing;
     fn->upvalueCount = static_cast<int>(lamState.upvalues.size());
 
-    auto* proto = new ObjClosure(fn);
-    auto wrapper = std::make_shared<VMClosureCallable>(proto);
+    auto proto = std::make_shared<ObjClosure>(fn);
+    auto wrapper = std::make_shared<VMClosureCallable>(proto.get());
+    wrapper->ownedPrototype = proto;
     uint16_t fnIdx = currentChunk().addConstant(
         Value(std::static_pointer_cast<Callable>(wrapper)));
 
@@ -391,7 +392,7 @@ void Compiler::compileThisExpr(const ThisExpr* expr) {
         int uv = resolveUpvalue(current, "this");
         if (uv != -1) {
             emit(OpCode::OP_GET_UPVALUE, expr->line);
-            emit(static_cast<uint8_t>(uv), expr->line);
+            emitU16(static_cast<uint16_t>(uv), expr->line);
         } else {
             error("'this' used outside of a method", expr->line);
         }
@@ -408,7 +409,7 @@ void Compiler::compileSuperExpr(const SuperExpr* expr) {
         int uv = resolveUpvalue(current, "this");
         if (uv != -1) {
             emit(OpCode::OP_GET_UPVALUE, expr->line);
-            emit(static_cast<uint8_t>(uv), expr->line);
+            emitU16(static_cast<uint16_t>(uv), expr->line);
         } else {
             error("'super' used outside of a method", expr->line);
         }

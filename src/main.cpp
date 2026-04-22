@@ -461,24 +461,39 @@ static void vmRepl(bool showTokens, bool showAst) {
 // called sys.exit(0) (convention: testing.done() when all asserts passed),
 // anything else counts as a failure. Errors are kept on stderr so the user
 // can see them in the run log.
-static int runTestFile(const std::string& path) {
+static int runTestFile(const std::string& path, bool useVm) {
     std::string source = readFile(path);
     bool hadError = false;
     auto program = compile(source, /*showTokens*/false, /*showAst*/false, hadError);
     if (program.empty()) return 1; // parse/lex error
-    Interpreter interp;
-    interp.setCurrentFile(path);
-    try {
-        interp.interpret(program);
-    } catch (const ExitSignal& e) {
-        return e.code;
+
+    if (useVm) {
+        Compiler compiler;
+        auto script = compiler.compile(program);
+        if (!script) return 1;
+        extern void vmRegisterNatives(VM& vm);
+        VM vm;
+        vmRegisterNatives(vm);
+        vm.setCurrentFile(path);
+        try {
+            return vm.run(script) == VM::Result::OK ? 2 : 1;
+        } catch (const ExitSignal& e) {
+            return e.code;
+        }
+    } else {
+        Interpreter interp;
+        interp.setCurrentFile(path);
+        try {
+            interp.interpret(program);
+        } catch (const ExitSignal& e) {
+            return e.code;
+        }
     }
     // No sys.exit means the file didn't call testing.done() — treat as fail
-    // so an incomplete test file doesn't silently pass.
     return 2;
 }
 
-static int runTestsCommand(const std::string& dir) {
+static int runTestsCommand(const std::string& dir, bool useVm) {
     namespace fs = std::filesystem;
     if (!fs::exists(dir)) {
         std::cerr << "praia test: directory not found: " << dir << std::endl;
@@ -505,7 +520,7 @@ static int runTestsCommand(const std::string& dir) {
     std::vector<std::string> failedFiles;
     for (auto& file : files) {
         std::cout << "── " << file << " ───────────────────────" << std::endl;
-        int code = runTestFile(file);
+        int code = runTestFile(file, useVm);
         if (code == 0) {
             passed++;
         } else {
@@ -540,11 +555,13 @@ int main(int argc, char* argv[]) {
     // `praia test [dir]` subcommand — scan past flags to find it
     for (int i = 1; i < argc; i++) {
         std::string arg = argv[i];
-        if (arg == "test") {
+        if (arg == "--tree") useVm = false;
+        else if (arg == "--vm") useVm = true;
+        else if (arg == "test") {
             std::string dir = (i + 1 < argc) ? argv[i + 1] : "tests";
-            return runTestsCommand(dir);
+            return runTestsCommand(dir, useVm);
         }
-        if (arg[0] != '-') break; // hit a non-flag, non-"test" arg (filename)
+        else if (arg[0] != '-') break; // hit a non-flag, non-"test" arg (filename)
     }
 
     // Parse all flags first

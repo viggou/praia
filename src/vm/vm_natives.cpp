@@ -6,17 +6,22 @@
 
 // Call any Callable within the VM context.
 // Handles VM closures (re-entrant execution), bound methods, and native functions.
+// On error, throws RuntimeError so the calling native (filter/map/sort) propagates
+// the error back to OP_CALL's catch, which feeds it into the VM's exception system.
 Value callWithVM(VM& vm, std::shared_ptr<Callable> callable, const std::vector<Value>& args) {
-    // VM closure
+    // VM closure — dispatch based on type, not vm pointer (closures from
+    // async tasks may have a stale vm but are still valid VMClosureCallable)
     auto* vmcc = dynamic_cast<VMClosureCallable*>(callable.get());
-    if (vmcc && vmcc->vm) {
+    if (vmcc) {
         int savedFrameCount = vm.frameCount;
-        vm.push(Value()); // closure slot
+        // Slot 0 = the callable itself (functions reference slot 0 for recursion)
+        vm.push(Value(callable));
         for (auto& arg : args) vm.push(arg);
         if (!vm.callClosure(vmcc->closure, static_cast<int>(args.size()), 0))
-            return Value();
+            throw RuntimeError(vm.lastError().empty() ? "Call failed" : vm.lastError(), 0);
         auto result = vm.execute(savedFrameCount);
-        if (result != VM::Result::OK) return Value();
+        if (result != VM::Result::OK)
+            throw RuntimeError(vm.lastError().empty() ? "Callback failed" : vm.lastError(), 0);
         return vm.pop();
     }
 
@@ -27,10 +32,11 @@ Value callWithVM(VM& vm, std::shared_ptr<Callable> callable, const std::vector<V
         vm.push(bound->receiver); // slot 0 = this
         for (auto& arg : args) vm.push(arg);
         if (!vm.callClosure(bound->method, static_cast<int>(args.size()), 0))
-            return Value();
+            throw RuntimeError(vm.lastError().empty() ? "Call failed" : vm.lastError(), 0);
         vm.frames[vm.frameCount - 1].definingClass = bound->definingClass;
         auto result = vm.execute(savedFrameCount);
-        if (result != VM::Result::OK) return Value();
+        if (result != VM::Result::OK)
+            throw RuntimeError(vm.lastError().empty() ? "Callback failed" : vm.lastError(), 0);
         return vm.pop();
     }
 
@@ -48,11 +54,6 @@ Value callWithVM(VM& vm, std::shared_ptr<Callable> callable, const std::vector<V
 // Reuse ALL builtins from the tree-walker by creating an Interpreter
 // and copying its global environment into the VM.
 void vmRegisterNatives(VM& vm) {
-    // The Interpreter constructor registers all builtins:
-    // print, len, push, pop, type, str, num, fromCharCode,
-    // Lock, sort, filter, map, each, keys, values,
-    // sys, http, json, yaml, base64, path, url, net, bytes, crypto,
-    // random, time, math, sqlite
     Interpreter interp;
 
     auto globals = interp.getGlobals();
@@ -74,7 +75,6 @@ void vmRegisterNatives(VM& vm) {
         } catch (...) {}
     }
 
-    // Internal helpers for destructuring rest patterns
     auto makeNat = [](const std::string& name, int arity,
                       std::function<Value(const std::vector<Value>&)> fn) -> Value {
         auto f = std::make_shared<NativeFunction>();
@@ -84,54 +84,28 @@ void vmRegisterNatives(VM& vm) {
         return Value(std::static_pointer_cast<Callable>(f));
     };
 
-    // Override higher-order functions to work with VM closures
-    // The tree-walker versions capture the Interpreter pointer, which doesn't
-    // work for VM closures. These VM-aware versions call through callValue.
-
-    // For filter/map/each: we can't easily call VM closures from a native function
-    // because we don't have access to the VM's call stack. Instead, we override
-    // these to work by calling the callable's call() method directly.
-    // VM closures implement Callable::call() as a no-op, so we need to detect them
-    // and handle them specially... This is a fundamental limitation.
-    //
-    // Pragmatic solution: override filter/map/each/sort with versions that
-    // just call callable->call() with a dummy interpreter. For NativeFunctions
-    // this works. For VM closures, call() is a no-op, so these won't work.
-    //
-    // The REAL fix: compile filter/map/each/sort as opcodes or have the VM
-    // provide a callback mechanism. For now, users can use for-in loops + push
-    // instead of filter/map in the VM. This is a known limitation.
-
-    // Actually, a better approach: create VM-specific filter/map that use
-    // the pipe operator pattern. Since pipe compiles to OP_CALL, it works.
-    // But filter/map are global functions, not methods...
-    //
-    // OK, let me just leave the tree-walker versions for now. They work for
-    // NativeFunction callables (e.g., built-in functions). For VM closures,
-    // users should use for-in loops.
-
-    // Override str() to call toString() on VM instances
+    // Override str() to call toString() on VM instances.
+    // Uses VM::current() so it always targets the active VM (safe for async).
     vm.defineNative("str", makeNat("str", 1,
-        [&vm](const std::vector<Value>& args) -> Value {
-            if (args[0].isInstance()) {
+        [](const std::vector<Value>& args) -> Value {
+            VM* vm = VM::current();
+            if (args[0].isInstance() && vm) {
                 auto inst = args[0].asInstance();
                 if (inst->klass) {
-                    // Look for toString in vmMethods
                     auto walk = inst->klass;
                     while (walk) {
                         auto it = walk->vmMethods.find("toString");
                         if (it != walk->vmMethods.end() && it->second.isCallable()) {
                             auto* vmcc = dynamic_cast<VMClosureCallable*>(it->second.asCallable().get());
-                            if (vmcc && vmcc->vm) {
-                                // Call toString() via re-entrant VM execution
-                                vm.push(Value(inst)); // slot for 'this'
-                                if (vm.callClosure(vmcc->closure, 0, 0)) {
-                                    int saved = vm.frameCount;
-                                    auto result = vm.execute(saved - 1);
-                                    if (result == VM::Result::OK) {
-                                        return vm.pop();
-                                    }
-                                }
+                            if (vmcc) {
+                                vm->push(Value(inst)); // slot for 'this'
+                                vm->callClosure(vmcc->closure, 0, 0); // throws on failure
+                                int saved = vm->frameCount;
+                                auto result = vm->execute(saved - 1);
+                                if (result == VM::Result::OK)
+                                    return vm->pop();
+                                throw RuntimeError(
+                                    vm->lastError().empty() ? "toString() failed" : vm->lastError(), 0);
                             }
                             break;
                         }
@@ -142,9 +116,13 @@ void vmRegisterNatives(VM& vm) {
             return Value(args[0].toString());
         }));
 
-    // Override higher-order functions with VM-aware versions
+    // Override higher-order functions with VM-aware versions.
+    // Uses VM::current() instead of capturing a VM reference, so these work
+    // correctly in async tasks (each async VM sets itself as current).
     vm.defineNative("filter", makeNat("filter", 2,
-        [&vm](const std::vector<Value>& args) -> Value {
+        [](const std::vector<Value>& args) -> Value {
+            VM* vm = VM::current();
+            if (!vm) throw RuntimeError("filter() requires VM context", 0);
             if (!args[0].isArray())
                 throw RuntimeError("filter() requires an array as first argument", 0);
             if (!args[1].isCallable())
@@ -153,14 +131,16 @@ void vmRegisterNatives(VM& vm) {
             auto result = std::make_shared<PraiaArray>();
             auto pred = args[1].asCallable();
             for (auto& elem : src) {
-                Value test = callWithVM(vm, pred, {elem});
+                Value test = callWithVM(*vm, pred, {elem});
                 if (test.isTruthy()) result->elements.push_back(elem);
             }
             return Value(result);
         }));
 
     vm.defineNative("map", makeNat("map", 2,
-        [&vm](const std::vector<Value>& args) -> Value {
+        [](const std::vector<Value>& args) -> Value {
+            VM* vm = VM::current();
+            if (!vm) throw RuntimeError("map() requires VM context", 0);
             if (!args[0].isArray())
                 throw RuntimeError("map() requires an array as first argument", 0);
             if (!args[1].isCallable())
@@ -169,12 +149,14 @@ void vmRegisterNatives(VM& vm) {
             auto result = std::make_shared<PraiaArray>();
             auto transform = args[1].asCallable();
             for (auto& elem : src)
-                result->elements.push_back(callWithVM(vm, transform, {elem}));
+                result->elements.push_back(callWithVM(*vm, transform, {elem}));
             return Value(result);
         }));
 
     vm.defineNative("each", makeNat("each", 2,
-        [&vm](const std::vector<Value>& args) -> Value {
+        [](const std::vector<Value>& args) -> Value {
+            VM* vm = VM::current();
+            if (!vm) throw RuntimeError("each() requires VM context", 0);
             if (!args[0].isArray())
                 throw RuntimeError("each() requires an array as first argument", 0);
             if (!args[1].isCallable())
@@ -182,12 +164,14 @@ void vmRegisterNatives(VM& vm) {
             auto& src = args[0].asArray()->elements;
             auto fn = args[1].asCallable();
             for (auto& elem : src)
-                callWithVM(vm, fn, {elem});
+                callWithVM(*vm, fn, {elem});
             return args[0];
         }));
 
     vm.defineNative("sort", makeNat("sort", -1,
-        [&vm](const std::vector<Value>& args) -> Value {
+        [](const std::vector<Value>& args) -> Value {
+            VM* vm = VM::current();
+            if (!vm) throw RuntimeError("sort() requires VM context", 0);
             if (args.empty() || !args[0].isArray())
                 throw RuntimeError("sort() requires an array", 0);
             auto sorted = std::make_shared<PraiaArray>();
@@ -196,8 +180,8 @@ void vmRegisterNatives(VM& vm) {
             if (args.size() > 1 && args[1].isCallable()) {
                 auto cmp = args[1].asCallable();
                 std::sort(elems.begin(), elems.end(),
-                    [&vm, &cmp](const Value& a, const Value& b) -> bool {
-                        Value result = callWithVM(vm, cmp, {a, b});
+                    [vm, &cmp](const Value& a, const Value& b) -> bool {
+                        Value result = callWithVM(*vm, cmp, {a, b});
                         if (result.isNumber()) return result.asNumber() < 0;
                         return result.isTruthy();
                     });

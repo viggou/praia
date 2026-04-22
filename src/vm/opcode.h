@@ -62,8 +62,8 @@ enum class OpCode : uint8_t {
     OP_CALL,            // [argc:8]
     OP_RETURN,
     OP_CLOSURE,         // [fn_idx:16] followed by upvalue descriptors
-    OP_GET_UPVALUE,     // [slot:8]
-    OP_SET_UPVALUE,     // [slot:8]
+    OP_GET_UPVALUE,     // [slot:16]
+    OP_SET_UPVALUE,     // [slot:16]
     OP_CLOSE_UPVALUE,
 
     // ── Classes ──

@@ -10,27 +10,63 @@
 #include <future>
 #include <iostream>
 #include <sstream>
+#include <unordered_set>
 
 namespace fs = std::filesystem;
 
+// Thread-local pointer to the currently executing VM
+thread_local VM* VM::currentVM_ = nullptr;
+
+// RAII guard to set/restore currentVM_ and executeFloor_ across execute() calls.
+// executeFloor_ scopes exception handlers: handlers pushed before this execute()
+// call belong to an outer scope and must not be consumed here.
+struct VMScope {
+    VM* vm;
+    VM* prevVM;
+    int savedFloor;
+    VMScope(VM* v) : vm(v), prevVM(VM::currentVM_), savedFloor(v->executeFloor_) {
+        VM::currentVM_ = v;
+        v->executeFloor_ = static_cast<int>(v->exceptionHandlers.size());
+        v->executeDepth_++;
+    }
+    ~VMScope() {
+        vm->executeDepth_--;
+        vm->executeFloor_ = savedFloor;
+        VM::currentVM_ = prevVM;
+    }
+};
+
 // VMClosureCallable::call — allows native functions (filter, map, etc.)
-// to call VM closures through the tree-walker's Callable interface
+// to call VM closures through the tree-walker's Callable interface.
+// Uses VM::current() so closures returned from async tasks work correctly
+// even after the task VM is destroyed.
 Value VMClosureCallable::call(Interpreter&, const std::vector<Value>& args) {
-    if (!vm) return Value();
+    // Prefer VM::current() (always the live VM). Fall back to stored vm only
+    // when there's no active execute() (tree-walker compatibility path).
+    // Async-returned closures have vm=nullptr, so this always does the right thing.
+    VM* currentVm = VM::current();
+    if (!currentVm) currentVm = vm;
+    if (!currentVm) return Value();
 
-    int savedFrameCount = vm->frameCount;
+    int savedFrameCount = currentVm->frameCount;
 
-    // Push a placeholder for the closure slot, then args
-    vm->push(Value()); // slot for the closure itself
-    for (auto& arg : args) vm->push(arg);
+    // Slot 0 = the callable itself (functions reference slot 0 for recursion).
+    // Build a lightweight wrapper pointing to the same ObjClosure.
+    auto self = std::make_shared<VMClosureCallable>(closure);
+    self->vm = currentVm;
+    self->ownedPrototype = ownedPrototype;
+    self->taskOwnership = taskOwnership;
+    currentVm->push(Value(std::static_pointer_cast<Callable>(self)));
+    for (auto& arg : args) currentVm->push(arg);
 
-    if (!vm->callClosure(closure, static_cast<int>(args.size()), 0)) return Value();
+    currentVm->callClosure(closure, static_cast<int>(args.size()), 0); // throws on failure
 
-    // Execute until this closure's frame is done
-    auto result = vm->execute(savedFrameCount);
-    if (result != VM::Result::OK) return Value();
+    auto result = currentVm->execute(savedFrameCount);
+    if (result != VM::Result::OK)
+        throw RuntimeError(
+            currentVm->lastError().empty() ? "Callback failed" : currentVm->lastError(), 0);
 
-    return vm->pop();
+    return currentVm->pop();
 }
 
 VM::VM() : stack(std::make_unique<Value[]>(STACK_MAX)) {}
@@ -42,6 +78,7 @@ VM::~VM() {
 
 void VM::defineNative(const std::string& name, Value value) {
     globals[name] = std::move(value);
+    builtinNames_.insert(name);
 }
 
 void VM::setArgs(const std::vector<std::string>& args) {
@@ -54,14 +91,30 @@ void VM::setArgs(const std::vector<std::string>& args) {
 
 void VM::push(Value value) {
     if (stackTop >= STACK_MAX) {
-        std::cerr << "Stack overflow" << std::endl;
-        return;
+        std::cerr << "Fatal: Stack overflow (depth " << stackTop << ")" << std::endl;
+        std::cerr << formatStackTrace();
+        resetStack();
+        throw RuntimeError("Stack overflow", 0);
     }
     stack[stackTop++] = std::move(value);
 }
 
-Value VM::pop() { return std::move(stack[--stackTop]); }
-Value& VM::peek(int distance) { return stack[stackTop - 1 - distance]; }
+Value VM::pop() {
+    if (stackTop <= 0) {
+        std::cerr << "Internal error: stack underflow" << std::endl;
+        return Value();
+    }
+    return std::move(stack[--stackTop]);
+}
+
+Value& VM::peek(int distance) {
+    int idx = stackTop - 1 - distance;
+    if (idx < 0) {
+        std::cerr << "Internal error: stack underflow (peek)" << std::endl;
+        idx = 0;
+    }
+    return stack[idx];
+}
 void VM::resetStack() { stackTop = 0; frameCount = 0; }
 
 uint8_t VM::readByte() { return *frames[frameCount - 1].ip++; }
@@ -118,11 +171,11 @@ void VM::closeUpvalues(Value* last) {
 bool VM::callClosure(ObjClosure* closure, int argCount, int line) {
     auto& fn = closure->function;
 
-    // Allow fewer args (defaults to nil) but not more
+    // Allow fewer args (defaults to nil) but not more.
+    // Throw RuntimeError so callers can route through tryHandleError.
     if (argCount > fn->arity) {
-        runtimeError(fn->name + "() expected at most " + std::to_string(fn->arity) +
+        throw RuntimeError(fn->name + "() expected at most " + std::to_string(fn->arity) +
             " argument(s) but got " + std::to_string(argCount), line);
-        return false;
     }
 
     // Pad missing args with nil
@@ -132,8 +185,7 @@ bool VM::callClosure(ObjClosure* closure, int argCount, int line) {
     }
 
     if (frameCount >= FRAMES_MAX) {
-        runtimeError("Stack overflow (too many nested calls)", line);
-        return false;
+        throw RuntimeError("Stack overflow (too many nested calls)", line);
     }
 
     auto& frame = frames[frameCount++];
@@ -149,6 +201,7 @@ bool VM::callValue(Value callee, int argCount, int line) {
     if (callee.isCallable()) {
         auto callable = callee.asCallable();
 
+      try {
         // VM closure
         auto* vmClosure = dynamic_cast<VMClosureCallable*>(callable.get());
         if (vmClosure) {
@@ -160,7 +213,7 @@ bool VM::callValue(Value callee, int argCount, int line) {
         if (bound) {
             // Replace the callee slot with the receiver (this)
             stack[stackTop - argCount - 1] = bound->receiver;
-            if (!callClosure(bound->method, argCount, line)) return false;
+            callClosure(bound->method, argCount, line);
             // Tag the new frame with the defining class for super resolution
             frames[frameCount - 1].definingClass = bound->definingClass;
             return true;
@@ -187,14 +240,13 @@ bool VM::callValue(Value callee, int argCount, int line) {
                 if (initVal.isCallable()) {
                     auto* initVmcc = dynamic_cast<VMClosureCallable*>(initVal.asCallable().get());
                     if (initVmcc) {
-                        if (!callClosure(initVmcc->closure, argCount, line)) return false;
+                        callClosure(initVmcc->closure, argCount, line);
                         frames[frameCount - 1].definingClass = initOwner;
                         return true;
                     }
                 }
             } else if (argCount > 0) {
-                runtimeError(klass->className + "() takes no arguments (no init method)", line);
-                return false;
+                throw RuntimeError(klass->className + "() takes no arguments (no init method)", line);
             }
             return true;
         }
@@ -204,39 +256,48 @@ bool VM::callValue(Value callee, int argCount, int line) {
         if (native) {
             int arity = native->arity();
             if (arity != -1 && argCount != arity) {
-                runtimeError(native->name() + "() expected " + std::to_string(arity) +
+                throw RuntimeError(native->name() + "() expected " + std::to_string(arity) +
                     " argument(s) but got " + std::to_string(argCount), line);
-                return false;
             }
             std::vector<Value> args(argCount);
             for (int i = argCount - 1; i >= 0; i--) args[i] = pop();
             pop(); // the callable
-            try {
-                Value result = native->fn(args);
-                push(std::move(result));
-            } catch (const ExitSignal&) {
-                throw; // propagate sys.exit() to main
-            } catch (const RuntimeError& err) {
-                if (tryHandleError(Value(std::string(err.what())))) return true;
-                runtimeError(err.what(), err.line > 0 ? err.line : line);
-                return false;
-            }
+            Value result = native->fn(args);
+            push(std::move(result));
             return true;
         }
+
+        throw RuntimeError("Can only call functions", line);
+
+      } catch (const ExitSignal&) {
+          throw; // propagate sys.exit() to main
+      } catch (const RuntimeError& err) {
+          if (tryHandleError(Value(std::string(err.what())))) return true;
+          runtimeError(err.what(), err.line > 0 ? err.line : line);
+          return false;
+      }
     }
 
+    // Not callable at all (e.g., 42())
+    if (tryHandleError(Value(std::string("Can only call functions")))) return true;
     runtimeError("Can only call functions", line);
     return false;
 }
 
 void VM::runtimeError(const std::string& msg, int line) {
-    std::cerr << "[line " << line << "] Runtime error: " << msg << std::endl;
-    std::cerr << formatStackTrace();
-    resetStack();
+    lastError_ = msg;
+    // In re-entrant calls (depth > 1), suppress output — the error
+    // will propagate to the outer scope which will print or catch it.
+    if (!suppressErrors_ && executeDepth_ <= 1) {
+        std::cerr << "[line " << line << "] Runtime error: " << msg << std::endl;
+        std::cerr << formatStackTrace();
+    }
 }
 
 bool VM::tryHandleError(Value error) {
-    if (!exceptionHandlers.empty()) {
+    // Only use handlers that belong to the current execute() scope.
+    // Handlers below executeFloor_ belong to an outer (re-entrant) caller.
+    if (static_cast<int>(exceptionHandlers.size()) > executeFloor_) {
         auto handler = exceptionHandlers.back();
         exceptionHandlers.pop_back();
 
@@ -250,15 +311,15 @@ bool VM::tryHandleError(Value error) {
         frames[frameCount - 1].ip = handler.catchIp;
         return true; // caught
     }
-    return false; // uncaught
+    return false; // uncaught in this scope
 }
 
 std::string VM::formatStackTrace() const {
     std::string trace;
     for (int i = frameCount - 1; i >= 0; i--) {
         auto& frame = frames[i];
-        int offset = static_cast<int>(frame.ip - frame.chunk().code.data());
-        int line = frame.chunk().getLine(offset);
+        int offset = static_cast<int>(frame.ip - frame.chunk().code.data()) - 1;
+        int line = frame.chunk().getLine(offset > 0 ? offset : 0);
         trace += "  at " + frame.name() + "() line " + std::to_string(line) + "\n";
     }
     return trace;
@@ -354,10 +415,14 @@ Value VM::loadGrain(const std::string& importPath, int line) {
     auto script = compiler.compile(program);
     if (!script) { runtimeError("Compile error in grain: " + importPath, line); return Value(); }
 
-    // Execute in a fresh VM with shared globals for builtins
+    // Execute in a fresh VM with only builtins (not user globals)
     VM grainVm;
-    // Copy builtins (but not user globals)
-    grainVm.globals = globals; // copy all globals (includes builtins)
+    for (auto& name : builtinNames_) {
+        auto it = globals.find(name);
+        if (it != globals.end())
+            grainVm.globals[name] = it->second;
+    }
+    grainVm.builtinNames_ = builtinNames_;
     grainVm.currentFile = resolved;
 
     auto* grainClosure = new ObjClosure(script);
@@ -401,20 +466,27 @@ Value VM::loadGrain(const std::string& importPath, int line) {
         }
     }
 
-    // Fix up VM pointers on all grain closures — they were created in grainVm
-    // which is about to be destroyed. Walk the grain's stack, globals, and
-    // exports to repoint every VMClosureCallable to the parent VM.
-    auto fixupValue = [this, &grainVm](Value& v) {
+    // Recursively fix up VM pointers on all grain closures — they were created
+    // in grainVm which is about to be destroyed.
+    std::function<void(Value&)> fixupValue;
+    fixupValue = [this, &grainVm, &fixupValue](Value& v) {
         if (v.isCallable()) {
             auto* vmcc = dynamic_cast<VMClosureCallable*>(v.asCallable().get());
             if (vmcc && (vmcc->vm == &grainVm || vmcc->vm == nullptr))
                 vmcc->vm = this;
         }
+        if (v.isMap()) {
+            for (auto& [k, mv] : v.asMap()->entries) fixupValue(mv);
+        }
+        if (v.isArray()) {
+            for (auto& el : v.asArray()->elements) fixupValue(el);
+        }
+        if (v.isInstance()) {
+            for (auto& [k, fv] : v.asInstance()->fields) fixupValue(fv);
+        }
     };
     for (auto& [k, v] : globals) fixupValue(v);
-    if (exports.isMap()) {
-        for (auto& [k, v] : exports.asMap()->entries) fixupValue(v);
-    }
+    fixupValue(exports);
 
     grainCache[resolved] = exports;
     return exports;
@@ -439,9 +511,10 @@ VM::Result VM::run(std::shared_ptr<CompiledFunction> script) {
 }
 
 VM::Result VM::runRepl(std::shared_ptr<CompiledFunction> script) {
-    // Reset stack/frames for this line but keep globals
+    // Reset stack/frames/handlers for this line but keep globals
     stackTop = 0;
     frameCount = 0;
+    exceptionHandlers.clear();
 
     auto* scriptClosure = new ObjClosure(script);
     allClosures.push_back(scriptClosure);
@@ -461,18 +534,21 @@ VM::Result VM::runRepl(std::shared_ptr<CompiledFunction> script) {
 }
 
 VM::Result VM::execute(int baseFrameCount_) {
+    VMScope vmScope(this); // set thread-local current VM, restores on return
+
     #define FRAME (frames[frameCount - 1])
     #define READ_BYTE() (*FRAME.ip++)
     #define READ_U16() (FRAME.ip += 2, static_cast<uint16_t>((FRAME.ip[-2] << 8) | FRAME.ip[-1]))
     #define READ_CONSTANT() (FRAME.chunk().constants[READ_U16()])
     #define READ_STRING() (READ_CONSTANT().asString())
-    #define CURRENT_LINE() (FRAME.chunk().getLine(static_cast<int>(FRAME.ip - FRAME.chunk().code.data())))
+    #define CURRENT_LINE() (FRAME.chunk().getLine(static_cast<int>(FRAME.ip - FRAME.chunk().code.data()) - 1))
     #define RUNTIME_ERR(msg) { \
         std::string _msg = (msg); int _line = CURRENT_LINE(); \
         if (tryHandleError(Value(_msg))) continue; \
         runtimeError(_msg, _line); return Result::RUNTIME_ERROR; \
     }
 
+    try {
     for (;;) {
         uint8_t instruction = READ_BYTE();
 
@@ -483,7 +559,12 @@ VM::Result VM::execute(int baseFrameCount_) {
         case OpCode::OP_TRUE: push(Value(true)); break;
         case OpCode::OP_FALSE: push(Value(false)); break;
         case OpCode::OP_POP: pop(); break;
-        case OpCode::OP_POPN: { uint8_t n = READ_BYTE(); stackTop -= n; break; }
+        case OpCode::OP_POPN: {
+            uint8_t n = READ_BYTE();
+            if (n > stackTop) n = static_cast<uint8_t>(stackTop);
+            stackTop -= n;
+            break;
+        }
 
         // ── Arithmetic ──
         case OpCode::OP_ADD: {
@@ -544,13 +625,52 @@ VM::Result VM::execute(int baseFrameCount_) {
             break;
         }
 
-        // ── Bitwise ──
-        case OpCode::OP_BIT_AND: { Value b=pop(),a=pop(); if(!a.isNumber()||!b.isNumber()){RUNTIME_ERR("Operands of '&' must be numbers");} push(Value(static_cast<int64_t>(a.asNumber())&static_cast<int64_t>(b.asNumber()))); break; }
-        case OpCode::OP_BIT_OR:  { Value b=pop(),a=pop(); if(!a.isNumber()||!b.isNumber()){RUNTIME_ERR("Operands of '|' must be numbers");} push(Value(static_cast<int64_t>(a.asNumber())|static_cast<int64_t>(b.asNumber()))); break; }
-        case OpCode::OP_BIT_XOR: { Value b=pop(),a=pop(); if(!a.isNumber()||!b.isNumber()){RUNTIME_ERR("Operands of '^' must be numbers");} push(Value(static_cast<int64_t>(a.asNumber())^static_cast<int64_t>(b.asNumber()))); break; }
-        case OpCode::OP_BIT_NOT: { if(!peek().isNumber()){RUNTIME_ERR("Operand of '~' must be a number");} push(Value(~static_cast<int64_t>(pop().asNumber()))); break; }
-        case OpCode::OP_SHL: { Value b=pop(),a=pop(); if(!a.isNumber()||!b.isNumber()){RUNTIME_ERR("Operands of '<<' must be numbers");} push(Value(static_cast<int64_t>(a.asNumber())<<static_cast<int64_t>(b.asNumber()))); break; }
-        case OpCode::OP_SHR: { Value b=pop(),a=pop(); if(!a.isNumber()||!b.isNumber()){RUNTIME_ERR("Operands of '>>' must be numbers");} push(Value(static_cast<int64_t>(a.asNumber())>>static_cast<int64_t>(b.asNumber()))); break; }
+        // ── Bitwise (use asInt() directly for int operands to preserve precision) ──
+        #define BITWISE_INTS(a, b) \
+            (a.isInt() && b.isInt()) ? a.asInt() : static_cast<int64_t>(a.asNumber()), \
+            (a.isInt() && b.isInt()) ? b.asInt() : static_cast<int64_t>(b.asNumber())
+        case OpCode::OP_BIT_AND: {
+            Value b=pop(),a=pop();
+            if(!a.isNumber()||!b.isNumber()){RUNTIME_ERR("Operands of '&' must be numbers");}
+            int64_t ai = a.isInt() ? a.asInt() : static_cast<int64_t>(a.asNumber());
+            int64_t bi = b.isInt() ? b.asInt() : static_cast<int64_t>(b.asNumber());
+            push(Value(ai & bi)); break;
+        }
+        case OpCode::OP_BIT_OR: {
+            Value b=pop(),a=pop();
+            if(!a.isNumber()||!b.isNumber()){RUNTIME_ERR("Operands of '|' must be numbers");}
+            int64_t ai = a.isInt() ? a.asInt() : static_cast<int64_t>(a.asNumber());
+            int64_t bi = b.isInt() ? b.asInt() : static_cast<int64_t>(b.asNumber());
+            push(Value(ai | bi)); break;
+        }
+        case OpCode::OP_BIT_XOR: {
+            Value b=pop(),a=pop();
+            if(!a.isNumber()||!b.isNumber()){RUNTIME_ERR("Operands of '^' must be numbers");}
+            int64_t ai = a.isInt() ? a.asInt() : static_cast<int64_t>(a.asNumber());
+            int64_t bi = b.isInt() ? b.asInt() : static_cast<int64_t>(b.asNumber());
+            push(Value(ai ^ bi)); break;
+        }
+        case OpCode::OP_BIT_NOT: {
+            if(!peek().isNumber()){RUNTIME_ERR("Operand of '~' must be a number");}
+            Value v = pop();
+            int64_t vi = v.isInt() ? v.asInt() : static_cast<int64_t>(v.asNumber());
+            push(Value(~vi)); break;
+        }
+        case OpCode::OP_SHL: {
+            Value b=pop(),a=pop();
+            if(!a.isNumber()||!b.isNumber()){RUNTIME_ERR("Operands of '<<' must be numbers");}
+            int64_t ai = a.isInt() ? a.asInt() : static_cast<int64_t>(a.asNumber());
+            int64_t bi = b.isInt() ? b.asInt() : static_cast<int64_t>(b.asNumber());
+            push(Value(ai << bi)); break;
+        }
+        case OpCode::OP_SHR: {
+            Value b=pop(),a=pop();
+            if(!a.isNumber()||!b.isNumber()){RUNTIME_ERR("Operands of '>>' must be numbers");}
+            int64_t ai = a.isInt() ? a.asInt() : static_cast<int64_t>(a.asNumber());
+            int64_t bi = b.isInt() ? b.asInt() : static_cast<int64_t>(b.asNumber());
+            push(Value(ai >> bi)); break;
+        }
+        #undef BITWISE_INTS
 
         // ── Comparison ──
         case OpCode::OP_EQUAL:         { Value b=pop(),a=pop(); push(Value(a==b)); break; }
@@ -627,6 +747,14 @@ VM::Result VM::execute(int baseFrameCount_) {
             Value result = pop();
             int returnBase = FRAME.baseSlot; // save callee's base before popping frame
             closeUpvalues(&stack[returnBase]);
+            // Safety net: remove any exception handlers belonging to this frame
+            // (compiler emits OP_TRY_END for return/break/continue, but guard
+            // against edge cases where a handler leaks)
+            int returningFrame = frameCount - 1;
+            while (!exceptionHandlers.empty() &&
+                   exceptionHandlers.back().frameIndex >= returningFrame) {
+                exceptionHandlers.pop_back();
+            }
             frameCount--;
             if (frameCount <= baseFrameCount_) {
                 if (frameCount == 0) pop();
@@ -690,13 +818,13 @@ VM::Result VM::execute(int baseFrameCount_) {
         }
 
         case OpCode::OP_GET_UPVALUE: {
-            uint8_t slot = READ_BYTE();
+            uint16_t slot = READ_U16();
             push(*FRAME.closure->upvalues[slot]->location);
             break;
         }
 
         case OpCode::OP_SET_UPVALUE: {
-            uint8_t slot = READ_BYTE();
+            uint16_t slot = READ_U16();
             *FRAME.closure->upvalues[slot]->location = peek();
             break;
         }
@@ -1012,29 +1140,15 @@ VM::Result VM::execute(int baseFrameCount_) {
 
         case OpCode::OP_THROW: {
             Value error = pop();
+            if (tryHandleError(error)) break;
 
-            if (!exceptionHandlers.empty()) {
-                auto handler = exceptionHandlers.back();
-                exceptionHandlers.pop_back();
-
-                // Unwind call frames back to the handler's frame
-                while (frameCount - 1 > handler.frameIndex) {
-                    closeUpvalues(&stack[FRAME.baseSlot]);
-                    frameCount--;
-                }
-
-                // Restore stack and jump to catch
-                stackTop = handler.stackTop;
-                push(error); // push error value for catch block
-                FRAME.ip = handler.catchIp;
-                break; // continue execution from catch
+            // Uncaught in this execute scope
+            lastError_ = error.toString();
+            if (!suppressErrors_ && executeDepth_ <= 1) {
+                int line = CURRENT_LINE();
+                std::cerr << "[line " << line << "] Uncaught error: " << error.toString() << std::endl;
+                std::cerr << formatStackTrace();
             }
-
-            // No handler — uncaught error
-            int line = CURRENT_LINE();
-            std::cerr << "[line " << line << "] Uncaught error: " << error.toString() << std::endl;
-            std::cerr << formatStackTrace();
-            resetStack();
             return Result::RUNTIME_ERROR;
         }
         case OpCode::OP_IMPORT: {
@@ -1083,23 +1197,148 @@ VM::Result VM::execute(int baseFrameCount_) {
             for (int i = argc - 1; i >= 0; i--) args[i] = pop();
             pop(); // callee
 
-            // All async calls run in true background threads.
-            // Native functions call fn(args) directly.
-            // VM closures spawn a fresh VM with copied globals.
+            // Deep-copy heap-allocated values so the async task doesn't share
+            // the caller's mutable state. Handles PraiaMap, PraiaArray,
+            // PraiaInstance (clones fields), and VMClosureCallable (clones
+            // wrapper to prevent dangling vm pointers). NativeFunction and
+            // PraiaFuture are safe to share. Primitives/strings copy by value.
+            // Track visited heap objects to handle cycles (e.g. a = []; a.push(a)).
+            // Key: raw pointer of the original object. Value: its already-created copy.
+            std::unordered_map<void*, Value> visited;
+
+            std::function<Value(const Value&)> deepCopy;
+            deepCopy = [&deepCopy, &visited](const Value& v) -> Value {
+                if (v.isCallable()) {
+                    auto* vmcc = dynamic_cast<VMClosureCallable*>(v.asCallable().get());
+                    if (vmcc) {
+                        auto clone = std::make_shared<VMClosureCallable>(vmcc->closure);
+                        clone->ownedPrototype = vmcc->ownedPrototype;
+                        clone->vm = nullptr; // rewire sets this to &taskVm
+                        return Value(std::static_pointer_cast<Callable>(clone));
+                    }
+                    auto* bm = dynamic_cast<VMBoundMethod*>(v.asCallable().get());
+                    if (bm) {
+                        Value recvCopy = deepCopy(bm->receiver);
+                        auto clone = std::make_shared<VMBoundMethod>(
+                            std::move(recvCopy), bm->method, bm->definingClass);
+                        return Value(std::static_pointer_cast<Callable>(clone));
+                    }
+                    return v; // NativeFunction etc — safe to share
+                }
+                if (v.isMap()) {
+                    void* key = static_cast<void*>(v.asMap().get());
+                    auto it = visited.find(key);
+                    if (it != visited.end()) return it->second;
+                    auto copy = std::make_shared<PraiaMap>();
+                    Value result(copy);
+                    visited[key] = result; // register before recursing
+                    for (auto& [k, val] : v.asMap()->entries)
+                        copy->entries[k] = deepCopy(val);
+                    return result;
+                }
+                if (v.isArray()) {
+                    void* key = static_cast<void*>(v.asArray().get());
+                    auto it = visited.find(key);
+                    if (it != visited.end()) return it->second;
+                    auto copy = std::make_shared<PraiaArray>();
+                    Value result(copy);
+                    visited[key] = result; // register before recursing
+                    for (auto& el : v.asArray()->elements)
+                        copy->elements.push_back(deepCopy(el));
+                    return result;
+                }
+                if (v.isInstance()) {
+                    void* key = static_cast<void*>(v.asInstance().get());
+                    auto it = visited.find(key);
+                    if (it != visited.end()) return it->second;
+                    auto copy = std::make_shared<PraiaInstance>();
+                    copy->klass = v.asInstance()->klass; // share class (immutable)
+                    Value result(copy);
+                    visited[key] = result; // register before recursing
+                    for (auto& [k, fv] : v.asInstance()->fields)
+                        copy->fields[k] = deepCopy(fv);
+                    return result;
+                }
+                return v; // primitives, strings, futures
+            };
+
+            // Deep-copy args so async task can't mutate caller's objects
+            for (auto& arg : args)
+                arg = deepCopy(arg);
+
             auto* native = dynamic_cast<NativeFunction*>(callable.get());
             auto* vmcc = dynamic_cast<VMClosureCallable*>(callable.get());
+            auto* bound = dynamic_cast<VMBoundMethod*>(callable.get());
 
             std::shared_future<Value> sharedFuture;
-            if (vmcc && vmcc->vm) {
-                // Spawn a fresh VM in a background thread
-                auto fn = vmcc->closure->function;
-                auto globalsCopy = globals; // snapshot globals
+            if (vmcc || bound) {
+                // Both VMClosureCallable and VMBoundMethod use the same
+                // task-VM path. The difference: bound methods push receiver
+                // as slot 0 and set definingClass on the frame.
+                auto fn = bound ? bound->method->function : vmcc->closure->function;
+                auto* closureSrc = bound ? bound->method : vmcc->closure;
                 int arity = fn->arity;
 
+                // Arity check — must match callClosure's behavior
+                if (static_cast<int>(args.size()) > arity) {
+                    RUNTIME_ERR(fn->name + "() expected at most " + std::to_string(arity) +
+                        " argument(s) but got " + std::to_string(args.size()));
+                }
+
+                std::unordered_map<std::string, Value> globalsCopy;
+                for (auto& [k, v] : globals)
+                    globalsCopy[k] = deepCopy(v);
+
+                // Snapshot upvalues and deep-copy so captured arrays/maps/instances
+                // are isolated from the caller
+                std::vector<Value> upvalueSnapshot;
+                for (int i = 0; i < closureSrc->upvalueCount; i++) {
+                    auto* uv = closureSrc->upvalues[i];
+                    upvalueSnapshot.push_back(uv ? deepCopy(*uv->location) : Value());
+                }
+
+                // For bound methods, deep-copy the receiver so the task
+                // doesn't share instance fields with the caller
+                Value receiverCopy = bound ? deepCopy(bound->receiver) : Value();
+                auto defClass = bound ? bound->definingClass : nullptr;
+
                 sharedFuture = std::async(std::launch::async,
-                    [fn, args, globalsCopy, arity]() -> Value {
+                    [fn, args, globalsCopy = std::move(globalsCopy), arity,
+                     upvalueSnapshot = std::move(upvalueSnapshot),
+                     builtinNames = builtinNames_,
+                     receiverCopy = std::move(receiverCopy),
+                     defClass = std::move(defClass)]() mutable -> Value {
                         VM taskVm;
-                        taskVm.globals = globalsCopy;
+                        taskVm.globals = std::move(globalsCopy);
+                        taskVm.builtinNames_ = std::move(builtinNames);
+                        taskVm.suppressErrors_ = true; // errors propagate to await, not stderr
+
+                        // Recursively rewire VMClosureCallable vm pointers to taskVm.
+                        // Track visited objects to handle cycles.
+                        std::unordered_set<void*> rewireVisited;
+                        std::function<void(Value&)> rewire;
+                        rewire = [&taskVm, &rewire, &rewireVisited](Value& v) {
+                            if (v.isCallable()) {
+                                auto* vc = dynamic_cast<VMClosureCallable*>(v.asCallable().get());
+                                if (vc) vc->vm = &taskVm;
+                            }
+                            if (v.isMap()) {
+                                void* p = static_cast<void*>(v.asMap().get());
+                                if (rewireVisited.insert(p).second)
+                                    for (auto& [mk, mv] : v.asMap()->entries) rewire(mv);
+                            }
+                            if (v.isArray()) {
+                                void* p = static_cast<void*>(v.asArray().get());
+                                if (rewireVisited.insert(p).second)
+                                    for (auto& el : v.asArray()->elements) rewire(el);
+                            }
+                            if (v.isInstance()) {
+                                void* p = static_cast<void*>(v.asInstance().get());
+                                if (rewireVisited.insert(p).second)
+                                    for (auto& [k, fv] : v.asInstance()->fields) rewire(fv);
+                            }
+                        };
+                        for (auto& [k, v] : taskVm.globals) rewire(v);
 
                         // Pad args to match arity
                         std::vector<Value> paddedArgs = args;
@@ -1109,22 +1348,99 @@ VM::Result VM::execute(int baseFrameCount_) {
                         auto* closure = new ObjClosure(fn);
                         taskVm.allClosures.push_back(closure);
 
+                        // Restore upvalues as closed (self-contained) values
+                        for (int i = 0; i < closure->upvalueCount && i < static_cast<int>(upvalueSnapshot.size()); i++) {
+                            auto* uv = new ObjUpvalue(nullptr);
+                            uv->closed = upvalueSnapshot[i];
+                            uv->location = &uv->closed;
+                            closure->upvalues[i] = uv;
+                            taskVm.allUpvalues.push_back(uv);
+                        }
+
                         auto wrapper = std::make_shared<VMClosureCallable>(closure);
                         wrapper->vm = &taskVm;
-                        taskVm.push(Value(std::static_pointer_cast<Callable>(wrapper)));
+
+                        // Slot 0: receiver (this) for bound methods, closure for plain functions
+                        if (!receiverCopy.isNil()) {
+                            taskVm.push(receiverCopy);
+                        } else {
+                            taskVm.push(Value(std::static_pointer_cast<Callable>(wrapper)));
+                        }
                         for (auto& arg : paddedArgs) taskVm.push(arg);
 
                         taskVm.frames[0].closure = closure;
                         taskVm.frames[0].function = fn;
                         taskVm.frames[0].ip = fn->chunk.code.data();
                         taskVm.frames[0].baseSlot = 0;
-                        taskVm.frames[0].definingClass = nullptr;
+                        taskVm.frames[0].definingClass = defClass;
                         taskVm.frameCount = 1;
 
                         auto result = taskVm.execute();
-                        if (result == Result::OK && taskVm.stackTop > 0)
-                            return taskVm.pop();
-                        return Value();
+                        if (result != Result::OK || taskVm.stackTop <= 0)
+                            throw RuntimeError(
+                                taskVm.lastError_.empty() ? "Async task failed" : taskVm.lastError_, 0);
+
+                        Value retVal = taskVm.pop();
+
+                        // Transfer closure/upvalue ownership from taskVm into a
+                        // shared bag attached to any VMClosureCallable in the result.
+                        // This keeps the raw pointers alive after taskVm is destroyed.
+                        auto ownership = std::make_shared<TaskOwnership>();
+                        ownership->closures = std::move(taskVm.allClosures);
+                        ownership->upvalues = std::move(taskVm.allUpvalues);
+                        taskVm.allClosures.clear();
+                        taskVm.allUpvalues.clear();
+
+                        // Helper to walk a PraiaClass chain's vmMethods.
+                        // Track visited objects to handle cycles.
+                        std::unordered_set<void*> attachVisited;
+                        std::function<void(Value&)> attachOwnership;
+                        auto walkClassChain = [&ownership, &attachOwnership, &attachVisited](std::shared_ptr<PraiaClass> klass) {
+                            while (klass) {
+                                void* p = static_cast<void*>(klass.get());
+                                if (!attachVisited.insert(p).second) break;
+                                for (auto& [k, mv] : klass->vmMethods)
+                                    attachOwnership(mv);
+                                klass = klass->superclass;
+                            }
+                        };
+
+                        attachOwnership = [&ownership, &attachOwnership, &walkClassChain, &attachVisited](Value& v) {
+                            if (v.isCallable()) {
+                                auto* vc = dynamic_cast<VMClosureCallable*>(v.asCallable().get());
+                                if (vc) {
+                                    vc->taskOwnership = ownership;
+                                    vc->vm = nullptr; // force VM::current() in call()
+                                }
+                                auto* bm = dynamic_cast<VMBoundMethod*>(v.asCallable().get());
+                                if (bm) {
+                                    bm->taskOwnership = ownership;
+                                    attachOwnership(bm->receiver);
+                                }
+                                auto klass = std::dynamic_pointer_cast<PraiaClass>(v.asCallable());
+                                if (klass) walkClassChain(klass);
+                            }
+                            if (v.isMap()) {
+                                void* p = static_cast<void*>(v.asMap().get());
+                                if (attachVisited.insert(p).second)
+                                    for (auto& [k, mv] : v.asMap()->entries) attachOwnership(mv);
+                            }
+                            if (v.isArray()) {
+                                void* p = static_cast<void*>(v.asArray().get());
+                                if (attachVisited.insert(p).second)
+                                    for (auto& el : v.asArray()->elements) attachOwnership(el);
+                            }
+                            if (v.isInstance()) {
+                                void* p = static_cast<void*>(v.asInstance().get());
+                                if (attachVisited.insert(p).second) {
+                                    for (auto& [k, fv] : v.asInstance()->fields) attachOwnership(fv);
+                                    walkClassChain(v.asInstance()->klass);
+                                }
+                            }
+                        };
+                        attachOwnership(retVal);
+
+                        return retVal;
                     }).share();
             } else if (native) {
                 sharedFuture = std::async(std::launch::async,
@@ -1162,6 +1478,13 @@ VM::Result VM::execute(int baseFrameCount_) {
             break;
         }
         }
+    }
+    } catch (const ExitSignal&) {
+        throw; // propagate sys.exit() to main
+    } catch (const RuntimeError& err) {
+        // Fatal error (e.g. stack overflow from push())
+        lastError_ = err.what();
+        return Result::RUNTIME_ERROR;
     }
 
     #undef FRAME
