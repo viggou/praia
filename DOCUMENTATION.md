@@ -2772,6 +2772,57 @@ These are essential for implementing authentication protocols (PostgreSQL, MySQL
 
 ---
 
+## hex Grain
+
+The `hex` grain provides hex encoding/decoding utilities for working with binary data, network protocols, and debugging.
+
+```
+use "hex"
+```
+
+### Functions
+
+| Function | Description |
+|----------|-------------|
+| `hex.encode(str)` | Encode a raw string to hex (`"AB"` → `"4142"`) |
+| `hex.decode(hexStr)` | Decode a hex string to raw bytes (`"4142"` → `"AB"`) |
+| `hex.fromInt(n, width?)` | Integer to hex string, optional zero-padded width |
+| `hex.toInt(hexStr)` | Hex string to integer (accepts optional `0x` prefix) |
+| `hex.dump(data, cols?)` | xxd-style hex dump (default 16 columns) |
+
+### encode / decode
+
+```
+hex.encode("Hello")          // "48656c6c6f"
+hex.decode("48656c6c6f")     // "Hello"
+```
+
+### fromInt / toInt
+
+```
+hex.fromInt(255)             // "ff"
+hex.fromInt(0xCAFE)          // "cafe"
+hex.fromInt(255, 4)          // "00ff"  (zero-padded to 4 chars)
+hex.fromInt(0, 2)            // "00"
+
+hex.toInt("ff")              // 255
+hex.toInt("0xDEADBEEF")     // 3735928559
+hex.toInt(hex.fromInt(42))   // 42  (round-trip)
+```
+
+### dump
+
+Produces an xxd-style hex dump with address, hex bytes, and ASCII sidebar:
+
+```
+print(hex.dump("Hello, World!\n"))
+// 00000000  48 65 6c 6c 6f 2c 20 57 6f 72 6c 64 21 0a     |Hello, World!. |
+```
+
+Non-printable bytes show as `.` in the ASCII column. Optional second argument sets columns (default 16).
+
+---
+
 ## Networking (net)
 
 The `net` namespace provides TCP and UDP socket operations, DNS resolution, and socket timeouts. Sockets are represented as numbers (file descriptors).
