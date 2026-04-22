@@ -28,6 +28,7 @@
 #include <netinet/in.h>
 #include <netdb.h>
 #include <sys/wait.h>
+#include <poll.h>
 #include <unistd.h>
 
 namespace fs = std::filesystem;
@@ -497,20 +498,34 @@ Interpreter::Interpreter() {
             close(stdoutPipe[1]);
             close(stderrPipe[1]);
 
-            auto readAll = [](int fd) -> std::string {
-                std::string result;
+            // Read both pipes concurrently with poll() to avoid deadlock
+            // when the child fills one pipe while we're blocked reading the other.
+            std::string outStr, errStr;
+            {
+                struct pollfd fds[2];
+                fds[0] = {stdoutPipe[0], POLLIN, 0};
+                fds[1] = {stderrPipe[0], POLLIN, 0};
+                int openCount = 2;
                 char buf[4096];
-                ssize_t n;
-                while ((n = read(fd, buf, sizeof(buf))) > 0)
-                    result.append(buf, n);
-                close(fd);
-                if (!result.empty() && result.back() == '\n')
-                    result.pop_back();
-                return result;
-            };
-
-            std::string outStr = readAll(stdoutPipe[0]);
-            std::string errStr = readAll(stderrPipe[0]);
+                while (openCount > 0) {
+                    poll(fds, 2, -1);
+                    for (int i = 0; i < 2; i++) {
+                        if (fds[i].revents & (POLLIN | POLLHUP)) {
+                            ssize_t n = read(fds[i].fd, buf, sizeof(buf));
+                            if (n > 0) {
+                                (i == 0 ? outStr : errStr).append(buf, n);
+                            } else {
+                                // EOF or error — stop polling this fd
+                                close(fds[i].fd);
+                                fds[i].fd = -1;
+                                openCount--;
+                            }
+                        }
+                    }
+                }
+                if (!outStr.empty() && outStr.back() == '\n') outStr.pop_back();
+                if (!errStr.empty() && errStr.back() == '\n') errStr.pop_back();
+            }
 
             int status = 0;
             waitpid(pid, &status, 0);
