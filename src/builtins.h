@@ -19,6 +19,26 @@ inline std::shared_ptr<NativeFunction> makeNative(
     return f;
 }
 
+// Safe callback invocation for tree-walker native code.
+// Validates arity and pads missing args with nil before calling, preventing
+// crashes from NativeFunction callbacks receiving wrong arg count.
+inline Value callSafe(Interpreter& interp, std::shared_ptr<Callable> callable,
+                      const std::vector<Value>& args) {
+    int arity = callable->arity();
+    if (arity != -1) {
+        int argc = static_cast<int>(args.size());
+        if (argc > arity)
+            throw RuntimeError(callable->name() + "() expected at most " +
+                std::to_string(arity) + " argument(s) but got " + std::to_string(argc), 0);
+        if (argc < arity) {
+            std::vector<Value> padded = args;
+            padded.resize(arity); // fills with nil (Value default)
+            return callable->call(interp, padded);
+        }
+    }
+    return callable->call(interp, args);
+}
+
 // ── HTTP (builtins_http.cpp) ─────────────────────────────────
 Value doHttpRequest(const std::string& method, const std::string& url,
                     const std::string& body,

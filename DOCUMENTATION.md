@@ -164,7 +164,7 @@ Praia has 7 types:
 | `nil` | `nil` | The absence of a value |
 | `bool` | `true`, `false` | |
 | `int` | `42`, `0`, `-7` | 64-bit integer (exact up to 2^63) |
-| `number` | `3.14`, `0.5` | Double-precision float |
+| `float` | `3.14`, `0.5` | Double-precision float |
 | `string` | `"hello"` | Supports interpolation and escape sequences |
 | `array` | `[1, 2, 3]` | Ordered, mixed-type, reference semantics |
 | `map` | `{name: "Ada"}` | String keys, reference semantics |
@@ -2523,6 +2523,7 @@ In addition to file/directory operations, `sys` provides:
 | `sys.copy(src, dst)` | Copy a file or directory (recursive) |
 | `sys.move(src, dst)` | Move / rename a file or directory |
 | `sys.env(name)` | Read environment variable (returns nil if not set) |
+| `sys.setenv(name, value)` | Set an environment variable |
 | `sys.cwd()` | Current working directory |
 | `sys.platform` | `"darwin"`, `"linux"`, or `"windows"` |
 | `sys.stdout(str)` | Write to stdout without a trailing newline |
@@ -2908,11 +2909,15 @@ From highest to lowest:
 | 3 | `-` `!` | Unary negation, logical NOT |
 | 4 | `*` `/` `%` | Multiplication, division, modulo |
 | 5 | `+` `-` | Addition, subtraction |
-| 6 | `<` `>` `<=` `>=` | Comparison |
-| 7 | `==` `!=` | Equality |
-| 8 | `&&` | Logical AND |
-| 9 | `\|\|` | Logical OR |
-| 10 | `=` | Assignment (right-associative) |
+| 6 | `<<` `>>` | Bitwise shift |
+| 7 | `&` | Bitwise AND |
+| 8 | `^` | Bitwise XOR |
+| 9 | `\|` | Bitwise OR |
+| 10 | `<` `>` `<=` `>=` | Comparison |
+| 11 | `==` `!=` | Equality |
+| 12 | `&&` | Logical AND |
+| 13 | `\|\|` | Logical OR |
+| 14 | `=` | Assignment (right-associative) |
 
 Parentheses can override precedence:
 
@@ -2980,7 +2985,8 @@ hello world
 ./praia -c 'print("hello")'        # run a one-liner
 ./praia -c 'print(sys.args)' a b   # one-liner with arguments
 ./praia test                        # run test suite in tests/
-./praia --vm script.praia           # run with the bytecode VM (faster)
+./praia -v                          # print version
+./praia --tree script.praia         # run with tree-walker interpreter
 ./praia --tokens script.praia       # show lexer tokens
 ./praia --ast script.praia          # show parse tree
 ```
@@ -2993,11 +2999,12 @@ Semicolons can be used as statement separators, which is useful for one-liners:
 
 ### Bytecode VM
 
-Praia includes a bytecode compiler and stack-based VM as an alternative to the default tree-walking interpreter. The VM is faster for CPU-bound work. Use the `--vm` flag:
+Praia uses a bytecode compiler and stack-based VM by default. A tree-walking interpreter is available as a fallback with the `--tree` flag:
 
 ```bash
-./praia --vm script.praia
-./praia --vm -c 'print("hello")'
+./praia script.praia              # runs with the VM (default)
+./praia --tree script.praia       # runs with the tree-walker
+./praia --tree test               # test suite with tree-walker
 ```
 
-Both engines support the full language. The tree-walker is the default.
+Both engines support the full language.

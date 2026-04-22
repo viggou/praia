@@ -794,21 +794,24 @@ Value Interpreter::evaluate(const Expr* expr) {
 
         auto callable = callee.asCallable();
         int arity = callable->arity();
-        if (arity != -1 && static_cast<int>(args.size()) != arity)
-            throw RuntimeError(callable->name() + "() expected " + std::to_string(arity) +
+        // Only reject too many args — fewer is fine (defaults/nil fill the rest)
+        if (arity != -1 && static_cast<int>(args.size()) > arity)
+            throw RuntimeError(callable->name() + "() expected at most " + std::to_string(arity) +
                 " argument(s) but got " + std::to_string(args.size()), e->line);
 
-        // Spawn the call in a background thread
-        // Native functions (http.get, sys.exec, etc.) run without the lock = true parallelism
-        // Praia functions need the lock (only one runs at a time, like Python's GIL)
+        // Spawn the call in a background thread.
+        // Native functions run directly — they don't touch interpreter state.
+        // Praia functions get a task-local Interpreter with shared globals
+        // so PraiaFunction::call's env swaps don't corrupt foreground state.
         Interpreter* self = this;
+        auto sharedGlobals = globals;
         auto sharedFuture = std::async(std::launch::async,
-            [callable, args, self]() -> Value {
+            [callable, args, self, sharedGlobals]() -> Value {
                 if (dynamic_cast<NativeFunction*>(callable.get())) {
                     return callable->call(*self, args);
                 }
-                std::lock_guard<std::recursive_mutex> lock(self->interpMutex);
-                return callable->call(*self, args);
+                Interpreter taskInterp(sharedGlobals);
+                return callable->call(taskInterp, args);
             }).share();
 
         auto fut = std::make_shared<PraiaFuture>();
@@ -821,17 +824,13 @@ Value Interpreter::evaluate(const Expr* expr) {
         if (!val.isFuture())
             throw RuntimeError("Can only await a future", e->line);
 
-        auto& future = val.asFuture()->future;
-
-        // Release the interpreter lock while waiting so other async tasks can run.
-        // RAII guard ensures the mutex is re-locked even if future.get() throws.
-        struct MutexRelocker {
-            std::recursive_mutex& m;
-            ~MutexRelocker() { m.lock(); }
-        } relocker{interpMutex};
-        interpMutex.unlock();
-        Value result = future.get();
-        return result;
+        try {
+            return val.asFuture()->future.get();
+        } catch (const RuntimeError&) {
+            throw;
+        } catch (const std::exception& ex) {
+            throw RuntimeError(std::string("Async task failed: ") + ex.what(), e->line);
+        }
     }
 
     // ── Lambda ──

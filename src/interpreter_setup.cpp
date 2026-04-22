@@ -168,7 +168,7 @@ Interpreter::Interpreter() {
                     if (!args[0].isCallable())
                         throw RuntimeError("withLock() requires a function", 0);
                     std::lock_guard<std::recursive_mutex> guard(*mtx);
-                    return args[0].asCallable()->call(*self, {});
+                    return callSafe(*self, args[0].asCallable(), {});
                 }));
 
             return Value(lock);
@@ -325,7 +325,7 @@ Interpreter::Interpreter() {
             auto result = std::make_shared<PraiaArray>();
             auto pred = args[1].asCallable();
             for (auto& elem : src) {
-                Value test = pred->call(*this, {elem});
+                Value test = callSafe(*this, pred, {elem});
                 if (test.isTruthy()) result->elements.push_back(elem);
             }
             return Value(result);
@@ -341,7 +341,7 @@ Interpreter::Interpreter() {
             auto result = std::make_shared<PraiaArray>();
             auto transform = args[1].asCallable();
             for (auto& elem : src)
-                result->elements.push_back(transform->call(*this, {elem}));
+                result->elements.push_back(callSafe(*this, transform, {elem}));
             return Value(result);
         })));
 
@@ -354,7 +354,7 @@ Interpreter::Interpreter() {
             auto& src = args[0].asArray()->elements;
             auto fn = args[1].asCallable();
             for (auto& elem : src)
-                fn->call(*this, {elem});
+                callSafe(*this, fn, {elem});
             return args[0]; // return the array for chaining
         })));
 
@@ -660,7 +660,7 @@ Interpreter::Interpreter() {
             // Call the callback with the send function
             try {
                 std::vector<Value> cbArgs = {Value(std::static_pointer_cast<Callable>(sendFn))};
-                callback->call(*self, cbArgs);
+                callSafe(*self, callback, cbArgs);
             } catch (const RuntimeError&) {
                 // Client likely disconnected — not an error
             }
