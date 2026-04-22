@@ -1,0 +1,93 @@
+// progress — terminal progress bars and spinners
+
+let ESC = "\x1b["
+
+// Create a progress bar.
+// Options: width (default 30), fill (default "#"), empty (default "."),
+//          color (default nil), showPercent (default true), showCount (default false)
+func bar(opts = {}) {
+    let cfg = {width: 30, fill: "#", empty: ".", color: nil, showPercent: true, showCount: false, ...opts}
+
+    let state = {current: 0, total: 100, done: false}
+
+    func render() {
+        let ratio = state.current / state.total
+        if (ratio > 1) { ratio = 1 }
+        if (ratio < 0) { ratio = 0 }
+        let filled = math.floor(ratio * cfg.width)
+        let barStr = ""
+        for (i in 0..filled) { barStr = barStr + cfg.fill }
+        for (i in 0..cfg.width - filled) { barStr = barStr + cfg.empty }
+
+        let line = "[" + barStr + "]"
+        if (cfg.showPercent) {
+            let pct = math.floor(ratio * 100)
+            line = line + " " + str(pct) + "%"
+        }
+        if (cfg.showCount) {
+            line = line + " " + str(state.current) + "/" + str(state.total)
+        }
+        if (cfg.color != nil) {
+            line = ESC + cfg.color + "m" + line + ESC + "0m"
+        }
+        sys.stdout("\r" + line)
+    }
+
+    let handle = {}
+
+    // Set total count
+    handle.total = lam{ n in state.total = n; return handle }
+
+    // Update to an absolute value
+    handle.update = lam{ n in state.current = n; render(); return handle }
+
+    // Increment by a step (default 1)
+    handle.tick = lam{ step = 1 in state.current = state.current + step; render(); return handle }
+
+    // Complete — fill to 100% and print newline
+    handle.done = lam{ in
+        if (!state.done) {
+            state.current = state.total
+            render()
+            print("")
+            state.done = true
+        }
+        return handle
+    }
+
+    return handle
+}
+
+// Create a spinner for indeterminate progress.
+// Options: frames (default dots), message (default ""), color (default nil)
+func spinner(opts = {}) {
+    let cfg = {frames: ["|", "/", "-", "\\"], message: "", color: nil, ...opts}
+    let state = {frame: 0, message: cfg.message, done: false}
+
+    let handle = {}
+
+    // Advance the spinner one frame
+    handle.tick = lam{ msg = nil in
+        if (msg != nil) { state.message = msg }
+        let f = cfg.frames[state.frame % len(cfg.frames)]
+        let line = f + " " + state.message
+        if (cfg.color != nil) {
+            line = ESC + cfg.color + "m" + line + ESC + "0m"
+        }
+        sys.stdout("\r" + line + ESC + "K")
+        state.frame = state.frame + 1
+        return handle
+    }
+
+    // Clear the spinner line and print a final message
+    handle.done = lam{ msg = "" in
+        sys.stdout("\r" + ESC + "K")
+        if (msg != "") { print(msg) }
+        state.done = true
+        return handle
+    }
+
+    return handle
+}
+
+export { bar, spinner }
