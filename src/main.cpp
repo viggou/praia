@@ -553,6 +553,26 @@ int main(int argc, char* argv[]) {
         return 0;
     }
 
+    // `praia -h` / `praia --help`
+    if (argc >= 2 && (std::string(argv[1]) == "--help" || std::string(argv[1]) == "-h")) {
+        std::cout << "Praia " << PRAIA_VERSION << "\n\n"
+                  << "Usage:\n"
+                  << "  praia                          Start the REPL\n"
+                  << "  praia <file>                   Run a script\n"
+                  << "  praia <file> [args...]          Run a script with arguments (sys.args)\n"
+                  << "  praia -c '<code>' [args...]     Run a one-liner\n"
+                  << "  praia test [dir]                Run test suite (default: tests/)\n"
+                  << "\n"
+                  << "Options:\n"
+                  << "  -h, --help       Show this help message\n"
+                  << "  -v, --version    Print version\n"
+                  << "  -c <code>        Evaluate a string as code\n"
+                  << "  --tree           Use tree-walker interpreter instead of VM\n"
+                  << "  --tokens         Print lexer tokens and exit\n"
+                  << "  --ast            Print parse tree and exit\n";
+        return 0;
+    }
+
     // `praia test [dir]` subcommand — scan past flags to find it
     for (int i = 1; i < argc; i++) {
         std::string arg = argv[i];

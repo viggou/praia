@@ -1436,7 +1436,7 @@ VM::Result VM::execute(int baseFrameCount_) {
                         // Track visited objects to handle cycles.
                         std::unordered_set<void*> attachVisited;
                         std::function<void(Value&)> attachOwnership;
-                        auto walkClassChain = [&ownership, &attachOwnership, &attachVisited](std::shared_ptr<PraiaClass> klass) {
+                        auto walkClassChain = [&attachOwnership, &attachVisited](std::shared_ptr<PraiaClass> klass) {
                             while (klass) {
                                 void* p = static_cast<void*>(klass.get());
                                 if (!attachVisited.insert(p).second) break;
