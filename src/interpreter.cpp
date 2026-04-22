@@ -103,6 +103,17 @@ std::string Interpreter::resolveGrainPath(const std::string& path, int line) {
         }
     }
 
+    // 5. Bundled stdlib grains
+    if (g_praiaLibDir) {
+        // Installed layout: LIBDIR/grains/ (baked in at compile time)
+        auto r = tryResolveGrain(fs::path(g_praiaLibDir) / "grains", path);
+        if (!r.empty()) return r;
+    } else if (!g_praiaInstallDir.empty()) {
+        // Development layout: <bindir>/grains/
+        auto r = tryResolveGrain(fs::path(g_praiaInstallDir) / "grains", path);
+        if (!r.empty()) return r;
+    }
+
     throw RuntimeError("Grain not found: " + path, line);
 }
 

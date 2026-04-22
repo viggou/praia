@@ -1,4 +1,5 @@
 #include "ast.h"
+#include "grain_resolve.h"
 #include "interpreter.h"
 #include "lexer.h"
 #include "parser.h"
@@ -236,7 +237,7 @@ static void printAst(const std::vector<StmtPtr>& program) {
 
 // ── Main ─────────────────────────────────────────────────────
 
-static constexpr const char* PRAIA_VERSION = "0.2.0";
+static constexpr const char* PRAIA_VERSION = "0.2.1";
 
 static std::string readFile(const std::string& path) {
     std::ifstream file(path);
@@ -563,6 +564,14 @@ static int runTestsCommand(const std::string& dir, bool useVm) {
 }
 
 int main(int argc, char* argv[]) {
+    // Resolve the directory where the praia binary lives.
+    // Used by grain resolution to find bundled stdlib grains.
+    {
+        namespace fs = std::filesystem;
+        fs::path binPath = fs::canonical(fs::path(argv[0]));
+        g_praiaInstallDir = binPath.parent_path().string();
+    }
+
     bool showTokens = false;
     bool showAst = false;
     bool useVm = true; // VM is the default

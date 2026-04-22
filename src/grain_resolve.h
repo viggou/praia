@@ -6,6 +6,19 @@
 
 namespace fs = std::filesystem;
 
+// Directory where the praia binary lives — set once from main().
+// Used to find bundled stdlib grains in development mode: <bindir>/grains/
+inline std::string g_praiaInstallDir;
+
+// Compile-time LIBDIR from make install (e.g. "/usr/local/lib/praia").
+// When set, grains are found at PRAIA_LIBDIR/grains/.
+// When empty, falls back to g_praiaInstallDir-relative resolution.
+#ifdef PRAIA_LIBDIR
+inline const char* g_praiaLibDir = PRAIA_LIBDIR;
+#else
+inline const char* g_praiaLibDir = nullptr;
+#endif
+
 // Check if a directory is a grain with a grain.yaml.
 // Returns the resolved entry file path, or empty string if not a grain directory.
 inline std::string resolveGrainDir(const fs::path& dir) {

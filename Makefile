@@ -61,6 +61,47 @@ $(BUILD_DIR):
 clean:
 	rm -rf $(BUILD_DIR) $(TARGET)
 
+# ── Install / Uninstall ──
+# Usage: make install PREFIX=/usr/local
+#        make install PREFIX=/usr LIBDIR=/usr/share/praia
+#
+# Paths:
+#   Binary:  $(PREFIX)/bin/praia
+#   Grains:  $(LIBDIR)/grains/         (LIBDIR defaults to $(PREFIX)/lib/praia)
+#   Sand:    $(LIBDIR)/sand/
+#
+# LIBDIR is baked into the binary at compile time so grains resolve
+# without relative path guessing. DESTDIR is supported for staging.
+
+PREFIX  ?= /usr/local
+LIBDIR  ?= $(PREFIX)/lib/praia
+BINDIR   = $(PREFIX)/bin
+SAND_DIR ?= $(wildcard ../sand)
+
+install: clean
+	$(MAKE) CXXFLAGS='$(CXXFLAGS) -DPRAIA_LIBDIR="\"$(LIBDIR)\""'
+	install -d $(DESTDIR)$(BINDIR)
+	install -m 755 $(TARGET) $(DESTDIR)$(BINDIR)/$(TARGET)
+	install -d $(DESTDIR)$(LIBDIR)/grains
+	cp -R grains/* $(DESTDIR)$(LIBDIR)/grains/
+ifneq ($(SAND_DIR),)
+	install -d $(DESTDIR)$(LIBDIR)/sand
+	cp -R $(SAND_DIR)/main.praia $(DESTDIR)$(LIBDIR)/sand/
+	cp -R $(SAND_DIR)/grains $(DESTDIR)$(LIBDIR)/sand/
+	cp -R $(SAND_DIR)/grain.yaml $(DESTDIR)$(LIBDIR)/sand/
+	@printf '#!/bin/sh\nexec "$(BINDIR)/praia" "$(LIBDIR)/sand/main.praia" "$$@"\n' > $(DESTDIR)$(BINDIR)/sand
+	chmod 755 $(DESTDIR)$(BINDIR)/sand
+	@echo "Installed sand -> $(DESTDIR)$(BINDIR)/sand"
+endif
+	@echo "Installed praia -> $(DESTDIR)$(BINDIR)/praia"
+	@echo "Installed grains -> $(DESTDIR)$(LIBDIR)/grains/"
+
+uninstall:
+	rm -f $(DESTDIR)$(BINDIR)/praia
+	rm -f $(DESTDIR)$(BINDIR)/sand
+	rm -rf $(DESTDIR)$(LIBDIR)
+	@echo "Uninstalled praia from $(DESTDIR)$(PREFIX)"
+
 test: $(TARGET) test-input
 	./$(TARGET) test
 
@@ -74,4 +115,4 @@ test-input: $(TARGET)
 	  echo "$$out" | grep -q "No input" && \
 	  echo "sys.input EOF: ok"
 
-.PHONY: all clean test test-input
+.PHONY: all clean install uninstall test test-input
