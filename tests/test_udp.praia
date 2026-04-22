@@ -30,7 +30,9 @@ testing.test("UDP multiple datagrams", lam{ in
 testing.test("DNS resolve localhost", lam{ in
     let ips = net.resolve("localhost")
     testing.assert(len(ips) > 0, "should resolve at least one address")
-    testing.assert(ips.contains("127.0.0.1"), "should contain 127.0.0.1")
+    // May return IPv4 (127.0.0.1) and/or IPv6 (::1) depending on the system
+    testing.assert(ips.contains("127.0.0.1") || ips.contains("::1"),
+        "should contain 127.0.0.1 or ::1")
 })
 
 testing.test("net.setTimeout", lam{ in

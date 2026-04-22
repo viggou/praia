@@ -3101,7 +3101,7 @@ Options: `separator` (default `": "`), `keyWidth` (fixed key column width).
 
 ## Networking (net)
 
-The `net` namespace provides TCP and UDP socket operations, DNS resolution, and socket timeouts. Sockets are represented as numbers (file descriptors).
+The `net` namespace provides TCP and UDP socket operations, DNS resolution, and socket timeouts. All functions support both IPv4 and IPv6. Sockets are represented as numbers (file descriptors).
 
 ### TCP Client
 
@@ -3146,7 +3146,7 @@ net.close(server)
 
 ```
 let ips = net.resolve("example.com")
-print(ips)    // ["93.184.216.34"]
+print(ips)    // ["93.184.216.34", "2606:2800:21f:cb07:6820:80da:af6b:8b2c"]
 ```
 
 ### Socket Timeouts
