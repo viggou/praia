@@ -1,10 +1,11 @@
 CXX = g++
-CXXFLAGS = -std=c++17 -Wall -Wextra -g
+CXXFLAGS = -std=c++17 -Wall -Wextra -g -MMD -MP
 SRC_DIR = src
 BUILD_DIR = build
 
 SOURCES = $(wildcard $(SRC_DIR)/*.cpp) $(wildcard $(SRC_DIR)/vm/*.cpp)
 OBJECTS = $(patsubst $(SRC_DIR)/%.cpp,$(BUILD_DIR)/%.o,$(SOURCES))
+DEPS = $(OBJECTS:.o=.d)
 TARGET = praia
 
 all: $(TARGET)
@@ -49,10 +50,10 @@ endif
 $(TARGET): $(OBJECTS)
 	$(CXX) $(CXXFLAGS) -o $@ $^ $(LDLIBS)
 
-HEADERS = $(wildcard $(SRC_DIR)/*.h)
-
-$(BUILD_DIR)/%.o: $(SRC_DIR)/%.cpp $(HEADERS) | $(BUILD_DIR)
+$(BUILD_DIR)/%.o: $(SRC_DIR)/%.cpp | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) -c -o $@ $<
+
+-include $(DEPS)
 
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR) $(BUILD_DIR)/vm
