@@ -6,7 +6,6 @@
 #include <functional>
 #include <future>
 #include <memory>
-#include <mutex>
 #include <set>
 #include <string>
 #include <unordered_map>
@@ -123,6 +122,9 @@ class Interpreter {
     friend struct PraiaMethod;
 public:
     Interpreter();
+    // Lightweight constructor for async tasks — shares globals, owns env
+    explicit Interpreter(std::shared_ptr<Environment> sharedGlobals)
+        : globals(sharedGlobals), env(sharedGlobals) {}
     bool interpret(const std::vector<StmtPtr>& program);
     void interpretRepl(const std::vector<StmtPtr>& program);
     void setArgs(const std::vector<std::string>& args);
@@ -152,8 +154,7 @@ private:
     // AST storage to keep grain ASTs alive (function bodies are raw pointers)
     std::vector<std::vector<StmtPtr>> grainAsts;
 
-    // Thread safety for async/await
-    std::recursive_mutex interpMutex;
+    // (interpMutex removed — async tasks use task-local Interpreters instead)
 
     // Call stack for error traces
 public:
