@@ -1449,19 +1449,23 @@ Interpreter::Interpreter() {
 
     // ── UDP ──
 
+    // net.udp() creates an IPv4 socket (portable default).
+    // IPv6 dual-stack behavior varies by OS (Linux defaults to v6only=1),
+    // so client sockets use IPv4 for reliability. Servers (udpBind) use dual-stack.
     netMap->entries["udp"] = Value(makeNative("net.udp", 0,
         [](const std::vector<Value>&) -> Value {
-            // Create IPv6 UDP socket (works for both v4 and v6 via dual-stack)
-            int sock = socket(AF_INET6, SOCK_DGRAM, 0);
-            if (sock >= 0) {
-                int v6only = 0;
-                setsockopt(sock, IPPROTO_IPV6, IPV6_V6ONLY, &v6only, sizeof(v6only));
-                return Value(static_cast<int64_t>(sock));
-            }
-            // Fallback to IPv4
-            sock = socket(AF_INET, SOCK_DGRAM, 0);
+            int sock = socket(AF_INET, SOCK_DGRAM, 0);
             if (sock < 0)
                 throw RuntimeError("Cannot create UDP socket", 0);
+            return Value(static_cast<int64_t>(sock));
+        }));
+
+    // net.udp6() creates an IPv6 UDP socket
+    netMap->entries["udp6"] = Value(makeNative("net.udp6", 0,
+        [](const std::vector<Value>&) -> Value {
+            int sock = socket(AF_INET6, SOCK_DGRAM, 0);
+            if (sock < 0)
+                throw RuntimeError("Cannot create IPv6 UDP socket", 0);
             return Value(static_cast<int64_t>(sock));
         }));
 
@@ -1514,7 +1518,7 @@ Interpreter::Interpreter() {
             int port = static_cast<int>(args[2].asNumber());
             auto& data = args[3].asString();
 
-            // Detect socket family to match resolution
+            // Detect socket family to match resolution, fall back to AF_UNSPEC
             struct sockaddr_storage ss;
             socklen_t sslen = sizeof(ss);
             int family = AF_UNSPEC;
@@ -1522,10 +1526,18 @@ Interpreter::Interpreter() {
                 family = ss.ss_family;
 
             struct addrinfo hints = {}, *res;
-            hints.ai_family = family; // match socket's address family
+            hints.ai_family = family;
             hints.ai_socktype = SOCK_DGRAM;
-            if (getaddrinfo(host.c_str(), std::to_string(port).c_str(), &hints, &res) != 0)
-                throw RuntimeError("Cannot resolve host: " + host, 0);
+            if (getaddrinfo(host.c_str(), std::to_string(port).c_str(), &hints, &res) != 0) {
+                // Socket family didn't match host (e.g. IPv6 socket, IPv4 host) — retry unspec
+                if (family != AF_UNSPEC) {
+                    hints.ai_family = AF_UNSPEC;
+                    if (getaddrinfo(host.c_str(), std::to_string(port).c_str(), &hints, &res) != 0)
+                        throw RuntimeError("Cannot resolve host: " + host, 0);
+                } else {
+                    throw RuntimeError("Cannot resolve host: " + host, 0);
+                }
+            }
             ssize_t sent = sendto(sock, data.c_str(), data.size(), 0, res->ai_addr, res->ai_addrlen);
             freeaddrinfo(res);
             if (sent < 0)

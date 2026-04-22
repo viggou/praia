@@ -3170,7 +3170,8 @@ net.setTimeout(sock, 5000)     // 5 second timeout for send/recv
 | `net.recv(sock, maxBytes?)` | Receive data (default 4096 bytes max), returns string |
 | `net.recvAll(sock)` | Read until the connection closes, returns string |
 | **UDP** | |
-| `net.udp()` | Create a UDP socket |
+| `net.udp()` | Create an IPv4 UDP socket |
+| `net.udp6()` | Create an IPv6 UDP socket |
 | `net.udpBind(port)` | Create and bind a UDP socket to a port |
 | `net.sendTo(sock, host, port, data)` | Send a UDP datagram |
 | `net.recvFrom(sock, maxBytes?)` | Receive a datagram, returns `{data, host, port}` |
