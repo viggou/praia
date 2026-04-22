@@ -140,6 +140,8 @@ void Lexer::scanToken() {
             }
             break;
 
+        case '@': addToken(TokenType::AT); break;
+
         default:
             if (std::isdigit(c)) {
                 number();

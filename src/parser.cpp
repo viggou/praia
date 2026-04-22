@@ -8,6 +8,11 @@ std::vector<StmtPtr> Parser::parse() {
     while (!isAtEnd()) {
         try {
             statements.push_back(statement());
+            // Drain pending statements (emitted by decorator desugaring)
+            while (!pending_.empty()) {
+                statements.push_back(std::move(pending_.front()));
+                pending_.erase(pending_.begin());
+            }
         } catch (const ParseError&) {
             synchronize();
         }
@@ -18,6 +23,46 @@ std::vector<StmtPtr> Parser::parse() {
 // ── Statements ───────────────────────────────────────────────
 
 StmtPtr Parser::statement() {
+    // Decorator: @expr func name(...) { ... }
+    // Desugars to: func name(...){...}; name = expr(name)
+    if (check(TokenType::AT)) {
+        std::vector<ExprPtr> decorators;
+        while (match(TokenType::AT)) {
+            decorators.push_back(call());
+        }
+        if (!match(TokenType::FUNC))
+            throw error(peek(), "Expected 'func' after decorator");
+        auto funcStmt = funcStatement();
+        std::string funcName = static_cast<FuncStmt*>(funcStmt.get())->name;
+        int ln = static_cast<FuncStmt*>(funcStmt.get())->line;
+
+        // Build reassignment: name = outer(inner(name))
+        // decorators[0] is outermost, decorators[last] is innermost (closest to func)
+        ExprPtr wrapped = std::make_unique<IdentifierExpr>();
+        static_cast<IdentifierExpr*>(wrapped.get())->name = funcName;
+        static_cast<IdentifierExpr*>(wrapped.get())->line = ln;
+
+        for (int i = static_cast<int>(decorators.size()) - 1; i >= 0; i--) {
+            auto callExpr = std::make_unique<CallExpr>();
+            callExpr->line = ln;
+            callExpr->callee = std::move(decorators[i]);
+            callExpr->args.push_back(std::move(wrapped));
+            wrapped = std::move(callExpr);
+        }
+
+        auto assign = std::make_unique<AssignExpr>();
+        assign->line = ln;
+        assign->name = funcName;
+        assign->value = std::move(wrapped);
+
+        auto assignStmt = std::make_unique<ExprStmt>();
+        assignStmt->line = ln;
+        assignStmt->expr = std::move(assign);
+        pending_.push_back(std::move(assignStmt));
+
+        return funcStmt;
+    }
+
     if (match(TokenType::LET))    return letStatement();
     if (match(TokenType::FUNC))   return funcStatement();
     if (match(TokenType::CLASS))  return classStatement();

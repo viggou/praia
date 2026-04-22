@@ -75,4 +75,5 @@ private:
     bool hadError = false;
     int loopDepth = 0;
     int functionDepth = 0;
+    std::vector<StmtPtr> pending_; // for decorator desugaring (extra stmts to emit)
 };

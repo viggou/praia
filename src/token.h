@@ -82,6 +82,7 @@ enum class TokenType {
     PIPE,       // |>
     COLON,      // :
     QUESTION,   // ?
+    AT,         // @
 
     // Delimiters
     LPAREN,     // (
@@ -172,6 +173,7 @@ inline std::string tokenTypeToString(TokenType type) {
         case TokenType::PIPE:        return "PIPE";
         case TokenType::COLON:       return "COLON";
         case TokenType::QUESTION:    return "QUESTION";
+        case TokenType::AT:          return "AT";
         case TokenType::LPAREN:      return "LPAREN";
         case TokenType::RPAREN:      return "RPAREN";
         case TokenType::LBRACE:      return "LBRACE";
