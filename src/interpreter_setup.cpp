@@ -1510,16 +1510,24 @@ Interpreter::Interpreter() {
             uint32_t pending = g_pendingSignals.exchange(0);
             if (pending == 0) return Value(false);
 
-            std::lock_guard<std::mutex> lock(g_signalMutex);
-            for (int sig = 0; sig < 32 && pending; sig++) {
-                if (pending & (1u << sig)) {
-                    pending &= ~(1u << sig);
-                    auto it = g_signalHandlers.find(sig);
-                    if (it != g_signalHandlers.end()) {
-                        std::string name = signalNumToName(sig);
-                        callSafe(*self, it->second, {Value(name)});
+            // Copy handlers under the lock, then release before invoking
+            // so that callbacks can safely call sys.onSignal() without
+            // deadlocking on g_signalMutex.
+            std::vector<std::pair<int, std::shared_ptr<Callable>>> toCall;
+            {
+                std::lock_guard<std::mutex> lock(g_signalMutex);
+                for (int sig = 0; sig < 32 && pending; sig++) {
+                    if (pending & (1u << sig)) {
+                        pending &= ~(1u << sig);
+                        auto it = g_signalHandlers.find(sig);
+                        if (it != g_signalHandlers.end())
+                            toCall.emplace_back(sig, it->second);
                     }
                 }
+            }
+            for (auto& [sig, handler] : toCall) {
+                std::string name = signalNumToName(sig);
+                callSafe(*self, handler, {Value(name)});
             }
             return Value(true);
         }));
