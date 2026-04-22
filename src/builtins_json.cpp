@@ -135,9 +135,14 @@ class JsonParser {
             numStr.find('e') == std::string::npos &&
             numStr.find('E') == std::string::npos) {
             try { return Value(static_cast<int64_t>(std::stoll(numStr))); }
-            catch (...) {} // fallback to double for very large numbers
+            catch (...) {} // fallback to double for very large integers
         }
-        return Value(std::stod(numStr));
+        try {
+            return Value(std::stod(numStr));
+        } catch (const std::out_of_range&) {
+            fail("Number out of range: " + numStr);
+        }
+        return Value(0.0); // unreachable, fail() throws
     }
 
     Value parseObject() {
