@@ -1203,6 +1203,13 @@ VM::Result VM::execute(int baseFrameCount_) {
                         clone->vm = nullptr; // rewire sets this to &taskVm
                         return Value(std::static_pointer_cast<Callable>(clone));
                     }
+                    auto* bm = dynamic_cast<VMBoundMethod*>(v.asCallable().get());
+                    if (bm) {
+                        Value recvCopy = deepCopy(bm->receiver);
+                        auto clone = std::make_shared<VMBoundMethod>(
+                            std::move(recvCopy), bm->method, bm->definingClass);
+                        return Value(std::static_pointer_cast<Callable>(clone));
+                    }
                     return v; // NativeFunction etc — safe to share
                 }
                 if (v.isMap()) {
