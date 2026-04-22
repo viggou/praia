@@ -262,6 +262,7 @@ static std::vector<StmtPtr> compile(const std::string& source,
     if (showTokens) {
         for (const auto& token : tokens)
             std::cout << token << std::endl;
+        hadError = lexer.hasError();
         return {};
     }
 
