@@ -2979,6 +2979,126 @@ let plain = colors.strip(colored)    // "error" (no escapes)
 
 ---
 
+## progress Grain
+
+The `progress` grain provides terminal progress bars and spinners.
+
+```
+use "progress"
+```
+
+### Progress bar
+
+```
+let p = progress.bar({width: 30, showCount: true})
+p.total(100)
+
+for (i in 0..101) {
+    p.update(i)
+    time.sleep(10)
+}
+p.done()
+```
+
+Options (all optional):
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `width` | 30 | Bar width in characters |
+| `fill` | `"#"` | Fill character |
+| `empty` | `"."` | Empty character |
+| `showPercent` | true | Show percentage |
+| `showCount` | false | Show current/total |
+| `color` | nil | ANSI color code (e.g. `"32"` for green) |
+
+Methods:
+
+| Method | Description |
+|--------|-------------|
+| `p.total(n)` | Set total count |
+| `p.update(n)` | Set current value |
+| `p.tick(step?)` | Increment by step (default 1) |
+| `p.done()` | Fill to 100% and print newline |
+
+### Spinner
+
+```
+let s = progress.spinner({message: "Loading..."})
+for (i in 0..20) {
+    s.tick()
+    time.sleep(50)
+}
+s.done("Complete!")
+```
+
+| Method | Description |
+|--------|-------------|
+| `s.tick(msg?)` | Advance one frame, optionally update message |
+| `s.done(msg?)` | Clear spinner, optionally print final message |
+
+Options: `frames` (array of frame strings), `message`, `color`.
+
+---
+
+## table Grain
+
+The `table` grain renders formatted text tables.
+
+```
+use "table"
+```
+
+### Rendering rows
+
+Pass an array of maps:
+
+```
+let users = [
+    {name: "Alice", age: 30, role: "admin"},
+    {name: "Bob", age: 25, role: "user"}
+]
+print(table.render(users))
+// +-----+-------+------+
+// | age | role  | name |
+// +-----+-------+------+
+// | 30  | admin | Alice|
+// | 25  | user  | Bob  |
+// +-----+-------+------+
+```
+
+### Options
+
+```
+table.render(rows, {
+    columns: ["name", "age", "role"],         // column order
+    headers: {name: "Name", age: "Age"},      // display names
+    align: {age: "right", role: "center"},    // alignment per column
+    border: false                              // borderless mode
+})
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `columns` | all keys from first row | Array of key names in order |
+| `headers` | key names | Map of key to display name |
+| `align` | `"left"` | Map of key to `"left"`, `"right"`, or `"center"` |
+| `border` | true | Box-drawing borders vs plain aligned columns |
+
+### Key-value display
+
+For vertical key-value output:
+
+```
+print(table.kv({Host: "10.0.0.1", Port: 443, Status: "open"}))
+// Host    : 10.0.0.1
+// Port    : 443
+// Status  : open
+```
+
+Options: `separator` (default `": "`), `keyWidth` (fixed key column width).
+
+---
+
 ## Networking (net)
 
 The `net` namespace provides TCP and UDP socket operations, DNS resolution, and socket timeouts. Sockets are represented as numbers (file descriptors).

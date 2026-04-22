@@ -1,0 +1,147 @@
+// table — formatted text tables for terminal output
+
+// Render an array of maps (rows) as a formatted table.
+// Options: columns (array of key names — default: all keys from first row),
+//          headers (map of key -> display name), border (default true),
+//          align (map of key -> "left"/"right"/"center", default "left")
+func render(rows, opts = {}) {
+    if (len(rows) == 0) { return "" }
+
+    let cfg = {columns: nil, headers: nil, border: true, align: nil, ...opts}
+
+    // Determine columns from first row if not specified
+    let cols = cfg.columns
+    if (cols == nil) {
+        cols = keys(rows[0])
+    }
+
+    // Build display headers
+    let hdrs = {}
+    for (c in cols) {
+        if (cfg.headers != nil) {
+            try { hdrs[c] = str(cfg.headers[c]) } catch(e) { hdrs[c] = c }
+        } else {
+            hdrs[c] = c
+        }
+    }
+
+    // Calculate column widths (max of header and all values)
+    let widths = {}
+    for (c in cols) {
+        widths[c] = len(hdrs[c])
+    }
+    for (row in rows) {
+        for (c in cols) {
+            let val = ""
+            try { val = str(row[c]) } catch(e) { val = "" }
+            let w = len(val)
+            if (w > widths[c]) { widths[c] = w }
+        }
+    }
+
+    // Alignment helper
+    func alignCell(val, width, alignment) {
+        let s = str(val)
+        let pad = width - len(s)
+        if (pad <= 0) { return s }
+        if (alignment == "right") {
+            return s.padStart(width)
+        }
+        if (alignment == "center") {
+            let left = math.floor(pad / 2)
+            let right = pad - left
+            let result = ""
+            for (i in 0..left) { result = result + " " }
+            result = result + s
+            for (i in 0..right) { result = result + " " }
+            return result
+        }
+        // left (default)
+        return s.padEnd(width)
+    }
+
+    func getAlign(col) {
+        if (cfg.align != nil) {
+            try { return cfg.align[col] } catch(e) { return "left" }
+        }
+        return "left"
+    }
+
+    let lines = []
+
+    if (cfg.border) {
+        // Top border
+        let sep = "+"
+        for (c in cols) { sep = sep + "-".repeat(widths[c] + 2) + "+" }
+        lines.push(sep)
+
+        // Header row
+        let hdr = "|"
+        for (c in cols) {
+            hdr = hdr + " " + alignCell(hdrs[c], widths[c], getAlign(c)) + " |"
+        }
+        lines.push(hdr)
+        lines.push(sep)
+
+        // Data rows
+        for (row in rows) {
+            let line = "|"
+            for (c in cols) {
+                let val = ""
+                try { val = str(row[c]) } catch(e) { val = "" }
+                line = line + " " + alignCell(val, widths[c], getAlign(c)) + " |"
+            }
+            lines.push(line)
+        }
+        lines.push(sep)
+    } else {
+        // No border — just aligned columns with spaces
+        let hdr = ""
+        for (i in 0..len(cols)) {
+            if (i > 0) { hdr = hdr + "  " }
+            hdr = hdr + alignCell(hdrs[cols[i]], widths[cols[i]], getAlign(cols[i]))
+        }
+        lines.push(hdr)
+
+        // Underline
+        let underline = ""
+        for (i in 0..len(cols)) {
+            if (i > 0) { underline = underline + "  " }
+            underline = underline + "-".repeat(widths[cols[i]])
+        }
+        lines.push(underline)
+
+        for (row in rows) {
+            let line = ""
+            for (i in 0..len(cols)) {
+                if (i > 0) { line = line + "  " }
+                let val = ""
+                try { val = str(row[cols[i]]) } catch(e) { val = "" }
+                line = line + alignCell(val, widths[cols[i]], getAlign(cols[i]))
+            }
+            lines.push(line)
+        }
+    }
+
+    return lines.join("\n")
+}
+
+// Simple key-value display (vertical table)
+func kv(data, opts = {}) {
+    let cfg = {separator: ": ", keyWidth: nil, ...opts}
+
+    let kvKeys = keys(data)
+    let maxKey = 0
+    for (k in kvKeys) {
+        if (len(k) > maxKey) { maxKey = len(k) }
+    }
+    if (cfg.keyWidth != nil) { maxKey = cfg.keyWidth }
+
+    let lines = []
+    for (k in kvKeys) {
+        lines.push(k.padEnd(maxKey) + cfg.separator + str(data[k]))
+    }
+    return lines.join("\n")
+}
+
+export { render, kv }
