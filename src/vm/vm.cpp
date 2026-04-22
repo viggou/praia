@@ -59,10 +59,12 @@ Value VMClosureCallable::call(Interpreter&, const std::vector<Value>& args) {
     currentVm->push(Value(std::static_pointer_cast<Callable>(self)));
     for (auto& arg : args) currentVm->push(arg);
 
-    if (!currentVm->callClosure(closure, static_cast<int>(args.size()), 0)) return Value();
+    currentVm->callClosure(closure, static_cast<int>(args.size()), 0); // throws on failure
 
     auto result = currentVm->execute(savedFrameCount);
-    if (result != VM::Result::OK) return Value();
+    if (result != VM::Result::OK)
+        throw RuntimeError(
+            currentVm->lastError().empty() ? "Callback failed" : currentVm->lastError(), 0);
 
     return currentVm->pop();
 }
