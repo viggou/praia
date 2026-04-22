@@ -824,8 +824,14 @@ ExprPtr Parser::primary() {
         e->line = previous().line;
         std::string lex = previous().lexeme;
         if (lex.find('.') == std::string::npos) {
-            e->isInt = true;
-            e->intValue = std::stoll(lex);
+            try {
+                e->isInt = true;
+                e->intValue = std::stoll(lex);
+            } catch (const std::out_of_range&) {
+                error(previous(), "Integer literal too large: " + lex);
+                e->isInt = true;
+                e->intValue = 0;
+            }
         } else {
             e->isInt = false;
             e->floatValue = std::stod(lex);
