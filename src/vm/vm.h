@@ -60,6 +60,7 @@ struct VMBoundMethod : Callable {
     Value receiver;
     ObjClosure* method;
     std::shared_ptr<PraiaClass> definingClass; // which class owns this method (for super resolution)
+    std::shared_ptr<TaskOwnership> taskOwnership; // keeps async task closures/upvalues alive
     VMBoundMethod(Value recv, ObjClosure* m, std::shared_ptr<PraiaClass> dc = nullptr)
         : receiver(std::move(recv)), method(m), definingClass(std::move(dc)) {}
     Value call(Interpreter&, const std::vector<Value>&) override { return Value(); } // unused

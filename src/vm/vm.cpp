@@ -40,7 +40,11 @@ struct VMScope {
 // Uses VM::current() so closures returned from async tasks work correctly
 // even after the task VM is destroyed.
 Value VMClosureCallable::call(Interpreter&, const std::vector<Value>& args) {
-    VM* currentVm = vm ? vm : VM::current();
+    // Prefer VM::current() (always the live VM). Fall back to stored vm only
+    // when there's no active execute() (tree-walker compatibility path).
+    // Async-returned closures have vm=nullptr, so this always does the right thing.
+    VM* currentVm = VM::current();
+    if (!currentVm) currentVm = vm;
     if (!currentVm) return Value();
 
     int savedFrameCount = currentVm->frameCount;
@@ -1344,11 +1348,31 @@ VM::Result VM::execute(int baseFrameCount_) {
                         taskVm.allClosures.clear();
                         taskVm.allUpvalues.clear();
 
+                        // Helper to walk a PraiaClass chain's vmMethods
                         std::function<void(Value&)> attachOwnership;
-                        attachOwnership = [&ownership, &attachOwnership](Value& v) {
+                        auto walkClassChain = [&ownership, &attachOwnership](std::shared_ptr<PraiaClass> klass) {
+                            while (klass) {
+                                for (auto& [k, mv] : klass->vmMethods)
+                                    attachOwnership(mv);
+                                klass = klass->superclass;
+                            }
+                        };
+
+                        attachOwnership = [&ownership, &attachOwnership, &walkClassChain](Value& v) {
                             if (v.isCallable()) {
                                 auto* vc = dynamic_cast<VMClosureCallable*>(v.asCallable().get());
-                                if (vc) vc->taskOwnership = ownership;
+                                if (vc) {
+                                    vc->taskOwnership = ownership;
+                                    vc->vm = nullptr; // force VM::current() in call()
+                                }
+                                auto* bm = dynamic_cast<VMBoundMethod*>(v.asCallable().get());
+                                if (bm) {
+                                    bm->taskOwnership = ownership;
+                                    attachOwnership(bm->receiver);
+                                }
+                                // Walk PraiaClass vmMethods (class used as a value)
+                                auto klass = std::dynamic_pointer_cast<PraiaClass>(v.asCallable());
+                                if (klass) walkClassChain(klass);
                             }
                             if (v.isMap()) {
                                 for (auto& [k, mv] : v.asMap()->entries) attachOwnership(mv);
@@ -1358,6 +1382,7 @@ VM::Result VM::execute(int baseFrameCount_) {
                             }
                             if (v.isInstance()) {
                                 for (auto& [k, fv] : v.asInstance()->fields) attachOwnership(fv);
+                                walkClassChain(v.asInstance()->klass);
                             }
                         };
                         attachOwnership(retVal);
