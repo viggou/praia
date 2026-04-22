@@ -99,13 +99,13 @@ void vmRegisterNatives(VM& vm) {
                             auto* vmcc = dynamic_cast<VMClosureCallable*>(it->second.asCallable().get());
                             if (vmcc) {
                                 vm->push(Value(inst)); // slot for 'this'
-                                if (vm->callClosure(vmcc->closure, 0, 0)) {
-                                    int saved = vm->frameCount;
-                                    auto result = vm->execute(saved - 1);
-                                    if (result == VM::Result::OK) {
-                                        return vm->pop();
-                                    }
-                                }
+                                vm->callClosure(vmcc->closure, 0, 0); // throws on failure
+                                int saved = vm->frameCount;
+                                auto result = vm->execute(saved - 1);
+                                if (result == VM::Result::OK)
+                                    return vm->pop();
+                                throw RuntimeError(
+                                    vm->lastError().empty() ? "toString() failed" : vm->lastError(), 0);
                             }
                             break;
                         }
