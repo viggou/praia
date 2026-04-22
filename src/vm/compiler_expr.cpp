@@ -442,8 +442,23 @@ void Compiler::compileAsyncExpr(const AsyncExpr* expr) {
 
     compileExpr(call->callee.get());
     for (auto& arg : call->args) compileExpr(arg.get());
-    emit(OpCode::OP_ASYNC, expr->line);
-    emit(static_cast<uint8_t>(call->args.size()), expr->line);
+
+    // Check if any args are named
+    bool hasNamed = false;
+    for (auto& n : call->argNames) { if (!n.empty()) { hasNamed = true; break; } }
+
+    if (hasNamed) {
+        auto namesArr = std::make_shared<PraiaArray>();
+        for (auto& n : call->argNames)
+            namesArr->elements.push_back(Value(n));
+        uint16_t namesIdx = currentChunk().addConstant(Value(namesArr));
+        emit(OpCode::OP_ASYNC_NAMED, expr->line);
+        emit(static_cast<uint8_t>(call->args.size()), expr->line);
+        emitU16(namesIdx, expr->line);
+    } else {
+        emit(OpCode::OP_ASYNC, expr->line);
+        emit(static_cast<uint8_t>(call->args.size()), expr->line);
+    }
 }
 
 void Compiler::compileAwaitExpr(const AwaitExpr* expr) {

@@ -908,6 +908,12 @@ Value Interpreter::evaluate(const Expr* expr) {
         for (const auto& arg : call->args)
             args.push_back(evaluate(arg.get()));
 
+        // Reorder named arguments if present
+        bool hasNamed = false;
+        for (auto& n : call->argNames) { if (!n.empty()) { hasNamed = true; break; } }
+        if (hasNamed)
+            args = reorderNamedArgs(callee.asCallable(), args, call->argNames, e->line);
+
         auto callable = callee.asCallable();
         int arity = callable->arity();
         bool isNative = dynamic_cast<NativeFunction*>(callable.get()) != nullptr;

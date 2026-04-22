@@ -93,6 +93,7 @@ enum class OpCode : uint8_t {
 
     // ── Advanced ──
     OP_ASYNC,           // [argc:8]
+    OP_ASYNC_NAMED,     // [argc:8] [names_idx:16] — async call with named arguments
     OP_AWAIT,
     OP_IMPORT,          // [path_idx:16] [alias_idx:16]
     OP_EXPORT,          // [count:8] followed by count name indices

@@ -1327,8 +1327,20 @@ VM::Result VM::execute(int baseFrameCount_) {
             break;
         }
 
+        case OpCode::OP_ASYNC_NAMED:
         case OpCode::OP_ASYNC: {
             uint8_t argc = READ_BYTE();
+
+            // For OP_ASYNC_NAMED, read the names constant and reorder args
+            // before entering the shared async dispatch.
+            std::vector<std::string> argNamesList;
+            bool hasNamedArgs = (static_cast<OpCode>(instruction) == OpCode::OP_ASYNC_NAMED);
+            if (hasNamedArgs) {
+                uint16_t namesIdx = READ_U16();
+                auto& namesArr = FRAME.chunk().constants[namesIdx].asArray()->elements;
+                for (auto& n : namesArr) argNamesList.push_back(n.asString());
+            }
+
             Value callee = peek(argc);
 
             if (!callee.isCallable()) {
@@ -1341,6 +1353,42 @@ VM::Result VM::execute(int baseFrameCount_) {
             std::vector<Value> args(argc);
             for (int i = argc - 1; i >= 0; i--) args[i] = pop();
             pop(); // callee
+
+            // Reorder named args to match parameter positions
+            if (hasNamedArgs) {
+                const auto* params = callable->paramNames();
+                if (!params) {
+                    RUNTIME_ERR("Named arguments not supported for '" + callable->name() + "'");
+                }
+                int paramCount = static_cast<int>(params->size());
+                std::vector<Value> reordered(paramCount);
+                std::vector<bool> filled(paramCount, false);
+                int positionalIdx = 0;
+                for (int i = 0; i < argc; i++) {
+                    if (argNamesList[i].empty()) {
+                        if (positionalIdx >= paramCount) {
+                            RUNTIME_ERR(callable->name() + "() too many arguments");
+                        }
+                        reordered[positionalIdx] = args[i];
+                        filled[positionalIdx] = true;
+                        positionalIdx++;
+                    } else {
+                        int found = -1;
+                        for (int p = 0; p < paramCount; p++) {
+                            if ((*params)[p] == argNamesList[i]) { found = p; break; }
+                        }
+                        if (found == -1) {
+                            RUNTIME_ERR(callable->name() + "() unknown parameter '" + argNamesList[i] + "'");
+                        }
+                        if (filled[found]) {
+                            RUNTIME_ERR(callable->name() + "() parameter '" + argNamesList[i] + "' specified twice");
+                        }
+                        reordered[found] = args[i];
+                        filled[found] = true;
+                    }
+                }
+                args = std::move(reordered);
+            }
 
             /* Deep-copy heap-allocated values so the async task doesn't share
             the caller's mutable state. Handles PraiaMap, PraiaArray,
@@ -1414,19 +1462,44 @@ VM::Result VM::execute(int baseFrameCount_) {
             auto* native = dynamic_cast<NativeFunction*>(callable.get());
             auto* vmcc = dynamic_cast<VMClosureCallable*>(callable.get());
             auto* bound = dynamic_cast<VMBoundMethod*>(callable.get());
+            auto klass = std::dynamic_pointer_cast<PraiaClass>(callable);
+
+            // For class construction, locate init in the vmMethods chain
+            std::shared_ptr<PraiaClass> initOwner;
+            VMClosureCallable* initVmcc = nullptr;
+            if (klass) {
+                auto walk = klass;
+                while (walk) {
+                    if (walk->vmMethods.count("init")) { initOwner = walk; break; }
+                    walk = walk->superclass;
+                }
+                if (initOwner) {
+                    auto& initVal = initOwner->vmMethods["init"];
+                    if (initVal.isCallable())
+                        initVmcc = dynamic_cast<VMClosureCallable*>(initVal.asCallable().get());
+                }
+            }
 
             std::shared_future<Value> sharedFuture;
-            if (vmcc || bound) {
-                /* Both VMClosureCallable and VMBoundMethod use the same
-                task-VM path. The difference: bound methods push receiver
-                as slot 0 and set definingClass on the frame. */
-                auto fn = bound ? bound->method->function : vmcc->closure->function;
-                auto* closureSrc = bound ? bound->method : vmcc->closure;
+            if (vmcc || bound || initVmcc) {
+                /* VMClosureCallable, VMBoundMethod, and PraiaClass (with VM
+                init) all use the same task-VM path. The differences:
+                - bound methods push receiver as slot 0 and set definingClass
+                - class construction creates a fresh instance as slot 0,
+                  runs init, and returns the instance (not init's return) */
+                auto fn = bound ? bound->method->function
+                        : initVmcc ? initVmcc->closure->function
+                        : vmcc->closure->function;
+                auto* closureSrc = bound ? bound->method
+                                  : initVmcc ? initVmcc->closure
+                                  : vmcc->closure;
                 int arity = fn->arity;
+                bool isConstructor = (initVmcc != nullptr);
 
                 // Arity check — must match callClosure's behavior
                 if (static_cast<int>(args.size()) > arity) {
-                    RUNTIME_ERR(fn->name + "() expected at most " + std::to_string(arity) +
+                    std::string errName = klass ? klass->className : fn->name;
+                    RUNTIME_ERR(errName + "() expected at most " + std::to_string(arity) +
                         " argument(s) but got " + std::to_string(args.size()));
                 }
 
@@ -1443,16 +1516,19 @@ VM::Result VM::execute(int baseFrameCount_) {
                 }
 
                 // For bound methods, deep-copy the receiver so the task
-                // doesn't share instance fields with the caller
+                // doesn't share instance fields with the caller.
+                // For constructors, the instance is created fresh in the task.
                 Value receiverCopy = bound ? deepCopy(bound->receiver) : Value();
-                auto defClass = bound ? bound->definingClass : nullptr;
+                auto defClass = bound ? bound->definingClass
+                              : initVmcc ? initOwner : nullptr;
 
                 sharedFuture = std::async(std::launch::async,
                     [fn, args, globalsCopy = std::move(globalsCopy), arity,
                      upvalueSnapshot = std::move(upvalueSnapshot),
                      builtinNames = builtinNames_,
                      receiverCopy = std::move(receiverCopy),
-                     defClass = std::move(defClass)]() mutable -> Value {
+                     defClass = std::move(defClass),
+                     isConstructor, klass]() mutable -> Value {
                         VM taskVm;
                         taskVm.globals = std::move(globalsCopy);
                         taskVm.builtinNames_ = std::move(builtinNames);
@@ -1505,8 +1581,19 @@ VM::Result VM::execute(int baseFrameCount_) {
                         auto wrapper = std::make_shared<VMClosureCallable>(closure);
                         wrapper->vm = &taskVm;
 
-                        // Slot 0: receiver (this) for bound methods, closure for plain functions
-                        if (!receiverCopy.isNil()) {
+                        // For constructors, create a fresh instance as the receiver
+                        Value instanceVal;
+                        if (isConstructor) {
+                            auto instance = std::make_shared<PraiaInstance>();
+                            instance->klass = klass;
+                            instanceVal = Value(instance);
+                        }
+
+                        // Slot 0: receiver (this) for bound methods/constructors,
+                        // closure for plain functions
+                        if (isConstructor) {
+                            taskVm.push(instanceVal);
+                        } else if (!receiverCopy.isNil()) {
                             taskVm.push(receiverCopy);
                         } else {
                             taskVm.push(Value(std::static_pointer_cast<Callable>(wrapper)));
@@ -1521,11 +1608,14 @@ VM::Result VM::execute(int baseFrameCount_) {
                         taskVm.frameCount = 1;
 
                         auto result = taskVm.execute();
-                        if (result != Result::OK || taskVm.stackTop <= 0)
+                        if (result != Result::OK)
                             throw RuntimeError(
                                 taskVm.lastError_.empty() ? "Async task failed" : taskVm.lastError_, 0);
 
-                        Value retVal = taskVm.pop();
+                        // Constructor: return the instance (init mutated its
+                        // fields via `this`). Otherwise return the function's
+                        // return value from the stack.
+                        Value retVal = isConstructor ? instanceVal : taskVm.pop();
 
                         // Transfer closure/upvalue ownership from taskVm into a
                         // shared bag attached to any VMClosureCallable in the result.
@@ -1587,6 +1677,16 @@ VM::Result VM::execute(int baseFrameCount_) {
 
                         return retVal;
                     }).share();
+            } else if (klass && !initVmcc) {
+                // Class with no init method — just create the instance
+                if (!args.empty()) {
+                    RUNTIME_ERR(klass->className + "() takes no arguments (no init method)");
+                }
+                auto instance = std::make_shared<PraiaInstance>();
+                instance->klass = klass;
+                std::promise<Value> prom;
+                prom.set_value(Value(instance));
+                sharedFuture = prom.get_future().share();
             } else if (native) {
                 int arity = native->arity();
                 if (arity != -1 && static_cast<int>(args.size()) != arity) {
