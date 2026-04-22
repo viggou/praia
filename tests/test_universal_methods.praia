@@ -1,0 +1,50 @@
+use "testing"
+
+testing.test(".toString() on int", lam{ in
+    testing.assertEqual(42.toString(), "42", nil)
+    testing.assertEqual(0.toString(), "0", nil)
+})
+
+testing.test(".toString() on float", lam{ in
+    let s = 3.14.toString()
+    testing.assert(s.startsWith("3.14"), "should start with 3.14")
+})
+
+testing.test(".toString() on bool", lam{ in
+    testing.assertEqual(true.toString(), "true", nil)
+    testing.assertEqual(false.toString(), "false", nil)
+})
+
+testing.test(".toString() on nil", lam{ in
+    testing.assertEqual(nil.toString(), "nil", nil)
+})
+
+testing.test(".toString() on array", lam{ in
+    testing.assertEqual([1, 2].toString(), "[1, 2]", nil)
+})
+
+testing.test(".toNum() on string", lam{ in
+    testing.assertEqual("42".toNum(), 42, nil)
+    testing.assertEqual("3.14".toNum(), 3.14, nil)
+})
+
+testing.test(".toNum() on bool", lam{ in
+    testing.assertEqual(true.toNum(), 1, nil)
+    testing.assertEqual(false.toNum(), 0, nil)
+})
+
+testing.test(".toNum() on bool strings", lam{ in
+    testing.assertEqual("true".toNum(), 1, nil)
+    testing.assertEqual("FALSE".toNum(), 0, nil)
+})
+
+testing.test(".toNum() on number is identity", lam{ in
+    testing.assertEqual(42.toNum(), 42, nil)
+    testing.assertEqual(3.14.toNum(), 3.14, nil)
+})
+
+testing.test(".toNum() throws on invalid string", lam{ in
+    testing.assertThrows(lam{ in "abc".toNum() }, nil)
+})
+
+testing.done()

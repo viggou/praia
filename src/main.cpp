@@ -518,9 +518,26 @@ static int runTestsCommand(const std::string& dir, bool useVm) {
     }
 
     int passed = 0, failed = 0;
+    int total = static_cast<int>(files.size());
     std::vector<std::string> failedFiles;
-    for (auto& file : files) {
-        std::cout << "── " << file << " ───────────────────────" << std::endl;
+    for (int fi = 0; fi < total; fi++) {
+        auto& file = files[fi];
+
+        // Progress bar: [####....] 3/10 test_foo.praia
+        {
+            int barWidth = 20;
+            int filled = (fi * barWidth) / total;
+            std::string bar(filled, '#');
+            bar += std::string(barWidth - filled, '.');
+            // Extract just the filename
+            std::string fname = file;
+            auto slash = fname.rfind('/');
+            if (slash != std::string::npos) fname = fname.substr(slash + 1);
+            std::cout << "\r\033[K[" << bar << "] " << fi << "/" << total
+                      << " " << fname << std::flush;
+        }
+
+        std::cout << "\r\033[K── " << file << " ───────────────────────" << std::endl;
         int code = runTestFile(file, useVm);
         if (code == 0) {
             passed++;
@@ -529,6 +546,11 @@ static int runTestsCommand(const std::string& dir, bool useVm) {
             failedFiles.push_back(file);
         }
         std::cout << std::endl;
+    }
+    // Final progress bar: complete
+    {
+        std::string bar(20, '#');
+        std::cout << "\r\033[K[" << bar << "] " << total << "/" << total << " done" << std::endl;
     }
 
     std::cout << "═══ " << passed << "/" << files.size()

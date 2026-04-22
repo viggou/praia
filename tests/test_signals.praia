@@ -1,0 +1,40 @@
+use "testing"
+
+testing.test("sys.onSignal and checkSignals", lam{ in
+    let caught = nil
+    sys.onSignal("SIGUSR1", lam{ sig in caught = sig })
+    sys.signal("SIGUSR1")
+    sys.checkSignals()
+    testing.assertEqual(caught, "SIGUSR1", nil)
+    sys.onSignal("SIGUSR1", nil)
+})
+
+testing.test("multiple signals", lam{ in
+    let got = []
+    sys.onSignal("SIGUSR1", lam{ sig in got.push(sig) })
+    sys.onSignal("SIGUSR2", lam{ sig in got.push(sig) })
+    sys.signal("SIGUSR1")
+    sys.signal("SIGUSR2")
+    sys.checkSignals()
+    testing.assert(got.contains("SIGUSR1"), "should catch USR1")
+    testing.assert(got.contains("SIGUSR2"), "should catch USR2")
+    sys.onSignal("SIGUSR1", nil)
+    sys.onSignal("SIGUSR2", nil)
+})
+
+testing.test("checkSignals returns bool", lam{ in
+    sys.onSignal("SIGUSR1", lam{ sig in nil })
+    let noSig = sys.checkSignals()
+    testing.assertEqual(noSig, false, "no pending signals")
+    sys.signal("SIGUSR1")
+    let hasSig = sys.checkSignals()
+    testing.assertEqual(hasSig, true, "pending signal fired")
+    sys.onSignal("SIGUSR1", nil)
+})
+
+testing.test("unknown signal throws", lam{ in
+    testing.assertThrows(lam{ in sys.onSignal("SIGFOO", lam{ in nil }) }, nil)
+    testing.assertThrows(lam{ in sys.signal("SIGFOO") }, nil)
+})
+
+testing.done()

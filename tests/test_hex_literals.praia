@@ -1,0 +1,35 @@
+use "testing"
+
+testing.test("hex literal basic", lam{ in
+    testing.assertEqual(0xFF, 255, nil)
+    testing.assertEqual(0x0, 0, nil)
+    testing.assertEqual(0x10, 16, nil)
+    testing.assertEqual(0xCAFE, 51966, nil)
+})
+
+testing.test("hex literal type is int", lam{ in
+    testing.assertEqual(type(0xFF), "int", nil)
+})
+
+testing.test("hex in arithmetic", lam{ in
+    testing.assertEqual(0xFF + 1, 256, nil)
+    testing.assertEqual(0x10 * 2, 32, nil)
+})
+
+testing.test("hex in bitwise", lam{ in
+    testing.assertEqual(0xFF & 0x0F, 15, nil)
+    testing.assertEqual(0xF0 | 0x0F, 255, nil)
+    testing.assertEqual(0xFF ^ 0xFF, 0, nil)
+})
+
+testing.test("hex in arrays", lam{ in
+    let arr = [0x01, 0x02, 0xFF]
+    testing.assertEqual(arr, [1, 2, 255], nil)
+})
+
+testing.test("hex in comparisons", lam{ in
+    testing.assert(0xFF > 0xFE, "FF > FE")
+    testing.assertEqual(0x100, 256, nil)
+})
+
+testing.done()
