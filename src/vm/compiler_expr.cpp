@@ -198,8 +198,27 @@ void Compiler::compilePipeExpr(const PipeExpr* expr) {
         compileExpr(call->callee.get());
         compileExpr(expr->left.get());  // first arg
         for (auto& arg : call->args) compileExpr(arg.get());
-        emit(OpCode::OP_CALL, expr->line);
-        emit(static_cast<uint8_t>(call->args.size() + 1), expr->line);
+
+        int totalArgs = static_cast<int>(call->args.size()) + 1;
+
+        // Check if the call has named args
+        bool hasNamed = false;
+        for (auto& n : call->argNames) { if (!n.empty()) { hasNamed = true; break; } }
+
+        if (hasNamed) {
+            // Build names: "" for the piped positional arg, then the call's names
+            auto namesArr = std::make_shared<PraiaArray>();
+            namesArr->elements.push_back(Value(std::string("")));
+            for (auto& n : call->argNames)
+                namesArr->elements.push_back(Value(n));
+            uint16_t namesIdx = currentChunk().addConstant(Value(namesArr));
+            emit(OpCode::OP_CALL_NAMED, expr->line);
+            emit(static_cast<uint8_t>(totalArgs), expr->line);
+            emitU16(namesIdx, expr->line);
+        } else {
+            emit(OpCode::OP_CALL, expr->line);
+            emit(static_cast<uint8_t>(totalArgs), expr->line);
+        }
     } else {
         compileExpr(expr->right.get());
         compileExpr(expr->left.get());

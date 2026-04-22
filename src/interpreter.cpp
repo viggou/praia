@@ -880,6 +880,16 @@ Value Interpreter::evaluate(const Expr* expr) {
             for (const auto& arg : call->args)
                 args.push_back(evaluate(arg.get()));
 
+            // Reorder named args: prepend "" for the piped positional arg
+            bool hasNamed = false;
+            for (auto& n : call->argNames) { if (!n.empty()) { hasNamed = true; break; } }
+            if (hasNamed) {
+                std::vector<std::string> names;
+                names.push_back("");
+                for (auto& n : call->argNames) names.push_back(n);
+                args = reorderNamedArgs(callee.asCallable(), args, names, e->line);
+            }
+
             return callWithContext(*this, callee.asCallable(), args, e->line);
         }
 
