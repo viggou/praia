@@ -388,7 +388,7 @@ Value getArrayMethod(std::shared_ptr<PraiaArray> arr,
             auto pred = args[0].asCallable();
             for (auto& elem : arr->elements) {
                 Value result = vm ? callWithVM(*vm, pred, {elem})
-                                  : pred->call(*interp, {elem});
+                                  : callSafe(*interp, pred, {elem});
                 if (result.isTruthy()) return elem;
             }
             return Value();
