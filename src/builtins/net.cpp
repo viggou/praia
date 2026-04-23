@@ -1,5 +1,6 @@
 #include "../builtins.h"
 #include <cerrno>
+#include <cstring>
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -12,6 +13,10 @@ struct AddrGuard {
     struct addrinfo* operator->() { return res; }
     struct addrinfo* get() { return res; }
 };
+
+static std::string sysErr(const std::string& msg) {
+    return msg + ": " + std::strerror(errno);
+}
 
 static int validatePort(double val, const char* funcName) {
     int port = static_cast<int>(val);
@@ -46,7 +51,7 @@ void registerNetBuiltins(std::shared_ptr<PraiaMap> netMap) {
                 sock = -1;
             }
             if (sock < 0)
-                throw RuntimeError("Cannot connect to " + host + ":" + std::to_string(port), 0);
+                throw RuntimeError(sysErr("Cannot connect to " + host + ":" + std::to_string(port)), 0);
             return Value(static_cast<int64_t>(sock));
         }));
 
@@ -78,7 +83,7 @@ void registerNetBuiltins(std::shared_ptr<PraiaMap> netMap) {
             // Fallback: IPv4 only
             fd = socket(AF_INET, SOCK_STREAM, 0);
             if (fd < 0)
-                throw RuntimeError("Cannot create socket", 0);
+                throw RuntimeError(sysErr("Cannot create socket"), 0);
             int opt = 1;
             setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
 
@@ -89,11 +94,11 @@ void registerNetBuiltins(std::shared_ptr<PraiaMap> netMap) {
 
             if (bind(fd, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
                 close(fd);
-                throw RuntimeError("Cannot bind to port " + std::to_string(port), 0);
+                throw RuntimeError(sysErr("Cannot bind to port " + std::to_string(port)), 0);
             }
             if (::listen(fd, 64) < 0) {
                 close(fd);
-                throw RuntimeError("Cannot listen on port " + std::to_string(port), 0);
+                throw RuntimeError(sysErr("Cannot listen on port " + std::to_string(port)), 0);
             }
             return Value(static_cast<int64_t>(fd));
         }));
@@ -107,7 +112,7 @@ void registerNetBuiltins(std::shared_ptr<PraiaMap> netMap) {
             socklen_t cl = sizeof(ca);
             int client = accept(fd, (struct sockaddr*)&ca, &cl);
             if (client < 0)
-                throw RuntimeError("Accept failed", 0);
+                throw RuntimeError(sysErr("Accept failed"), 0);
             return Value(static_cast<int64_t>(client));
         }));
 
@@ -121,7 +126,7 @@ void registerNetBuiltins(std::shared_ptr<PraiaMap> netMap) {
             auto& data = args[1].asString();
             ssize_t sent = ::send(fd, data.c_str(), data.size(), 0);
             if (sent < 0)
-                throw RuntimeError("Send failed", 0);
+                throw RuntimeError(sysErr("Send failed"), 0);
             return Value(static_cast<int64_t>(sent));
         }));
 
@@ -137,7 +142,7 @@ void registerNetBuiltins(std::shared_ptr<PraiaMap> netMap) {
             std::vector<char> buf(maxBytes);
             ssize_t n = ::recv(fd, buf.data(), buf.size(), 0);
             if (n < 0)
-                throw RuntimeError("Recv failed", 0);
+                throw RuntimeError(sysErr("Recv failed"), 0);
             if (n == 0) return Value(std::string(""));
             return Value(std::string(buf.data(), n));
         }));
@@ -172,7 +177,7 @@ void registerNetBuiltins(std::shared_ptr<PraiaMap> netMap) {
         [](const std::vector<Value>&) -> Value {
             int sock = socket(AF_INET, SOCK_DGRAM, 0);
             if (sock < 0)
-                throw RuntimeError("Cannot create UDP socket", 0);
+                throw RuntimeError(sysErr("Cannot create UDP socket"), 0);
             return Value(static_cast<int64_t>(sock));
         }));
 
@@ -181,7 +186,7 @@ void registerNetBuiltins(std::shared_ptr<PraiaMap> netMap) {
         [](const std::vector<Value>&) -> Value {
             int sock = socket(AF_INET6, SOCK_DGRAM, 0);
             if (sock < 0)
-                throw RuntimeError("Cannot create IPv6 UDP socket", 0);
+                throw RuntimeError(sysErr("Cannot create IPv6 UDP socket"), 0);
             return Value(static_cast<int64_t>(sock));
         }));
 
@@ -209,7 +214,7 @@ void registerNetBuiltins(std::shared_ptr<PraiaMap> netMap) {
             // Fallback to IPv4
             sock = socket(AF_INET, SOCK_DGRAM, 0);
             if (sock < 0)
-                throw RuntimeError("Cannot create UDP socket", 0);
+                throw RuntimeError(sysErr("Cannot create UDP socket"), 0);
             int opt = 1;
             setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
             struct sockaddr_in addr = {};
@@ -218,7 +223,7 @@ void registerNetBuiltins(std::shared_ptr<PraiaMap> netMap) {
             addr.sin_port = htons(port);
             if (bind(sock, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
                 close(sock);
-                throw RuntimeError("Cannot bind UDP to port " + std::to_string(port), 0);
+                throw RuntimeError(sysErr("Cannot bind UDP to port " + std::to_string(port)), 0);
             }
             return Value(static_cast<int64_t>(sock));
         }));
@@ -257,7 +262,7 @@ void registerNetBuiltins(std::shared_ptr<PraiaMap> netMap) {
             }
             ssize_t sent = sendto(sock, data.c_str(), data.size(), 0, ag->ai_addr, ag->ai_addrlen);
             if (sent < 0)
-                throw RuntimeError("sendTo failed", 0);
+                throw RuntimeError(sysErr("sendTo failed"), 0);
             return Value(static_cast<int64_t>(sent));
         }));
 
@@ -276,7 +281,7 @@ void registerNetBuiltins(std::shared_ptr<PraiaMap> netMap) {
             ssize_t n = recvfrom(sock, buf.data(), buf.size(), 0,
                                   (struct sockaddr*)&from, &fromLen);
             if (n < 0)
-                throw RuntimeError("recvFrom failed", 0);
+                throw RuntimeError(sysErr("recvFrom failed"), 0);
 
             // Extract sender address (IPv4 or IPv6)
             char addrBuf[INET6_ADDRSTRLEN];
@@ -390,7 +395,7 @@ void registerNetBuiltins(std::shared_ptr<PraiaMap> netMap) {
 
             if (errno == EPERM || errno == EACCES)
                 throw RuntimeError("net.rawSocket(): permission denied — requires root or CAP_NET_RAW", 0);
-            throw RuntimeError("net.rawSocket(): cannot create socket (errno " + std::to_string(errno) + ")", 0);
+            throw RuntimeError(sysErr("net.rawSocket(): cannot create socket"), 0);
         }));
 
     // net.rawSend(sock, host, data) — send raw data to a host
@@ -417,7 +422,7 @@ void registerNetBuiltins(std::shared_ptr<PraiaMap> netMap) {
                 throw RuntimeError("net.rawSend(): cannot resolve host: " + host, 0);
             ssize_t sent = sendto(sock, data.data(), data.size(), 0, ag->ai_addr, ag->ai_addrlen);
             if (sent < 0)
-                throw RuntimeError("net.rawSend() failed", 0);
+                throw RuntimeError(sysErr("net.rawSend() failed"), 0);
             return Value(static_cast<int64_t>(sent));
         }));
 
@@ -437,7 +442,7 @@ void registerNetBuiltins(std::shared_ptr<PraiaMap> netMap) {
             ssize_t n = recvfrom(sock, buf.data(), buf.size(), 0,
                                   (struct sockaddr*)&from, &fromLen);
             if (n < 0)
-                throw RuntimeError("net.rawRecv() failed", 0);
+                throw RuntimeError(sysErr("net.rawRecv() failed"), 0);
 
             char addrBuf[INET6_ADDRSTRLEN];
             if (from.ss_family == AF_INET) {
