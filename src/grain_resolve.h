@@ -19,9 +19,23 @@ inline const char* g_praiaLibDir = PRAIA_LIBDIR;
 inline const char* g_praiaLibDir = nullptr;
 #endif
 
+// Verify that a resolved path stays within an expected base directory.
+// Prevents symlink escapes (e.g. ext_grains/evil -> /etc/passwd).
+inline std::string containedCanonical(const fs::path& file, const fs::path& base) {
+    auto resolved = fs::canonical(file).string();
+    auto baseStr = fs::canonical(base).string();
+    // Ensure resolved path starts with base + separator (or equals base)
+    if (resolved.rfind(baseStr, 0) != 0)
+        return ""; // escaped containment
+    // Must be exactly base or base/...
+    if (resolved.size() > baseStr.size() && resolved[baseStr.size()] != '/')
+        return ""; // e.g. base="/foo/bar", resolved="/foo/barBaz"
+    return resolved;
+}
+
 // Check if a directory is a grain with a grain.yaml.
 // Returns the resolved entry file path, or empty string if not a grain directory.
-inline std::string resolveGrainDir(const fs::path& dir) {
+inline std::string resolveGrainDir(const fs::path& dir, const fs::path& base) {
     if (!fs::is_directory(dir)) return "";
 
     // Look for grain.yaml to find the main entry file
@@ -40,7 +54,7 @@ inline std::string resolveGrainDir(const fs::path& dir) {
                 if (end != std::string::npos) mainFile = mainFile.substr(0, end + 1);
                 if (!mainFile.empty()) {
                     auto entry = dir / mainFile;
-                    if (fs::exists(entry)) return fs::canonical(entry).string();
+                    if (fs::exists(entry)) return containedCanonical(entry, base);
                 }
             }
         }
@@ -48,10 +62,10 @@ inline std::string resolveGrainDir(const fs::path& dir) {
 
     // Fallback: main.praia, then index.praia
     auto mainFile = dir / "main.praia";
-    if (fs::exists(mainFile)) return fs::canonical(mainFile).string();
+    if (fs::exists(mainFile)) return containedCanonical(mainFile, base);
 
     auto indexFile = dir / "index.praia";
-    if (fs::exists(indexFile)) return fs::canonical(indexFile).string();
+    if (fs::exists(indexFile)) return containedCanonical(indexFile, base);
 
     return "";
 }
@@ -61,9 +75,9 @@ inline std::string resolveGrainDir(const fs::path& dir) {
 inline std::string tryResolveGrain(const fs::path& base, const std::string& name) {
     // Single file
     auto singleFile = base / (name + ".praia");
-    if (fs::exists(singleFile)) return fs::canonical(singleFile).string();
+    if (fs::exists(singleFile)) return containedCanonical(singleFile, base);
 
     // Directory grain
     auto grainDir = base / name;
-    return resolveGrainDir(grainDir);
+    return resolveGrainDir(grainDir, base);
 }
