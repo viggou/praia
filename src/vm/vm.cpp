@@ -141,6 +141,54 @@ Value& VM::peek(int distance) {
 }
 void VM::resetStack() { stackTop = 0; frameCount = 0; }
 
+Value VM::resumeGenerator(std::shared_ptr<PraiaGenerator> gen, Value sendVal) {
+    if (gen->state == PraiaGenerator::State::COMPLETED) {
+        auto result = std::make_shared<PraiaMap>();
+        result->entries["value"] = Value();
+        result->entries["done"] = Value(true);
+        return Value(result);
+    }
+
+    int restoreBase = stackTop;
+    for (auto& val : gen->savedStack) push(val);
+
+    auto* closure = static_cast<ObjClosure*>(gen->vmClosure);
+    int genBase = frameCount;
+    auto& frame = frames[frameCount++];
+    frame.closure = closure;
+    frame.function = closure->function;
+    frame.ip = gen->savedIp;
+    frame.baseSlot = restoreBase;
+    frame.definingClass = nullptr;
+
+    // Push sendValue as result of yield expression (skip on first call)
+    if (gen->state != PraiaGenerator::State::CREATED)
+        push(sendVal);
+
+    gen->state = PraiaGenerator::State::RUNNING;
+
+    auto prevGen = currentGenerator_;
+    auto prevGenBase = genBaseFrame_;
+    auto prevGenStackTop = genBaseStackTop_;
+    currentGenerator_ = gen;
+    genBaseFrame_ = genBase;
+    genBaseStackTop_ = restoreBase;
+
+    auto result = execute(genBase);
+
+    currentGenerator_ = prevGen;
+    genBaseFrame_ = prevGenBase;
+    genBaseStackTop_ = prevGenStackTop;
+
+    if (result != Result::OK) {
+        gen->state = PraiaGenerator::State::COMPLETED;
+        throw RuntimeError(
+            lastError_.empty() ? "Generator failed" : lastError_, 0);
+    }
+
+    return pop();
+}
+
 uint8_t VM::readByte() { return *frames[frameCount - 1].ip++; }
 
 uint16_t VM::readU16() {
@@ -1025,71 +1073,8 @@ VM::Result VM::execute(int baseFrameCount_) {
                     fn->funcName = "next";
                     fn->numArgs = -1;
                     fn->fn = [gen, vm](const std::vector<Value>& args) -> Value {
-                        if (gen->state == PraiaGenerator::State::COMPLETED) {
-                            auto result = std::make_shared<PraiaMap>();
-                            result->entries["value"] = Value();
-                            result->entries["done"] = Value(true);
-                            return Value(result);
-                        }
                         Value sendVal = args.empty() ? Value() : args[0];
-
-                        if (gen->isVM) {
-                            // Restore saved state onto the VM
-                            int restoreBase = vm->stackTop;
-                            for (auto& val : gen->savedStack)
-                                vm->push(val);
-
-                            // Set up frame(s)
-                            auto* closure = static_cast<ObjClosure*>(gen->vmClosure);
-                            int genBase = vm->frameCount;
-                            auto& frame = vm->frames[vm->frameCount++];
-                            frame.closure = closure;
-                            frame.function = closure->function;
-                            frame.ip = gen->savedIp;
-                            frame.baseSlot = restoreBase;
-                            frame.definingClass = nullptr;
-
-                            // Push sendValue as result of yield expression
-                            // (on first call state is CREATED, no yield to resume from)
-                            if (gen->state != PraiaGenerator::State::CREATED)
-                                vm->push(sendVal);
-
-                            gen->state = PraiaGenerator::State::RUNNING;
-
-                            auto prevGen = vm->currentGenerator_;
-                            auto prevGenBase = vm->genBaseFrame_;
-                            auto prevGenStackTop = vm->genBaseStackTop_;
-                            vm->currentGenerator_ = gen;
-                            vm->genBaseFrame_ = genBase;
-                            vm->genBaseStackTop_ = restoreBase;
-
-                            auto result = vm->execute(genBase);
-
-                            vm->currentGenerator_ = prevGen;
-                            vm->genBaseFrame_ = prevGenBase;
-                            vm->genBaseStackTop_ = prevGenStackTop;
-
-                            if (result != VM::Result::OK) {
-                                gen->state = PraiaGenerator::State::COMPLETED;
-                                throw RuntimeError(
-                                    vm->lastError_.empty() ? "Generator failed" : vm->lastError_, 0);
-                            }
-
-                            return vm->pop();
-                        } else {
-                            // Tree-walker generator — use condvar protocol
-                            std::unique_lock<std::mutex> lock(gen->mtx);
-                            gen->sendValue = sendVal;
-                            gen->resumed = true;
-                            gen->hasValue = false;
-                            gen->callerCV.notify_one();
-                            gen->genCV.wait(lock, [&] { return gen->hasValue; });
-
-                            auto result = std::make_shared<PraiaMap>();
-                            result->entries["value"] = gen->lastYielded;
-                            result->entries["done"] = Value(gen->done);
-                            return Value(result);
-                        }
+                        return vm->resumeGenerator(gen, sendVal);
                     };
                     push(Value(std::static_pointer_cast<Callable>(fn)));
                     break;

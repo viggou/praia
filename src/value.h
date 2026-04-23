@@ -115,6 +115,7 @@ struct PraiaGenerator {
     State state = State::CREATED;
     Value lastYielded;
     Value sendValue;
+    std::string errorMessage; // stores error from generator body for propagation
 
     // Tree-walker: thread-based coroutine
     std::thread thread;
@@ -128,7 +129,6 @@ struct PraiaGenerator {
 
     // VM: snapshot state (filled on yield, restored on next)
     std::vector<Value> savedStack;
-    int savedStackTop = 0;
     int savedBaseSlot = 0;
     int savedFrameCount = 0;
     const uint8_t* savedIp = nullptr;
@@ -139,12 +139,15 @@ struct PraiaGenerator {
 
     ~PraiaGenerator() {
         if (thread.joinable()) {
-            // Signal the generator thread to finish if it's waiting
+            // Signal the generator thread to finish — it may be blocked
+            // on either condvar (waiting for first next, or suspended in yield)
             {
                 std::lock_guard<std::mutex> lock(mtx);
                 done = true;
                 resumed = true;
+                hasValue = true; // unblock any caller waiting on genCV
                 callerCV.notify_one();
+                genCV.notify_one();
             }
             thread.join();
         }

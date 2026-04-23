@@ -494,6 +494,8 @@ void Interpreter::execute(const Stmt* stmt) {
                         gen->callerCV.notify_one();
                         gen->genCV.wait(lock, [&] { return gen->hasValue; });
                     }
+                    if (!gen->errorMessage.empty())
+                        throw RuntimeError(gen->errorMessage, s->line);
                     if (gen->done) break;
 
                     auto iterEnv = std::make_shared<Environment>(env);
@@ -1158,6 +1160,10 @@ Value Interpreter::evaluate(const Expr* expr) {
                         gen->hasValue = false;
                         gen->callerCV.notify_one();
                         gen->genCV.wait(lock, [&] { return gen->hasValue; });
+
+                        // Propagate errors from generator body
+                        if (!gen->errorMessage.empty())
+                            throw RuntimeError(gen->errorMessage, 0);
 
                         auto result = std::make_shared<PraiaMap>();
                         result->entries["value"] = gen->lastYielded;

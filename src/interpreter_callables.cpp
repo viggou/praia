@@ -158,7 +158,9 @@ Value makeGeneratorFromEnv(
     gen->isVM = false;
     gen->state = PraiaGenerator::State::CREATED;
 
-    gen->thread = std::thread([gen, funcEnv, &bodyStmts, sharedGlobals]() {
+    // Capture pointer to the AST statements (AST is kept alive by grainAsts/program)
+    const auto* stmtsPtr = &bodyStmts;
+    gen->thread = std::thread([gen, funcEnv, stmtsPtr, sharedGlobals]() {
         Interpreter genInterp(sharedGlobals);
         genInterp.env = funcEnv;
 
@@ -173,7 +175,7 @@ Value makeGeneratorFromEnv(
         gen->state = PraiaGenerator::State::RUNNING;
 
         try {
-            for (const auto& stmt : bodyStmts)
+            for (const auto& stmt : *stmtsPtr)
                 genInterp.execute(stmt.get());
         } catch (const ReturnSignal& ret) {
             std::lock_guard<std::mutex> lock(gen->mtx);
@@ -183,8 +185,25 @@ Value makeGeneratorFromEnv(
             gen->state = PraiaGenerator::State::COMPLETED;
             gen->genCV.notify_one();
             return;
+        } catch (const ThrowSignal& ts) {
+            std::lock_guard<std::mutex> lock(gen->mtx);
+            gen->errorMessage = ts.value.toString();
+            gen->done = true;
+            gen->hasValue = true;
+            gen->state = PraiaGenerator::State::COMPLETED;
+            gen->genCV.notify_one();
+            return;
+        } catch (const RuntimeError& err) {
+            std::lock_guard<std::mutex> lock(gen->mtx);
+            gen->errorMessage = err.what();
+            gen->done = true;
+            gen->hasValue = true;
+            gen->state = PraiaGenerator::State::COMPLETED;
+            gen->genCV.notify_one();
+            return;
         } catch (...) {
             std::lock_guard<std::mutex> lock(gen->mtx);
+            gen->errorMessage = "Generator failed";
             gen->done = true;
             gen->hasValue = true;
             gen->state = PraiaGenerator::State::COMPLETED;

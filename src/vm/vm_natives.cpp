@@ -270,57 +270,9 @@ void vmRegisterNatives(VM& vm) {
             auto result = std::make_shared<PraiaMap>();
             if (args[0].isGenerator()) {
                 auto gen = args[0].asGenerator();
-                if (gen->state == PraiaGenerator::State::COMPLETED) {
-                    result->entries["value"] = Value();
-                    result->entries["done"] = Value(true);
-                    return Value(result);
-                }
-                // Resume the generator via its .next() mechanism
-                if (gen->isVM) {
-                    auto* vm = VM::current();
-                    if (!vm) throw RuntimeError("No active VM for generator iteration", 0);
-                    int restoreBase = vm->getStackTop();
-                    for (auto& val : gen->savedStack) vm->push(val);
-                    auto* closure = static_cast<ObjClosure*>(gen->vmClosure);
-                    int genBase = vm->frameCount;
-                    auto& frame = vm->frames[vm->frameCount++];
-                    frame.closure = closure;
-                    frame.function = closure->function;
-                    frame.ip = gen->savedIp;
-                    frame.baseSlot = restoreBase;
-                    frame.definingClass = nullptr;
-                    if (gen->state != PraiaGenerator::State::CREATED)
-                        vm->push(Value()); // sendValue = nil
-                    gen->state = PraiaGenerator::State::RUNNING;
-                    auto prevGen = vm->currentGenerator_;
-                    auto prevGenBase = vm->genBaseFrame_;
-                    auto prevGenStackTop = vm->genBaseStackTop_;
-                    vm->currentGenerator_ = gen;
-                    vm->genBaseFrame_ = genBase;
-                    vm->genBaseStackTop_ = restoreBase;
-                    auto execResult = vm->execute(genBase);
-                    vm->currentGenerator_ = prevGen;
-                    vm->genBaseFrame_ = prevGenBase;
-                    vm->genBaseStackTop_ = prevGenStackTop;
-                    if (execResult != VM::Result::OK) {
-                        gen->state = PraiaGenerator::State::COMPLETED;
-                        result->entries["value"] = Value();
-                        result->entries["done"] = Value(true);
-                        return Value(result);
-                    }
-                    return vm->pop();
-                } else {
-                    // Tree-walker generator
-                    std::unique_lock<std::mutex> lock(gen->mtx);
-                    gen->sendValue = Value();
-                    gen->resumed = true;
-                    gen->hasValue = false;
-                    gen->callerCV.notify_one();
-                    gen->genCV.wait(lock, [&] { return gen->hasValue; });
-                    result->entries["value"] = gen->lastYielded;
-                    result->entries["done"] = Value(gen->done);
-                    return Value(result);
-                }
+                auto* vm = VM::current();
+                if (!vm) throw RuntimeError("No active VM for generator iteration", 0);
+                return vm->resumeGenerator(gen, Value());
             }
             // Array path
             if (args[0].isArray()) {

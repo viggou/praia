@@ -122,6 +122,7 @@ public:
     Value pop();
     Value& peek(int distance = 0);
     int getStackTop() const { return stackTop; }
+    Value resumeGenerator(std::shared_ptr<PraiaGenerator> gen, Value sendVal);
 private:
     void resetStack();
 
