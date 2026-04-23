@@ -199,7 +199,7 @@ bool VM::callClosure(ObjClosure* closure, int argCount, int line) {
     // Throw RuntimeError so callers can route through tryHandleError.
     if (argCount > fn->arity) {
         throw RuntimeError(fn->name + "() expected at most " + std::to_string(fn->arity) +
-            " argument(s) but got " + std::to_string(argCount), line);
+            " " + argStr(fn->arity) + " but got " + std::to_string(argCount), line);
     }
 
     // Pad missing args with nil
@@ -281,7 +281,7 @@ bool VM::callValue(Value callee, int argCount, int line) {
             int arity = native->arity();
             if (arity != -1 && argCount != arity) {
                 throw RuntimeError(native->name() + "() expected " + std::to_string(arity) +
-                    " argument(s) but got " + std::to_string(argCount), line);
+                    " " + argStr(arity) + " but got " + std::to_string(argCount), line);
             }
             std::vector<Value> args(argCount);
             for (int i = argCount - 1; i >= 0; i--) args[i] = pop();
@@ -1509,7 +1509,7 @@ VM::Result VM::execute(int baseFrameCount_) {
                 if (static_cast<int>(args.size()) > arity) {
                     std::string errName = klass ? klass->className : fn->name;
                     RUNTIME_ERR(errName + "() expected at most " + std::to_string(arity) +
-                        " argument(s) but got " + std::to_string(args.size()));
+                        " " + argStr(arity) + " but got " + std::to_string(args.size()));
                 }
 
                 std::unordered_map<std::string, Value> globalsCopy;
@@ -1700,7 +1700,7 @@ VM::Result VM::execute(int baseFrameCount_) {
                 int arity = native->arity();
                 if (arity != -1 && static_cast<int>(args.size()) != arity) {
                     RUNTIME_ERR(native->name() + "() expected " + std::to_string(arity) +
-                        " argument(s) but got " + std::to_string(args.size()));
+                        " " + argStr(arity) + " but got " + std::to_string(args.size()));
                 }
                 sharedFuture = std::async(std::launch::async,
                     [native, args]() -> Value {

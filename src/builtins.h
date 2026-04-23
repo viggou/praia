@@ -8,6 +8,8 @@
 #include <unordered_map>
 #include <utility>
 
+inline std::string argStr(int n) { return n == 1 ? "argument" : "arguments"; }
+
 // Factory for native (C++) functions exposed as Praia callables.
 inline std::shared_ptr<NativeFunction> makeNative(
     const std::string& name, int arity,
@@ -29,7 +31,7 @@ inline Value callSafe(Interpreter& interp, std::shared_ptr<Callable> callable,
         int argc = static_cast<int>(args.size());
         if (argc > arity)
             throw RuntimeError(callable->name() + "() expected at most " +
-                std::to_string(arity) + " argument(s) but got " + std::to_string(argc), 0);
+                std::to_string(arity) + " " + argStr(arity) + " but got " + std::to_string(argc), 0);
         if (argc < arity) {
             std::vector<Value> padded = args;
             padded.resize(arity); // fills with nil (Value default)

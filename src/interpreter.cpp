@@ -108,10 +108,10 @@ static Value callWithContext(Interpreter& interp,
     if (a != -1) {
         if (isNative && n != a) {
             throw RuntimeError(func->name() + "() expected " + std::to_string(a) +
-                               " argument(s) but got " + std::to_string(n), line);
+                               " " + argStr(a) + " but got " + std::to_string(n), line);
         } else if (!isNative && n > a) {
             throw RuntimeError(func->name() + "() expected at most " + std::to_string(a) +
-                               " argument(s) but got " + std::to_string(n), line);
+                               " " + argStr(a) + " but got " + std::to_string(n), line);
         }
     }
     if (interp.callStack.size() >= 256)
@@ -933,25 +933,19 @@ Value Interpreter::evaluate(const Expr* expr) {
             // Natives have no defaults — require exact arity
             if (arity != -1 && static_cast<int>(args.size()) != arity)
                 throw RuntimeError(callable->name() + "() expected " + std::to_string(arity) +
-                    " argument(s) but got " + std::to_string(args.size()), e->line);
+                    " " + argStr(arity) + " but got " + std::to_string(args.size()), e->line);
         } else {
             // Praia functions: reject too many args, fewer is fine (defaults/nil fill the rest)
             if (arity != -1 && static_cast<int>(args.size()) > arity)
                 throw RuntimeError(callable->name() + "() expected at most " + std::to_string(arity) +
-                    " argument(s) but got " + std::to_string(args.size()), e->line);
+                    " " + argStr(arity) + " but got " + std::to_string(args.size()), e->line);
         }
 
-        // Spawn the call in a background thread.
-        // Native functions run directly — they don't touch interpreter state.
-        // Praia functions get a task-local Interpreter with shared globals
-        // so PraiaFunction::call's env swaps don't corrupt foreground state.
-        Interpreter* self = this;
+        // Spawn the call in a background thread with a task-local
+        // Interpreter so no interpreter state is shared with the caller.
         auto sharedGlobals = globals;
         auto sharedFuture = std::async(std::launch::async,
-            [callable, args, self, sharedGlobals]() -> Value {
-                if (dynamic_cast<NativeFunction*>(callable.get())) {
-                    return callable->call(*self, args);
-                }
+            [callable, args, sharedGlobals]() -> Value {
                 Interpreter taskInterp(sharedGlobals);
                 return callable->call(taskInterp, args);
             }).share();
