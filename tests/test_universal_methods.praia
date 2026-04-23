@@ -69,4 +69,15 @@ testing.test("instance without override gets universal .toString()", lam{ in
     testing.assertEqual(Plain().toString(), "<instance>", nil)
 })
 
+testing.test("map key 'toString' is not shadowed by universal", lam{ in
+    let m = {toString: "field", toNum: 42}
+    testing.assertEqual(m.toString, "field", nil)
+    testing.assertEqual(m.toNum, 42, nil)
+})
+
+testing.test("map without 'toString' key gets universal", lam{ in
+    let m = {a: 1}
+    testing.assertEqual(m.toString(), "{a: 1}", nil)
+})
+
 testing.done()

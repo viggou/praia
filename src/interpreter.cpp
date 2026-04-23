@@ -1104,8 +1104,16 @@ Value Interpreter::evaluate(const Expr* expr) {
             // Fall through to universal methods below
         }
 
+        // Map fields take priority over universal methods
+        if (obj.isMap()) {
+            auto& entries = obj.asMap()->entries;
+            auto it = entries.find(e->field);
+            if (it != entries.end()) return it->second;
+            // Fall through to universal methods below
+        }
+
         // Universal methods — work on any type, but instance
-        // fields/methods take priority (checked above).
+        // fields/methods and map keys take priority (checked above).
         if (e->field == "toString") {
             Value captured = obj;
             return Value(makeNative("toString", 0,
@@ -1139,13 +1147,11 @@ Value Interpreter::evaluate(const Expr* expr) {
                 }));
         }
 
+        // Instance/map with no matching field and no universal method match
         if (obj.isInstance()) {
             throw RuntimeError("Instance has no property '" + e->field + "'", e->line);
         }
         if (obj.isMap()) {
-            auto& entries = obj.asMap()->entries;
-            auto it = entries.find(e->field);
-            if (it != entries.end()) return it->second;
             throw RuntimeError("Map has no field '" + e->field + "'", e->line);
         }
         if (obj.isString())

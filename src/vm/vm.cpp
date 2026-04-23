@@ -1011,8 +1011,16 @@ VM::Result VM::execute(int baseFrameCount_) {
                 // Fall through to universal methods below
             }
 
+            // Map fields take priority over universal methods
+            if (obj.isMap()) {
+                auto& entries = obj.asMap()->entries;
+                auto it = entries.find(name);
+                if (it != entries.end()) { push(it->second); break; }
+                // Fall through to universal methods below
+            }
+
             // Universal methods — work on any value type, but instance
-            // fields/methods take priority (checked above).
+            // fields/methods and map keys take priority (checked above).
             if (name == "toString") {
                 Value captured = obj;
                 auto fn = std::make_shared<NativeFunction>();
@@ -1052,15 +1060,11 @@ VM::Result VM::execute(int baseFrameCount_) {
                 break;
             }
 
-            // If we fell through from an instance with no match, error now
+            // Instance/map with no matching field and no universal method match
             if (obj.isInstance()) {
                 RUNTIME_ERR("Instance has no property '" + name + "'");
             }
-
             if (obj.isMap()) {
-                auto& entries = obj.asMap()->entries;
-                auto it = entries.find(name);
-                if (it != entries.end()) { push(it->second); break; }
                 RUNTIME_ERR("Map has no field '" + name + "'");
             }
 
