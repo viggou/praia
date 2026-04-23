@@ -5,6 +5,7 @@
 #include <memory>
 #include <sstream>
 #include <string>
+#include "../gc_heap.h"
 
 namespace {
 
@@ -147,7 +148,7 @@ class JsonParser {
 
     Value parseObject() {
         advance(); // {
-        auto map = std::make_shared<PraiaMap>();
+        auto map = gcNew<PraiaMap>();
         skipWhitespace();
         if (peek() == '}') { pos++; return Value(map); }
         while (true) {
@@ -168,7 +169,7 @@ class JsonParser {
 
     Value parseArray() {
         advance(); // [
-        auto arr = std::make_shared<PraiaArray>();
+        auto arr = gcNew<PraiaArray>();
         skipWhitespace();
         if (peek() == ']') { pos++; return Value(arr); }
         while (true) {

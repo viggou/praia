@@ -3,12 +3,13 @@
 #include <mutex>
 #include <queue>
 #include <thread>
+#include "../gc_heap.h"
 
 void registerConcurrencyBuiltins(Interpreter* self, std::shared_ptr<Environment> globals) {
     globals->define("Lock", Value(makeNative("Lock", 0,
         [self](const std::vector<Value>&) -> Value {
             auto mtx = std::make_shared<std::recursive_mutex>();
-            auto lock = std::make_shared<PraiaMap>();
+            auto lock = gcNew<PraiaMap>();
 
             lock->entries["acquire"] = Value(makeNative("acquire", 0,
                 [mtx](const std::vector<Value>&) -> Value {
@@ -49,7 +50,7 @@ void registerConcurrencyBuiltins(Interpreter* self, std::shared_ptr<Environment>
             if (!args.empty() && args[0].isNumber())
                 capacity = static_cast<int>(args[0].asNumber());
 
-            auto ch = std::make_shared<PraiaMap>();
+            auto ch = gcNew<PraiaMap>();
 
             ch->entries["send"] = Value(makeNative("send", 1,
                 [state, capacity](const std::vector<Value>& args) -> Value {
@@ -110,14 +111,14 @@ void registerConcurrencyBuiltins(Interpreter* self, std::shared_ptr<Environment>
 
     // ── futures namespace ──
 
-    auto asyncMap = std::make_shared<PraiaMap>();
+    auto asyncMap = gcNew<PraiaMap>();
 
     asyncMap->entries["all"] = Value(makeNative("futures.all", 1,
         [](const std::vector<Value>& args) -> Value {
             if (!args[0].isArray())
                 throw RuntimeError("async.all() requires an array of futures", 0);
             auto& futures = args[0].asArray()->elements;
-            auto results = std::make_shared<PraiaArray>();
+            auto results = gcNew<PraiaArray>();
             for (auto& f : futures) {
                 if (!f.isFuture())
                     throw RuntimeError("async.all() array must contain only futures", 0);

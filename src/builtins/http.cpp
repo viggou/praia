@@ -12,6 +12,7 @@
 #include <netinet/in.h>
 #include <netdb.h>
 #include <unistd.h>
+#include "../gc_heap.h"
 #ifdef HAVE_OPENSSL
 #include <openssl/ssl.h>
 #include <openssl/err.h>
@@ -102,7 +103,7 @@ std::string urlDecode(const std::string& str) {
 
 // Parse "key=val&key2=val2" into a PraiaMap with URL-decoded keys/values.
 std::shared_ptr<PraiaMap> parseQueryString(const std::string& query) {
-    auto qmap = std::make_shared<PraiaMap>();
+    auto qmap = gcNew<PraiaMap>();
     if (query.empty()) return qmap;
     std::string key, value;
     bool inValue = false;
@@ -201,7 +202,7 @@ Value parseHttpResponse(const std::string& raw) {
         try { status = std::stoi(headerSection.substr(sp1 + 1, sp2 - sp1 - 1)); } catch (...) {}
     }
 
-    auto hdrs = std::make_shared<PraiaMap>();
+    auto hdrs = gcNew<PraiaMap>();
     std::istringstream hs(headerSection);
     std::string line;
     std::getline(hs, line);
@@ -215,7 +216,7 @@ Value parseHttpResponse(const std::string& raw) {
         }
     }
 
-    auto result = std::make_shared<PraiaMap>();
+    auto result = gcNew<PraiaMap>();
     result->entries["status"] = Value(static_cast<double>(status));
     result->entries["body"] = Value(body);
     result->entries["headers"] = Value(hdrs);
@@ -321,7 +322,7 @@ std::shared_ptr<PraiaMap> readAndParseRequest(int client) {
     }
 
     auto hend = data.find("\r\n\r\n");
-    auto reqHeaders = std::make_shared<PraiaMap>();
+    auto reqHeaders = gcNew<PraiaMap>();
     std::istringstream hs(data.substr(0, hend));
     std::string line;
     std::getline(hs, line); // skip request line
@@ -340,7 +341,7 @@ std::shared_ptr<PraiaMap> readAndParseRequest(int client) {
 
     std::string reqBody = (hend != std::string::npos) ? data.substr(hend + 4) : "";
 
-    auto req = std::make_shared<PraiaMap>();
+    auto req = gcNew<PraiaMap>();
     req->entries["method"] = Value(method);
     req->entries["path"] = Value(path);
     req->entries["query"] = Value(parseQueryString(query));

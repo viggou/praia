@@ -9,6 +9,8 @@
 #include <unordered_map>
 #include <vector>
 
+class GcHeap;
+
 // Upvalue: heap-allocated box for captured variables
 struct ObjUpvalue {
     Value* location;      // points into the stack while variable is live
@@ -190,7 +192,9 @@ private:
     bool suppressErrors_ = false;
 public:
     const std::string& lastError() const { return lastError_; }
+    void gcMarkRoots(GcHeap& heap);
 private:
+    int gcCounter_ = 0;
 };
 
 // Helper: call any Callable within the VM context (handles VM closures, bound methods, natives)

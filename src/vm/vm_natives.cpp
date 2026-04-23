@@ -1,4 +1,5 @@
 #include "vm.h"
+#include "../gc_heap.h"
 #include "../interpreter.h"
 #include "../environment.h"
 #include <algorithm>
@@ -169,7 +170,7 @@ void vmRegisterNatives(VM& vm) {
             if (!args[1].isCallable())
                 throw RuntimeError("filter() requires a function as second argument", 0);
             auto& src = args[0].asArray()->elements;
-            auto result = std::make_shared<PraiaArray>();
+            auto result = gcNew<PraiaArray>();
             auto pred = args[1].asCallable();
             for (auto& elem : src) {
                 Value test = callWithVM(*vm, pred, {elem});
@@ -187,7 +188,7 @@ void vmRegisterNatives(VM& vm) {
             if (!args[1].isCallable())
                 throw RuntimeError("map() requires a function as second argument", 0);
             auto& src = args[0].asArray()->elements;
-            auto result = std::make_shared<PraiaArray>();
+            auto result = gcNew<PraiaArray>();
             auto transform = args[1].asCallable();
             for (auto& elem : src)
                 result->elements.push_back(callWithVM(*vm, transform, {elem}));
@@ -215,7 +216,7 @@ void vmRegisterNatives(VM& vm) {
             if (!vm) throw RuntimeError("sort() requires VM context", 0);
             if (args.empty() || !args[0].isArray())
                 throw RuntimeError("sort() requires an array", 0);
-            auto sorted = std::make_shared<PraiaArray>();
+            auto sorted = gcNew<PraiaArray>();
             sorted->elements = args[0].asArray()->elements;
             auto& elems = sorted->elements;
             if (args.size() > 1 && args[1].isCallable()) {
@@ -244,9 +245,9 @@ void vmRegisterNatives(VM& vm) {
             if (v.isGenerator()) return v; // generators are their own iterator
             if (v.isArray()) return v;
             if (v.isMap()) {
-                auto arr = std::make_shared<PraiaArray>();
+                auto arr = gcNew<PraiaArray>();
                 for (auto& [k, val] : v.asMap()->entries) {
-                    auto entry = std::make_shared<PraiaMap>();
+                    auto entry = gcNew<PraiaMap>();
                     entry->entries["key"] = Value(k);
                     entry->entries["value"] = val;
                     arr->elements.push_back(Value(entry));
@@ -254,7 +255,7 @@ void vmRegisterNatives(VM& vm) {
                 return Value(arr);
             }
             if (v.isString()) {
-                auto arr = std::make_shared<PraiaArray>();
+                auto arr = gcNew<PraiaArray>();
                 for (char c : v.asString())
                     arr->elements.push_back(Value(std::string(1, c)));
                 return Value(arr);
@@ -267,7 +268,7 @@ void vmRegisterNatives(VM& vm) {
     // For generators: calls .next(), returns {value, done}.
     vm.defineNative("__iterNext", makeNat("__iterNext", 2,
         [](const std::vector<Value>& args) -> Value {
-            auto result = std::make_shared<PraiaMap>();
+            auto result = gcNew<PraiaMap>();
             if (args[0].isGenerator()) {
                 auto gen = args[0].asGenerator();
                 auto* vm = VM::current();
@@ -298,7 +299,7 @@ void vmRegisterNatives(VM& vm) {
             if (!args[0].isArray() || !args[1].isNumber()) return Value();
             auto& elems = args[0].asArray()->elements;
             int start = static_cast<int>(args[1].asNumber());
-            auto rest = std::make_shared<PraiaArray>();
+            auto rest = gcNew<PraiaArray>();
             for (int i = start; i < static_cast<int>(elems.size()); i++)
                 rest->elements.push_back(elems[i]);
             return Value(rest);
@@ -313,7 +314,7 @@ void vmRegisterNatives(VM& vm) {
             for (auto& e : excludeArr) {
                 if (e.isString()) exclude.insert(e.asString());
             }
-            auto rest = std::make_shared<PraiaMap>();
+            auto rest = gcNew<PraiaMap>();
             for (auto& [k, v] : entries) {
                 if (!exclude.count(k)) rest->entries[k] = v;
             }

@@ -6,6 +6,7 @@
 #include <unordered_map>
 
 class Environment : public std::enable_shared_from_this<Environment> {
+    friend class GcHeap; // GC needs access to variables and parent for mark/sweep
 public:
     Environment() = default;
     explicit Environment(std::shared_ptr<Environment> parent)

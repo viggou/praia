@@ -1,5 +1,6 @@
 #include "../builtins.h"
 #include <cstring>
+#include "../gc_heap.h"
 
 void registerBytesBuiltins(std::shared_ptr<PraiaMap> bytesMap) {
     // ── Struct format helpers ──
@@ -93,7 +94,7 @@ void registerBytesBuiltins(std::shared_ptr<PraiaMap> bytesMap) {
                 throw RuntimeError("bytes.unpack(format, data) requires strings", 0);
             auto& fmt = args[0].asString();
             auto& data = args[1].asString();
-            auto result = std::make_shared<PraiaArray>();
+            auto result = gcNew<PraiaArray>();
 
             bool big;
             auto fields = parseStructFmt(fmt, big);
@@ -175,7 +176,7 @@ void registerBytesBuiltins(std::shared_ptr<PraiaMap> bytesMap) {
         [](const std::vector<Value>& args) -> Value {
             if (!args[0].isString())
                 throw RuntimeError("bytes.toArray() requires a string", 0);
-            auto result = std::make_shared<PraiaArray>();
+            auto result = gcNew<PraiaArray>();
             for (unsigned char c : args[0].asString())
                 result->elements.push_back(Value(static_cast<int64_t>(c)));
             return Value(result);

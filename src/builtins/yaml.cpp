@@ -4,6 +4,7 @@
 #include <memory>
 #include <sstream>
 #include <string>
+#include "../gc_heap.h"
 
 namespace {
 
@@ -134,7 +135,7 @@ class YamlParser {
     }
 
     Value parseSequence(int indent) {
-        auto arr = std::make_shared<PraiaArray>();
+        auto arr = gcNew<PraiaArray>();
         while (!atEnd()) {
             skipBlankLines();
             if (atEnd()) break;
@@ -172,7 +173,7 @@ class YamlParser {
     }
 
     Value parseMapping(int indent) {
-        auto map = std::make_shared<PraiaMap>();
+        auto map = gcNew<PraiaMap>();
         while (!atEnd()) {
             skipBlankLines();
             if (atEnd()) break;
@@ -202,7 +203,7 @@ class YamlParser {
                 std::string val = line.substr(colonPos + 2);
                 // Check for inline flow sequence [a, b]
                 if (!val.empty() && val.front() == '[' && val.back() == ']') {
-                    auto arr = std::make_shared<PraiaArray>();
+                    auto arr = gcNew<PraiaArray>();
                     std::string inner = val.substr(1, val.size() - 2);
                     std::istringstream ss(inner);
                     std::string item;
