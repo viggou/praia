@@ -1,5 +1,6 @@
 #include "vm.h"
 #include "../builtins.h"
+#include "../gc_heap.h"
 #include "../grain_resolve.h"
 #include "../interpreter.h"
 #include "../lexer.h"
@@ -107,7 +108,7 @@ void VM::defineNative(const std::string& name, Value value) {
 }
 
 void VM::setArgs(const std::vector<std::string>& args) {
-    auto arr = std::make_shared<PraiaArray>();
+    auto arr = gcNew<PraiaArray>();
     for (auto& a : args)
         arr->elements.push_back(Value(a));
     if (globals.count("sys") && globals["sys"].isMap())
@@ -143,7 +144,7 @@ void VM::resetStack() { stackTop = 0; frameCount = 0; }
 
 Value VM::resumeGenerator(std::shared_ptr<PraiaGenerator> gen, Value sendVal) {
     if (gen->state == PraiaGenerator::State::COMPLETED) {
-        auto result = std::make_shared<PraiaMap>();
+        auto result = gcNew<PraiaMap>();
         result->entries["value"] = Value();
         result->entries["done"] = Value(true);
         return Value(result);
@@ -286,7 +287,7 @@ bool VM::callValue(Value callee, int argCount, int line) {
                         " " + argStr(arity) + " but got " + std::to_string(argCount), line);
                 while (argCount < arity) { push(Value()); argCount++; }
 
-                auto gen = std::make_shared<PraiaGenerator>();
+                auto gen = gcNew<PraiaGenerator>();
                 gen->isVM = true;
                 gen->state = PraiaGenerator::State::CREATED;
 
@@ -324,7 +325,7 @@ bool VM::callValue(Value callee, int argCount, int line) {
         // PraiaClass (instantiation)
         auto* klass = dynamic_cast<PraiaClass*>(callable.get());
         if (klass) {
-            auto instance = std::make_shared<PraiaInstance>();
+            auto instance = gcNew<PraiaInstance>();
             instance->klass = std::dynamic_pointer_cast<PraiaClass>(callable);
 
             // Replace callee with the new instance
@@ -561,7 +562,7 @@ Value VM::loadGrain(const std::string& importPath, int line) {
     if (result == Result::OK && grainVm.stackTop > 0) {
         exports = grainVm.stack[grainVm.stackTop - 1];
     } else {
-        exports = Value(std::make_shared<PraiaMap>()); // empty exports
+        exports = Value(gcNew<PraiaMap>()); // empty exports
     }
 
     // Keep the grain's ASTs, closures, and upvalues alive
@@ -609,6 +610,8 @@ Value VM::loadGrain(const std::string& importPath, int line) {
 }
 
 VM::Result VM::run(std::shared_ptr<CompiledFunction> script) {
+    GcHeap::current().setRootMarker([this](GcHeap& h) { gcMarkRoots(h); });
+
     // Create a closure for the top-level script
     auto* scriptClosure = new ObjClosure(script);
     allClosures.push_back(scriptClosure);
@@ -627,6 +630,8 @@ VM::Result VM::run(std::shared_ptr<CompiledFunction> script) {
 }
 
 VM::Result VM::runRepl(std::shared_ptr<CompiledFunction> script) {
+    GcHeap::current().setRootMarker([this](GcHeap& h) { gcMarkRoots(h); });
+
     // Reset stack/frames/handlers for this line but keep globals
     stackTop = 0;
     frameCount = 0;
@@ -666,6 +671,10 @@ VM::Result VM::execute(int baseFrameCount_) {
 
     try {
     for (;;) {
+        if (--gcCounter_ <= 0) {
+            gcCounter_ = 1024;
+            GcHeap::current().collectIfNeeded();
+        }
         uint8_t instruction = READ_BYTE();
 
         switch (static_cast<OpCode>(instruction)) {
@@ -689,13 +698,13 @@ VM::Result VM::execute(int baseFrameCount_) {
             if (a.isInt() && b.isInt()) { push(Value(a.asInt() + b.asInt())); break; }
             if (a.isNumber() && b.isNumber()) { push(Value(a.asNumber() + b.asNumber())); break; }
             if (a.isArray() && b.isArray()) {
-                auto r = std::make_shared<PraiaArray>();
+                auto r = gcNew<PraiaArray>();
                 for (auto& el : a.asArray()->elements) r->elements.push_back(el);
                 for (auto& el : b.asArray()->elements) r->elements.push_back(el);
                 push(Value(r)); break;
             }
             if (a.isMap() && b.isMap()) {
-                auto r = std::make_shared<PraiaMap>();
+                auto r = gcNew<PraiaMap>();
                 for (auto& [k, v] : a.asMap()->entries) r->entries[k] = v;
                 for (auto& [k, v] : b.asMap()->entries) r->entries[k] = v; // b overrides a
                 push(Value(r)); break;
@@ -928,7 +937,7 @@ VM::Result VM::execute(int baseFrameCount_) {
                 currentGenerator_->state = PraiaGenerator::State::COMPLETED;
                 frameCount = genBaseFrame_;
                 stackTop = genBaseStackTop_;
-                auto doneResult = std::make_shared<PraiaMap>();
+                auto doneResult = gcNew<PraiaMap>();
                 doneResult->entries["value"] = result;
                 doneResult->entries["done"] = Value(true);
                 push(Value(doneResult));
@@ -1026,7 +1035,7 @@ VM::Result VM::execute(int baseFrameCount_) {
         // ── Classes ──
         case OpCode::OP_CLASS: {
             std::string name = READ_STRING();
-            auto klass = std::make_shared<PraiaClass>();
+            auto klass = gcNew<PraiaClass>();
             klass->className = name;
             push(Value(std::static_pointer_cast<Callable>(klass)));
             break;
@@ -1285,7 +1294,7 @@ VM::Result VM::execute(int baseFrameCount_) {
 
         case OpCode::OP_BUILD_ARRAY: {
             uint16_t count = READ_U16();
-            auto arr = std::make_shared<PraiaArray>();
+            auto arr = gcNew<PraiaArray>();
             if (count == 0xFFFF) {
                 // Dynamic count (with spreads) — not yet supported, use fixed count
                 // For now, this shouldn't happen since we fall back to fixed count
@@ -1299,7 +1308,7 @@ VM::Result VM::execute(int baseFrameCount_) {
 
         case OpCode::OP_BUILD_MAP: {
             uint16_t count = READ_U16();
-            auto map = std::make_shared<PraiaMap>();
+            auto map = gcNew<PraiaMap>();
             // Stack has count pairs: key, value, key, value, ...
             // Pop in reverse
             std::vector<std::pair<std::string, Value>> pairs(count);
@@ -1544,7 +1553,7 @@ VM::Result VM::execute(int baseFrameCount_) {
                     void* key = static_cast<void*>(v.asMap().get());
                     auto it = visited.find(key);
                     if (it != visited.end()) return it->second;
-                    auto copy = std::make_shared<PraiaMap>();
+                    auto copy = gcNew<PraiaMap>();
                     Value result(copy);
                     visited[key] = result; // register before recursing
                     for (auto& [k, val] : v.asMap()->entries)
@@ -1555,7 +1564,7 @@ VM::Result VM::execute(int baseFrameCount_) {
                     void* key = static_cast<void*>(v.asArray().get());
                     auto it = visited.find(key);
                     if (it != visited.end()) return it->second;
-                    auto copy = std::make_shared<PraiaArray>();
+                    auto copy = gcNew<PraiaArray>();
                     Value result(copy);
                     visited[key] = result; // register before recursing
                     for (auto& el : v.asArray()->elements)
@@ -1566,7 +1575,7 @@ VM::Result VM::execute(int baseFrameCount_) {
                     void* key = static_cast<void*>(v.asInstance().get());
                     auto it = visited.find(key);
                     if (it != visited.end()) return it->second;
-                    auto copy = std::make_shared<PraiaInstance>();
+                    auto copy = gcNew<PraiaInstance>();
                     copy->klass = v.asInstance()->klass; // share class (immutable)
                     Value result(copy);
                     visited[key] = result; // register before recursing
@@ -1652,6 +1661,7 @@ VM::Result VM::execute(int baseFrameCount_) {
                      defClass = std::move(defClass),
                      isConstructor, klass]() mutable -> Value {
                         VM taskVm;
+                        GcHeap::current().disable(); // task VMs are short-lived
                         taskVm.globals = std::move(globalsCopy);
                         taskVm.builtinNames_ = std::move(builtinNames);
                         taskVm.suppressErrors_ = true; // errors propagate to await, not stderr
@@ -1706,7 +1716,7 @@ VM::Result VM::execute(int baseFrameCount_) {
                         // For constructors, create a fresh instance as the receiver
                         Value instanceVal;
                         if (isConstructor) {
-                            auto instance = std::make_shared<PraiaInstance>();
+                            auto instance = gcNew<PraiaInstance>();
                             instance->klass = klass;
                             instanceVal = Value(instance);
                         }
@@ -1804,7 +1814,7 @@ VM::Result VM::execute(int baseFrameCount_) {
                 if (!args.empty()) {
                     RUNTIME_ERR(klass->className + "() takes no arguments (no init method)");
                 }
-                auto instance = std::make_shared<PraiaInstance>();
+                auto instance = gcNew<PraiaInstance>();
                 instance->klass = klass;
                 std::promise<Value> prom;
                 prom.set_value(Value(instance));
@@ -1855,7 +1865,7 @@ VM::Result VM::execute(int baseFrameCount_) {
             stackTop = genBaseStackTop_;
 
             // Push {value, done: false} result
-            auto result = std::make_shared<PraiaMap>();
+            auto result = gcNew<PraiaMap>();
             result->entries["value"] = yieldedValue;
             result->entries["done"] = Value(false);
             push(Value(result));
@@ -1893,4 +1903,40 @@ VM::Result VM::execute(int baseFrameCount_) {
     #undef READ_CONSTANT
     #undef READ_STRING
     #undef CURRENT_LINE
+}
+
+// ── GC root marking ──
+
+void VM::gcMarkRoots(GcHeap& heap) {
+    // Stack
+    for (int i = 0; i < stackTop; i++)
+        heap.markValue(stack[i]);
+
+    // Globals
+    for (auto& [k, v] : globals)
+        heap.markValue(v);
+
+    // Call frame classes (for super resolution)
+    for (int i = 0; i < frameCount; i++) {
+        if (frames[i].definingClass)
+            heap.markValue(Value(std::static_pointer_cast<Callable>(frames[i].definingClass)));
+    }
+
+    // All upvalue closed values
+    for (auto* uv : allUpvalues)
+        heap.markValue(uv->closed);
+
+    // Function constant pools (may contain callable/container literals)
+    for (auto* c : allClosures) {
+        for (auto& constant : c->function->chunk.constants)
+            heap.markValue(constant);
+    }
+
+    // Currently resuming generator
+    if (currentGenerator_)
+        heap.markValue(Value(currentGenerator_));
+
+    // Grain cache
+    for (auto& [k, v] : grainCache)
+        heap.markValue(v);
 }

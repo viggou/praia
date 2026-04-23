@@ -1,4 +1,5 @@
 #include "builtins.h"
+#include "gc_heap.h"
 #include "grain_resolve.h"
 #include "interpreter.h"
 #include <algorithm>
@@ -72,7 +73,7 @@ static void praiaSignalHandler(int sig) {
 }
 
 Interpreter::Interpreter() {
-    globals = std::make_shared<Environment>();
+    globals = gcNew<Environment>();
     env = globals;
     Interpreter* self = this;
 
@@ -236,7 +237,7 @@ Interpreter::Interpreter() {
             if (args.empty() || !args[0].isArray())
                 throw RuntimeError("sort() requires an array", 0);
             // Copy the array to avoid mutating the original
-            auto sorted = std::make_shared<PraiaArray>();
+            auto sorted = gcNew<PraiaArray>();
             sorted->elements = args[0].asArray()->elements;
             auto& elems = sorted->elements;
 
@@ -260,7 +261,7 @@ Interpreter::Interpreter() {
             if (!args[1].isCallable())
                 throw RuntimeError("filter() requires a function as second argument", 0);
             auto& src = args[0].asArray()->elements;
-            auto result = std::make_shared<PraiaArray>();
+            auto result = gcNew<PraiaArray>();
             auto pred = args[1].asCallable();
             for (auto& elem : src) {
                 Value test = callSafe(*this, pred, {elem});
@@ -276,7 +277,7 @@ Interpreter::Interpreter() {
             if (!args[1].isCallable())
                 throw RuntimeError("map() requires a function as second argument", 0);
             auto& src = args[0].asArray()->elements;
-            auto result = std::make_shared<PraiaArray>();
+            auto result = gcNew<PraiaArray>();
             auto transform = args[1].asCallable();
             for (auto& elem : src)
                 result->elements.push_back(callSafe(*this, transform, {elem}));
@@ -300,7 +301,7 @@ Interpreter::Interpreter() {
         [](const std::vector<Value>& args) -> Value {
             if (!args[0].isMap())
                 throw RuntimeError("keys() requires a map", 0);
-            auto result = std::make_shared<PraiaArray>();
+            auto result = gcNew<PraiaArray>();
             for (auto& [k, v] : args[0].asMap()->entries)
                 result->elements.push_back(Value(k));
             return Value(result);
@@ -310,7 +311,7 @@ Interpreter::Interpreter() {
         [](const std::vector<Value>& args) -> Value {
             if (!args[0].isMap())
                 throw RuntimeError("values() requires a map", 0);
-            auto result = std::make_shared<PraiaArray>();
+            auto result = gcNew<PraiaArray>();
             for (auto& [k, v] : args[0].asMap()->entries)
                 result->elements.push_back(v);
             return Value(result);
@@ -318,7 +319,7 @@ Interpreter::Interpreter() {
 
     // ── sys namespace ──
 
-    sysMap = std::make_shared<PraiaMap>();
+    sysMap = gcNew<PraiaMap>();
 
     sysMap->entries["read"] = Value(makeNative("sys.read", 1,
         [](const std::vector<Value>& args) -> Value {
@@ -468,7 +469,7 @@ Interpreter::Interpreter() {
             waitpid(pid, &status, 0);
             int exitCode = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
 
-            auto result = std::make_shared<PraiaMap>();
+            auto result = gcNew<PraiaMap>();
             result->entries["stdout"] = Value(std::move(outStr));
             result->entries["stderr"] = Value(std::move(errStr));
             result->entries["exitCode"] = Value(static_cast<int64_t>(exitCode));
@@ -534,7 +535,7 @@ Interpreter::Interpreter() {
             state->stdoutFd = stdoutPipe[0];
             state->stderrFd = stderrPipe[0];
 
-            auto proc = std::make_shared<PraiaMap>();
+            auto proc = gcNew<PraiaMap>();
 
             proc->entries["pid"] = Value(static_cast<int64_t>(pid));
 
@@ -660,14 +661,14 @@ Interpreter::Interpreter() {
         }));
 
     // sys.args — defaults to empty, set via setArgs()
-    auto emptyArgs = std::make_shared<PraiaArray>();
+    auto emptyArgs = gcNew<PraiaArray>();
     sysMap->entries["args"] = Value(emptyArgs);
 
     globals->define("sys", Value(sysMap));
 
     // ── http namespace ──
 
-    auto httpMap = std::make_shared<PraiaMap>();
+    auto httpMap = gcNew<PraiaMap>();
 
     httpMap->entries["get"] = Value(makeNative("http.get", 1,
         [](const std::vector<Value>& args) -> Value {
@@ -719,7 +720,7 @@ Interpreter::Interpreter() {
                 throw RuntimeError("http.createServer() requires a handler function", 0);
             auto handler = args[0].asCallable();
 
-            auto server = std::make_shared<PraiaMap>();
+            auto server = gcNew<PraiaMap>();
             server->entries["listen"] = Value(makeNative("listen", 1,
                 [handler, self](const std::vector<Value>& args) -> Value {
                     if (!args[0].isNumber())
@@ -783,7 +784,7 @@ Interpreter::Interpreter() {
             close(clientFd);
 
             // Return a marker so the server loop knows not to send a response
-            auto marker = std::make_shared<PraiaMap>();
+            auto marker = gcNew<PraiaMap>();
             marker->entries["__sse"] = Value(true);
             return Value(marker);
         }));
@@ -844,10 +845,10 @@ Interpreter::Interpreter() {
             int status = 200;
             if (args.size() > 1 && args[1].isNumber())
                 status = static_cast<int>(args[1].asNumber());
-            auto res = std::make_shared<PraiaMap>();
+            auto res = gcNew<PraiaMap>();
             res->entries["status"] = Value(static_cast<double>(status));
             res->entries["body"] = Value(jsonStringify(args[0], 0, 0));
-            auto hdrs = std::make_shared<PraiaMap>();
+            auto hdrs = gcNew<PraiaMap>();
             hdrs->entries["Content-Type"] = Value("application/json");
             res->entries["headers"] = Value(hdrs);
             return Value(res);
@@ -861,10 +862,10 @@ Interpreter::Interpreter() {
             int status = 200;
             if (args.size() > 1 && args[1].isNumber())
                 status = static_cast<int>(args[1].asNumber());
-            auto res = std::make_shared<PraiaMap>();
+            auto res = gcNew<PraiaMap>();
             res->entries["status"] = Value(static_cast<double>(status));
             res->entries["body"] = Value(args[0].toString());
-            auto hdrs = std::make_shared<PraiaMap>();
+            auto hdrs = gcNew<PraiaMap>();
             hdrs->entries["Content-Type"] = Value("text/plain");
             res->entries["headers"] = Value(hdrs);
             return Value(res);
@@ -878,10 +879,10 @@ Interpreter::Interpreter() {
             int status = 200;
             if (args.size() > 1 && args[1].isNumber())
                 status = static_cast<int>(args[1].asNumber());
-            auto res = std::make_shared<PraiaMap>();
+            auto res = gcNew<PraiaMap>();
             res->entries["status"] = Value(static_cast<double>(status));
             res->entries["body"] = Value(args[0].toString());
-            auto hdrs = std::make_shared<PraiaMap>();
+            auto hdrs = gcNew<PraiaMap>();
             hdrs->entries["Content-Type"] = Value("text/html; charset=utf-8");
             res->entries["headers"] = Value(hdrs);
             return Value(res);
@@ -895,10 +896,10 @@ Interpreter::Interpreter() {
             int status = 302;
             if (args.size() > 1 && args[1].isNumber())
                 status = static_cast<int>(args[1].asNumber());
-            auto res = std::make_shared<PraiaMap>();
+            auto res = gcNew<PraiaMap>();
             res->entries["status"] = Value(static_cast<double>(status));
             res->entries["body"] = Value(std::string(""));
-            auto hdrs = std::make_shared<PraiaMap>();
+            auto hdrs = gcNew<PraiaMap>();
             hdrs->entries["Location"] = Value(args[0].asString());
             res->entries["headers"] = Value(hdrs);
             return Value(res);
@@ -948,10 +949,10 @@ Interpreter::Interpreter() {
                 else if (ext == ".wasm") mime = "application/wasm";
             }
 
-            auto res = std::make_shared<PraiaMap>();
+            auto res = gcNew<PraiaMap>();
             res->entries["status"] = Value(static_cast<double>(status));
             res->entries["body"] = Value(ss.str());
-            auto hdrs = std::make_shared<PraiaMap>();
+            auto hdrs = gcNew<PraiaMap>();
             hdrs->entries["Content-Type"] = Value(mime);
             res->entries["headers"] = Value(hdrs);
             return Value(res);
@@ -961,7 +962,7 @@ Interpreter::Interpreter() {
 
     // ── json namespace ──
 
-    auto jsonMap = std::make_shared<PraiaMap>();
+    auto jsonMap = gcNew<PraiaMap>();
 
     jsonMap->entries["parse"] = Value(makeNative("json.parse", 1,
         [](const std::vector<Value>& args) -> Value {
@@ -984,7 +985,7 @@ Interpreter::Interpreter() {
 
     // ── yaml namespace ──
 
-    auto yamlMap = std::make_shared<PraiaMap>();
+    auto yamlMap = gcNew<PraiaMap>();
 
     yamlMap->entries["parse"] = Value(makeNative("yaml.parse", 1,
         [](const std::vector<Value>& args) -> Value {
@@ -1004,7 +1005,7 @@ Interpreter::Interpreter() {
 
     // ── base64 namespace ──
 
-    auto base64Map = std::make_shared<PraiaMap>();
+    auto base64Map = gcNew<PraiaMap>();
 
     base64Map->entries["encode"] = Value(makeNative("base64.encode", 1,
         [](const std::vector<Value>& args) -> Value {
@@ -1112,7 +1113,7 @@ Interpreter::Interpreter() {
 
     // ── path namespace ──
 
-    auto pathMap = std::make_shared<PraiaMap>();
+    auto pathMap = gcNew<PraiaMap>();
 
     pathMap->entries["join"] = Value(makeNative("path.join", -1,
         [](const std::vector<Value>& args) -> Value {
@@ -1155,13 +1156,13 @@ Interpreter::Interpreter() {
 
     // ── url namespace ──
 
-    auto urlMap = std::make_shared<PraiaMap>();
+    auto urlMap = gcNew<PraiaMap>();
 
     urlMap->entries["parse"] = Value(makeNative("url.parse", 1,
         [](const std::vector<Value>& args) -> Value {
             if (!args[0].isString()) throw RuntimeError("url.parse() requires a string", 0);
             auto& input = args[0].asString();
-            auto result = std::make_shared<PraiaMap>();
+            auto result = gcNew<PraiaMap>();
             std::string rest = input;
 
             auto schemeEnd = rest.find("://");
@@ -1203,21 +1204,21 @@ Interpreter::Interpreter() {
     // ── net namespace (TCP sockets) ──
 
 
-    auto netMap = std::make_shared<PraiaMap>();
+    auto netMap = gcNew<PraiaMap>();
     registerNetBuiltins(netMap);
     globals->define("net", Value(netMap));
 
-    auto bytesMap = std::make_shared<PraiaMap>();
+    auto bytesMap = gcNew<PraiaMap>();
     registerBytesBuiltins(bytesMap);
     globals->define("bytes", Value(bytesMap));
 
-    auto cryptoMap = std::make_shared<PraiaMap>();
+    auto cryptoMap = gcNew<PraiaMap>();
     registerCryptoBuiltins(cryptoMap);
     globals->define("crypto", Value(cryptoMap));
 
     // ── random namespace ──
 
-    auto randomMap = std::make_shared<PraiaMap>();
+    auto randomMap = gcNew<PraiaMap>();
     auto rng = std::make_shared<std::mt19937>(std::random_device{}());
 
     randomMap->entries["int"] = Value(makeNative("random.int", 2,
@@ -1268,7 +1269,7 @@ Interpreter::Interpreter() {
 
     // ── time namespace ──
 
-    auto timeMap = std::make_shared<PraiaMap>();
+    auto timeMap = gcNew<PraiaMap>();
 
     timeMap->entries["now"] = Value(makeNative("time.now", 0,
         [](const std::vector<Value>&) -> Value {
@@ -1318,7 +1319,7 @@ Interpreter::Interpreter() {
 
     // ── math namespace (built-in, replaces grains/math.praia for C++ math) ──
 
-    auto mathMap = std::make_shared<PraiaMap>();
+    auto mathMap = gcNew<PraiaMap>();
 
     mathMap->entries["PI"] = Value(3.14159265358979323846);
     mathMap->entries["E"] = Value(2.71828182845904523536);
@@ -1600,12 +1601,12 @@ Interpreter::Interpreter() {
         [](const std::vector<Value>&) -> Value {
             struct winsize ws;
             if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) < 0) {
-                auto result = std::make_shared<PraiaMap>();
+                auto result = gcNew<PraiaMap>();
                 result->entries["rows"] = Value(static_cast<int64_t>(24));
                 result->entries["cols"] = Value(static_cast<int64_t>(80));
                 return Value(result);
             }
-            auto result = std::make_shared<PraiaMap>();
+            auto result = gcNew<PraiaMap>();
             result->entries["rows"] = Value(static_cast<int64_t>(ws.ws_row));
             result->entries["cols"] = Value(static_cast<int64_t>(ws.ws_col));
             return Value(result);
@@ -1614,7 +1615,7 @@ Interpreter::Interpreter() {
     // ── sqlite namespace ──
 
 #ifdef HAVE_SQLITE
-    auto sqliteMap = std::make_shared<PraiaMap>();
+    auto sqliteMap = gcNew<PraiaMap>();
 
     sqliteMap->entries["open"] = Value(makeNative("sqlite.open", 1,
         [](const std::vector<Value>& args) -> Value {
@@ -1632,7 +1633,7 @@ Interpreter::Interpreter() {
             // Wrap in shared_ptr for automatic cleanup
             auto db = std::make_shared<sqlite3*>(raw);
 
-            auto dbMap = std::make_shared<PraiaMap>();
+            auto dbMap = gcNew<PraiaMap>();
 
             // db.query(sql, params?) → array of maps
             dbMap->entries["query"] = Value(makeNative("query", -1,
@@ -1664,11 +1665,11 @@ Interpreter::Interpreter() {
                     }
 
                     // Execute and collect rows
-                    auto rows = std::make_shared<PraiaArray>();
+                    auto rows = gcNew<PraiaArray>();
                     int cols = sqlite3_column_count(stmt);
 
                     while (sqlite3_step(stmt) == SQLITE_ROW) {
-                        auto row = std::make_shared<PraiaMap>();
+                        auto row = gcNew<PraiaMap>();
                         for (int c = 0; c < cols; c++) {
                             std::string name = sqlite3_column_name(stmt, c);
                             int type = sqlite3_column_type(stmt, c);
@@ -1732,7 +1733,7 @@ Interpreter::Interpreter() {
                         throw RuntimeError("SQL error: " + err, 0);
                     }
 
-                    auto result = std::make_shared<PraiaMap>();
+                    auto result = gcNew<PraiaMap>();
                     result->entries["changes"] = Value(static_cast<int64_t>(sqlite3_changes(*db)));
                     result->entries["lastId"] = Value(static_cast<int64_t>(sqlite3_last_insert_rowid(*db)));
                     return Value(result);
@@ -1756,7 +1757,7 @@ Interpreter::Interpreter() {
 }
 
 void Interpreter::setArgs(const std::vector<std::string>& args) {
-    auto arr = std::make_shared<PraiaArray>();
+    auto arr = gcNew<PraiaArray>();
     for (auto& a : args)
         arr->elements.push_back(Value(a));
     sysMap->entries["args"] = Value(arr);

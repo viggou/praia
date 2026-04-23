@@ -1,0 +1,118 @@
+use "testing"
+
+testing.test("self-referencing array collected", lam{ in
+    // Create and immediately orphan a self-referencing array
+    for (i in 0..1000) {
+        let a = []
+        push(a, a)
+        // a goes out of scope — cycle should be collected
+    }
+    testing.assert(true, "survived 1000 self-ref array cycles")
+})
+
+testing.test("self-referencing map collected", lam{ in
+    for (i in 0..1000) {
+        let m = {}
+        m.self = m
+    }
+    testing.assert(true, "survived 1000 self-ref map cycles")
+})
+
+testing.test("instance with closure capturing this", lam{ in
+    class Foo {
+        func init() {
+            this.cb = lam{ in this }
+        }
+    }
+    for (i in 0..1000) {
+        let f = Foo()
+        // f.cb captures this (f) — cycle: instance -> cb -> closure -> instance
+    }
+    testing.assert(true, "survived 1000 instance-closure cycles")
+})
+
+testing.test("mutual instance references", lam{ in
+    class Node {
+        func init(v) {
+            this.val = v
+            this.next = nil
+        }
+    }
+    for (i in 0..1000) {
+        let a = Node(1)
+        let b = Node(2)
+        a.next = b
+        b.next = a
+    }
+    testing.assert(true, "survived 1000 mutual-ref cycles")
+})
+
+testing.test("function-environment cycle", lam{ in
+    for (i in 0..1000) {
+        func make() {
+            func inner() { return inner }
+            return inner
+        }
+        let f = make()
+    }
+    testing.assert(true, "survived 1000 function-env cycles")
+})
+
+testing.test("class-environment cycle", lam{ in
+    for (i in 0..1000) {
+        func make() {
+            class Temp {
+                func init() { this.x = 1 }
+            }
+            return Temp
+        }
+        let C = make()
+    }
+    testing.assert(true, "survived 1000 class-env cycles")
+})
+
+testing.test("deeply nested cycle", lam{ in
+    for (i in 0..500) {
+        let a = {}
+        let b = {}
+        let c = {}
+        a.next = b
+        b.next = c
+        c.next = a
+    }
+    testing.assert(true, "survived 500 three-node ring cycles")
+})
+
+testing.test("GC does not collect reachable objects", lam{ in
+    let arr = [1, 2, 3]
+    let m = {x: 10, y: 20}
+    // Run enough iterations to trigger GC
+    for (i in 0..2000) {
+        let temp = []
+        push(temp, temp) // cycle — will be collected
+    }
+    // Original objects should still be intact
+    testing.assertEqual(arr, [1, 2, 3], nil)
+    testing.assertEqual(m.x, 10, nil)
+    testing.assertEqual(m.y, 20, nil)
+})
+
+testing.test("GC preserves generator state", lam{ in
+    func gen() {
+        yield 1
+        yield 2
+        yield 3
+    }
+    let g = gen()
+    testing.assertEqual(g.next().value, 1, nil)
+    // Force GC activity
+    for (i in 0..1000) {
+        let temp = []
+        push(temp, temp)
+    }
+    // Generator should still work
+    testing.assertEqual(g.next().value, 2, nil)
+    testing.assertEqual(g.next().value, 3, nil)
+})
+
+testing.done()

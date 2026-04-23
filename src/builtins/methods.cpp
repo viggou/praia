@@ -6,6 +6,7 @@
 #include <memory>
 #include <regex>
 #include <string>
+#include "../gc_heap.h"
 
 static constexpr int REGEX_TIMEOUT_MS = 5000;
 
@@ -46,7 +47,7 @@ Value getStringMethod(const std::string& str,
             if (!args[0].isString())
                 throw RuntimeError("split() separator must be a string", 0);
             auto& sep = args[0].asString();
-            auto arr = std::make_shared<PraiaArray>();
+            auto arr = gcNew<PraiaArray>();
             if (sep.empty()) {
                 for (char c : str)
                     arr->elements.push_back(Value(std::string(1, c)));
@@ -164,10 +165,10 @@ Value getStringMethod(const std::string& str,
                 return regexWithTimeout([&]() -> Value {
                     std::smatch m;
                     if (!std::regex_search(str, m, re)) return Value();
-                    auto result = std::make_shared<PraiaMap>();
+                    auto result = gcNew<PraiaMap>();
                     result->entries["match"] = Value(m[0].str());
                     result->entries["index"] = Value(static_cast<int64_t>(m.position(0)));
-                    auto groups = std::make_shared<PraiaArray>();
+                    auto groups = gcNew<PraiaArray>();
                     for (size_t i = 1; i < m.size(); i++)
                         groups->elements.push_back(Value(m[i].str()));
                     result->entries["groups"] = Value(groups);
@@ -185,14 +186,14 @@ Value getStringMethod(const std::string& str,
             try {
                 std::regex re(args[0].asString());
                 return regexWithTimeout([&]() -> Value {
-                    auto results = std::make_shared<PraiaArray>();
+                    auto results = gcNew<PraiaArray>();
                     auto begin = std::sregex_iterator(str.begin(), str.end(), re);
                     auto end = std::sregex_iterator();
                     for (auto it = begin; it != end; ++it) {
-                        auto entry = std::make_shared<PraiaMap>();
+                        auto entry = gcNew<PraiaMap>();
                         entry->entries["match"] = Value((*it)[0].str());
                         entry->entries["index"] = Value(static_cast<int64_t>(it->position(0)));
-                        auto groups = std::make_shared<PraiaArray>();
+                        auto groups = gcNew<PraiaArray>();
                         for (size_t i = 1; i < it->size(); i++)
                             groups->elements.push_back(Value((*it)[i].str()));
                         entry->entries["groups"] = Value(groups);
@@ -386,9 +387,9 @@ Value getArrayMethod(std::shared_ptr<PraiaArray> arr,
                 if (end < 0) end += len;
             }
             if (start >= len || end <= start)
-                return Value(std::make_shared<PraiaArray>());
+                return Value(gcNew<PraiaArray>());
             if (end > len) end = len;
-            auto result = std::make_shared<PraiaArray>();
+            auto result = gcNew<PraiaArray>();
             result->elements.assign(arr->elements.begin() + start, arr->elements.begin() + end);
             return Value(result);
         }));

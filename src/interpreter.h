@@ -11,6 +11,8 @@
 #include <unordered_map>
 #include <vector>
 
+class GcHeap;
+
 // Thrown by return statements to unwind back to the enclosing function call
 struct ReturnSignal {
     Value value;
@@ -198,10 +200,16 @@ private:
     // AST storage to keep grain ASTs alive (function bodies are raw pointers)
     std::vector<std::vector<StmtPtr>> grainAsts;
 
+    // Saved environments for GC root tracking — the tree-walker stores caller
+    // scopes on the C++ call stack, invisible to GC. This explicit stack
+    // makes them reachable during mark phase.
+    std::vector<std::shared_ptr<Environment>> savedEnvStack_;
+
     // (interpMutex removed — async tasks use task-local Interpreters instead)
 
     // Call stack for error traces
 public:
     std::vector<CallFrame> callStack;
     std::string formatStackTrace() const;
+    void gcMarkRoots(GcHeap& heap);
 };

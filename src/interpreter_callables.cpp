@@ -1,3 +1,4 @@
+#include "gc_heap.h"
 #include "interpreter.h"
 
 // ── PraiaClass / PraiaMethod ──────────────────────────────────
@@ -15,7 +16,7 @@ int PraiaClass::arity() const {
 }
 
 Value PraiaClass::call(Interpreter& interp, const std::vector<Value>& args) {
-    auto instance = std::make_shared<PraiaInstance>();
+    auto instance = gcNew<PraiaInstance>();
     instance->klass = shared_from_this();
 
     auto* init = findMethod("init");
@@ -39,7 +40,7 @@ Value PraiaClass::call(Interpreter& interp, const std::vector<Value>& args) {
 }
 
 Value PraiaMethod::call(Interpreter& interp, const std::vector<Value>& args) {
-    auto methodEnv = std::make_shared<Environment>(closure);
+    auto methodEnv = gcNew<Environment>(closure);
     methodEnv->define("this", Value(instance));
 
     // Store the defining class so super resolves correctly in multi-level inheritance
@@ -78,7 +79,7 @@ Value PraiaMethod::call(Interpreter& interp, const std::vector<Value>& args) {
 // ── PraiaFunction / PraiaLambda ───────────────────────────────
 
 Value PraiaLambda::call(Interpreter& interp, const std::vector<Value>& args) {
-    auto lambdaEnv = std::make_shared<Environment>(closure);
+    auto lambdaEnv = gcNew<Environment>(closure);
 
     auto prevEnv = interp.env;
     interp.env = lambdaEnv;
@@ -109,7 +110,7 @@ Value PraiaLambda::call(Interpreter& interp, const std::vector<Value>& args) {
 }
 
 Value PraiaFunction::call(Interpreter& interp, const std::vector<Value>& args) {
-    auto funcEnv = std::make_shared<Environment>(closure);
+    auto funcEnv = gcNew<Environment>(closure);
 
     // Switch to function env before evaluating defaults so that:
     // 1. Defaults resolve in the definition scope (closure), not the caller scope
@@ -161,6 +162,7 @@ Value makeGeneratorFromEnv(
     // Capture pointer to the AST statements (AST is kept alive by grainAsts/program)
     const auto* stmtsPtr = &bodyStmts;
     gen->thread = std::thread([gen, funcEnv, stmtsPtr, sharedGlobals]() {
+        GcHeap::current().disable(); // generator threads are short-lived
         Interpreter genInterp(sharedGlobals);
         genInterp.env = funcEnv;
 
@@ -224,8 +226,8 @@ Value makeGeneratorFromEnv(
 }
 
 Value PraiaGeneratorFunction::call(Interpreter& interp, const std::vector<Value>& args) {
-    auto funcEnv = std::make_shared<Environment>(closure);
-    auto gen = std::make_shared<PraiaGenerator>();
+    auto funcEnv = gcNew<Environment>(closure);
+    auto gen = gcNew<PraiaGenerator>();
 
     auto prevEnv = interp.env;
     interp.env = funcEnv;
@@ -247,8 +249,8 @@ Value PraiaGeneratorFunction::call(Interpreter& interp, const std::vector<Value>
 }
 
 Value PraiaGeneratorLambda::call(Interpreter& interp, const std::vector<Value>& args) {
-    auto funcEnv = std::make_shared<Environment>(closure);
-    auto gen = std::make_shared<PraiaGenerator>();
+    auto funcEnv = gcNew<Environment>(closure);
+    auto gen = gcNew<PraiaGenerator>();
 
     auto prevEnv = interp.env;
     interp.env = funcEnv;

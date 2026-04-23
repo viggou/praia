@@ -1,5 +1,6 @@
 #include "compiler.h"
 #include "vm.h"
+#include "../gc_heap.h"
 
 void Compiler::compileExpr(const Expr* expr) {
     if (auto* e = dynamic_cast<const NumberExpr*>(expr)) compileNumberExpr(e);
@@ -169,7 +170,7 @@ void Compiler::compileCallExpr(const CallExpr* expr) {
 
     if (hasNamed) {
         // Build names array as a constant
-        auto namesArr = std::make_shared<PraiaArray>();
+        auto namesArr = gcNew<PraiaArray>();
         for (auto& n : expr->argNames)
             namesArr->elements.push_back(Value(n));
         uint16_t namesIdx = currentChunk().addConstant(Value(namesArr));
@@ -208,7 +209,7 @@ void Compiler::compilePipeExpr(const PipeExpr* expr) {
 
         if (hasNamed) {
             // Build names: "" for the piped positional arg, then the call's names
-            auto namesArr = std::make_shared<PraiaArray>();
+            auto namesArr = gcNew<PraiaArray>();
             namesArr->elements.push_back(Value(std::string("")));
             for (auto& n : call->argNames)
                 namesArr->elements.push_back(Value(n));
@@ -470,7 +471,7 @@ void Compiler::compileAsyncExpr(const AsyncExpr* expr) {
     for (auto& n : call->argNames) { if (!n.empty()) { hasNamed = true; break; } }
 
     if (hasNamed) {
-        auto namesArr = std::make_shared<PraiaArray>();
+        auto namesArr = gcNew<PraiaArray>();
         for (auto& n : call->argNames)
             namesArr->elements.push_back(Value(n));
         uint16_t namesIdx = currentChunk().addConstant(Value(namesArr));

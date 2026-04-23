@@ -1,4 +1,5 @@
 #include "builtins.h"
+#include "gc_heap.h"
 #include "grain_resolve.h"
 #include "interpreter.h"
 #include "lexer.h"
@@ -232,7 +233,7 @@ Value Interpreter::loadGrain(const std::string& importPath, int line) {
         throw RuntimeError("Parse error in grain: " + importPath, line);
 
     // Execute in isolated scope
-    auto grainEnv = std::make_shared<Environment>(globals);
+    auto grainEnv = gcNew<Environment>(globals);
     auto prevEnv = env;
     auto prevFile = currentFile;
     auto prevImports = importedInCurrentFile;
@@ -245,7 +246,7 @@ Value Interpreter::loadGrain(const std::string& importPath, int line) {
         for (const auto& stmt : program)
             execute(stmt.get());
         // If no export statement was hit, export nothing
-        exports = Value(std::make_shared<PraiaMap>());
+        exports = Value(gcNew<PraiaMap>());
     } catch (const ExportSignal& es) {
         exports = Value(es.exports);
     } catch (...) {
@@ -277,9 +278,12 @@ std::string Interpreter::formatStackTrace() const {
 }
 
 bool Interpreter::interpret(const std::vector<StmtPtr>& program) {
+    GcHeap::current().setRootMarker([this](GcHeap& h) { gcMarkRoots(h); });
     try {
-        for (const auto& stmt : program)
+        for (const auto& stmt : program) {
             execute(stmt.get());
+            GcHeap::current().collectIfNeeded();
+        }
         return true;
     } catch (const ThrowSignal& t) {
         std::cerr << "[line " << t.line << "] Uncaught error: "
@@ -296,6 +300,7 @@ bool Interpreter::interpret(const std::vector<StmtPtr>& program) {
 }
 
 void Interpreter::interpretRepl(const std::vector<StmtPtr>& program) {
+    GcHeap::current().setRootMarker([this](GcHeap& h) { gcMarkRoots(h); });
     try {
         for (const auto& stmt : program) {
             if (auto* es = dynamic_cast<const ExprStmt*>(stmt.get())) {
@@ -305,6 +310,7 @@ void Interpreter::interpretRepl(const std::vector<StmtPtr>& program) {
             } else {
                 execute(stmt.get());
             }
+            GcHeap::current().collectIfNeeded();
         }
     } catch (const ThrowSignal& t) {
         std::cerr << "[line " << t.line << "] Uncaught error: "
@@ -320,16 +326,18 @@ void Interpreter::interpretRepl(const std::vector<StmtPtr>& program) {
 
 void Interpreter::executeBlock(const BlockStmt* block,
                                 std::shared_ptr<Environment> newEnv) {
-    auto previous = env;
+    savedEnvStack_.push_back(env);
     env = newEnv;
     try {
         for (const auto& stmt : block->statements)
             execute(stmt.get());
     } catch (...) {
-        env = previous;
+        env = savedEnvStack_.back();
+        savedEnvStack_.pop_back();
         throw;
     }
-    env = previous;
+    env = savedEnvStack_.back();
+    savedEnvStack_.pop_back();
 }
 
 // ── Statement execution ──────────────────────────────────────
@@ -349,7 +357,7 @@ void Interpreter::execute(const Stmt* stmt) {
                 for (size_t i = 0; i < s->pattern.size(); i++) {
                     auto& p = s->pattern[i];
                     if (p.isRest) {
-                        auto rest = std::make_shared<PraiaArray>();
+                        auto rest = gcNew<PraiaArray>();
                         for (size_t j = i; j < elems.size(); j++)
                             rest->elements.push_back(elems[j]);
                         env->define(p.name, Value(rest));
@@ -365,7 +373,7 @@ void Interpreter::execute(const Stmt* stmt) {
                 std::set<std::string> extracted;
                 for (auto& p : s->pattern) {
                     if (p.isRest) {
-                        auto rest = std::make_shared<PraiaMap>();
+                        auto rest = gcNew<PraiaMap>();
                         for (auto& [k, v] : entries) {
                             if (!extracted.count(k))
                                 rest->entries[k] = v;
@@ -387,7 +395,7 @@ void Interpreter::execute(const Stmt* stmt) {
         }
 
     } else if (auto* s = dynamic_cast<const BlockStmt*>(stmt)) {
-        executeBlock(s, std::make_shared<Environment>(env));
+        executeBlock(s, gcNew<Environment>(env));
 
     } else if (auto* s = dynamic_cast<const IfStmt*>(stmt)) {
         if (evaluate(s->condition.get()).isTruthy()) {
@@ -425,7 +433,7 @@ void Interpreter::execute(const Stmt* stmt) {
 
         try {
             for (int64_t i = from; i < to; i++) {
-                auto iterEnv = std::make_shared<Environment>(env);
+                auto iterEnv = gcNew<Environment>(env);
                 iterEnv->define(s->varName, Value(i));
                 try { executeBlock(bodyBlock, iterEnv); }
                 catch (const ContinueSignal&) { /* skip to next iteration */ }
@@ -453,7 +461,7 @@ void Interpreter::execute(const Stmt* stmt) {
         if (iterable.isArray()) {
             try {
                 for (const auto& elem : iterable.asArray()->elements) {
-                    auto iterEnv = std::make_shared<Environment>(env);
+                    auto iterEnv = gcNew<Environment>(env);
                     defineLoopVar(iterEnv, elem);
                     try { executeBlock(bodyBlock, iterEnv); }
                     catch (const ContinueSignal&) {}
@@ -462,10 +470,10 @@ void Interpreter::execute(const Stmt* stmt) {
         } else if (iterable.isMap()) {
             try {
                 for (auto& [k, v] : iterable.asMap()->entries) {
-                    auto entry = std::make_shared<PraiaMap>();
+                    auto entry = gcNew<PraiaMap>();
                     entry->entries["key"] = Value(k);
                     entry->entries["value"] = v;
-                    auto iterEnv = std::make_shared<Environment>(env);
+                    auto iterEnv = gcNew<Environment>(env);
                     defineLoopVar(iterEnv, Value(entry));
                     try { executeBlock(bodyBlock, iterEnv); }
                     catch (const ContinueSignal&) {}
@@ -474,7 +482,7 @@ void Interpreter::execute(const Stmt* stmt) {
         } else if (iterable.isString()) {
             try {
                 for (size_t i = 0; i < iterable.asString().size(); i++) {
-                    auto iterEnv = std::make_shared<Environment>(env);
+                    auto iterEnv = gcNew<Environment>(env);
                     defineLoopVar(iterEnv, Value(std::string(1, iterable.asString()[i])));
                     try { executeBlock(bodyBlock, iterEnv); }
                     catch (const ContinueSignal&) {}
@@ -498,7 +506,7 @@ void Interpreter::execute(const Stmt* stmt) {
                         throw RuntimeError(gen->errorMessage, s->line);
                     if (gen->done) break;
 
-                    auto iterEnv = std::make_shared<Environment>(env);
+                    auto iterEnv = gcNew<Environment>(env);
                     defineLoopVar(iterEnv, gen->lastYielded);
                     try { executeBlock(bodyBlock, iterEnv); }
                     catch (const ContinueSignal&) {}
@@ -528,7 +536,7 @@ void Interpreter::execute(const Stmt* stmt) {
         }
 
     } else if (auto* s = dynamic_cast<const EnumStmt*>(stmt)) {
-        auto enumMap = std::make_shared<PraiaMap>();
+        auto enumMap = gcNew<PraiaMap>();
         int64_t nextVal = 0;
         for (size_t i = 0; i < s->members.size(); i++) {
             if (s->values[i]) {
@@ -553,7 +561,7 @@ void Interpreter::execute(const Stmt* stmt) {
                 throw RuntimeError("'" + s->superclass + "' is not a class", s->line);
         }
 
-        auto klass = std::make_shared<PraiaClass>();
+        auto klass = gcNew<PraiaClass>();
         klass->className = s->name;
         klass->superclass = superclass;
         klass->closure = env;
@@ -582,12 +590,12 @@ void Interpreter::execute(const Stmt* stmt) {
             execute(s->tryBody.get());
         } catch (const ThrowSignal& ts) {
             callStack.resize(savedStackSize);
-            auto catchEnv = std::make_shared<Environment>(env);
+            auto catchEnv = gcNew<Environment>(env);
             catchEnv->define(s->errorVar, ts.value);
             executeBlock(static_cast<const BlockStmt*>(s->catchBody.get()), catchEnv);
         } catch (const RuntimeError& re) {
             callStack.resize(savedStackSize);
-            auto catchEnv = std::make_shared<Environment>(env);
+            auto catchEnv = gcNew<Environment>(env);
             catchEnv->define(s->errorVar, Value(std::string(re.what())));
             executeBlock(static_cast<const BlockStmt*>(s->catchBody.get()), catchEnv);
         }
@@ -602,7 +610,7 @@ void Interpreter::execute(const Stmt* stmt) {
         env->define(s->alias, grain);
 
     } else if (auto* s = dynamic_cast<const ExportStmt*>(stmt)) {
-        auto exports = std::make_shared<PraiaMap>();
+        auto exports = gcNew<PraiaMap>();
         for (auto& name : s->names) {
             exports->entries[name] = env->get(name, s->line);
         }
@@ -764,13 +772,13 @@ Value Interpreter::evaluate(const Expr* expr) {
             if (left.isNumber() && right.isNumber())
                 return Value(left.asNumber() + right.asNumber());
             if (left.isArray() && right.isArray()) {
-                auto result = std::make_shared<PraiaArray>();
+                auto result = gcNew<PraiaArray>();
                 for (auto& el : left.asArray()->elements) result->elements.push_back(el);
                 for (auto& el : right.asArray()->elements) result->elements.push_back(el);
                 return Value(result);
             }
             if (left.isMap() && right.isMap()) {
-                auto result = std::make_shared<PraiaMap>();
+                auto result = gcNew<PraiaMap>();
                 for (auto& [k, v] : left.asMap()->entries) result->entries[k] = v;
                 for (auto& [k, v] : right.asMap()->entries) result->entries[k] = v;
                 return Value(result);
@@ -878,7 +886,7 @@ Value Interpreter::evaluate(const Expr* expr) {
     // ── Array literal ──
 
     if (auto* e = dynamic_cast<const ArrayLiteralExpr*>(expr)) {
-        auto arr = std::make_shared<PraiaArray>();
+        auto arr = gcNew<PraiaArray>();
         for (const auto& elem : e->elements) {
             if (auto* spread = dynamic_cast<const SpreadExpr*>(elem.get())) {
                 Value val = evaluate(spread->expr.get());
@@ -981,6 +989,7 @@ Value Interpreter::evaluate(const Expr* expr) {
         auto sharedFuture = std::async(std::launch::async,
             [callable, args, sharedGlobals]() -> Value {
                 Interpreter taskInterp(sharedGlobals);
+                GcHeap::current().disable(); // task interpreters are short-lived
                 return callable->call(taskInterp, args);
             }).share();
 
@@ -1049,7 +1058,7 @@ Value Interpreter::evaluate(const Expr* expr) {
     // ── Map literal ──
 
     if (auto* e = dynamic_cast<const MapLiteralExpr*>(expr)) {
-        auto map = std::make_shared<PraiaMap>();
+        auto map = gcNew<PraiaMap>();
         for (size_t i = 0; i < e->keys.size(); i++) {
             if (e->keys[i].empty() && dynamic_cast<const SpreadExpr*>(e->values[i].get())) {
                 auto* spread = dynamic_cast<const SpreadExpr*>(e->values[i].get());
@@ -1149,7 +1158,7 @@ Value Interpreter::evaluate(const Expr* expr) {
                 return Value(makeNative("next", -1,
                     [gen](const std::vector<Value>& args) -> Value {
                         if (gen->state == PraiaGenerator::State::COMPLETED) {
-                            auto result = std::make_shared<PraiaMap>();
+                            auto result = gcNew<PraiaMap>();
                             result->entries["value"] = Value();
                             result->entries["done"] = Value(true);
                             return Value(result);
@@ -1165,7 +1174,7 @@ Value Interpreter::evaluate(const Expr* expr) {
                         if (!gen->errorMessage.empty())
                             throw RuntimeError(gen->errorMessage, 0);
 
-                        auto result = std::make_shared<PraiaMap>();
+                        auto result = gcNew<PraiaMap>();
                         result->entries["value"] = gen->lastYielded;
                         result->entries["done"] = Value(gen->done);
                         return Value(result);
@@ -1285,4 +1294,16 @@ Value Interpreter::evaluate(const Expr* expr) {
     }
 
     throw RuntimeError("Unknown expression type", expr->line);
+}
+
+// ── GC root marking ──
+
+void Interpreter::gcMarkRoots(GcHeap& heap) {
+    heap.markEnvironment(globals.get());
+    heap.markEnvironment(env.get());
+    // Mark caller scopes that are on the C++ call stack (invisible to GC)
+    for (auto& savedEnv : savedEnvStack_)
+        heap.markEnvironment(savedEnv.get());
+    if (sysMap) heap.markValue(Value(sysMap));
+    for (auto& [k, v] : grainCache) heap.markValue(v);
 }

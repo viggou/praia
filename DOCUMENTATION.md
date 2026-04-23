@@ -19,6 +19,7 @@ Praia is a dynamically typed, interpreted programming language built in C++.
 - [Loops](#loops)
 - [Functions](#functions)
 - [Lambdas](#lambdas)
+- [Generators](#generators)
 - [Classes](#classes)
 - [Built-in Functions](#built-in-functions)
 - [String Methods](#string-methods)
@@ -51,6 +52,7 @@ Praia is a dynamically typed, interpreted programming language built in C++.
 - [Comments](#comments)
 - [Operator Precedence](#operator-precedence)
 - [REPL](#repl)
+- [Memory Management](#memory-management)
 - [Command-Line Usage](#command-line-usage)
 
 ---
@@ -924,6 +926,111 @@ let actions = {
 }
 print(actions.double(21))   // 42
 ```
+
+---
+
+## Generators
+
+A generator is a function whose body contains `yield`. Calling it returns a **generator object** instead of executing the body. The body runs lazily, pausing at each `yield` and resuming on the next `.next()` call.
+
+No special keyword is needed — any function or lambda that uses `yield` becomes a generator automatically.
+
+### Basic usage
+
+```
+func countdown(n) {
+    while (n > 0) { yield n; n = n - 1 }
+}
+
+let g = countdown(3)
+print(g.next())   // {value: 3, done: false}
+print(g.next())   // {value: 2, done: false}
+print(g.next())   // {value: 1, done: false}
+print(g.next())   // {value: nil, done: true}
+```
+
+`.next()` returns a map with `value` (the yielded value) and `done` (whether the generator is exhausted). After the last yield, `done` becomes `true`.
+
+### for-in integration
+
+Generators work directly with `for-in` loops. Iteration is lazy — values are produced one at a time, not materialized into an array.
+
+```
+func range(n) {
+    for (i in 0..n) { yield i }
+}
+
+for (x in range(5)) { print(x) }   // 0 1 2 3 4
+```
+
+### Infinite generators
+
+Since generators are lazy, they can produce infinite sequences. Use `break` to stop.
+
+```
+func naturals() {
+    let n = 0
+    while (true) { yield n; n = n + 1 }
+}
+
+for (x in naturals()) {
+    if (x >= 5) { break }
+    print(x)    // 0 1 2 3 4
+}
+```
+
+### yield as expression (send values)
+
+`yield` is an expression that returns the value passed to `.next(arg)`. The first `.next()` call primes the generator (runs until the first yield); subsequent calls resume execution with the sent value.
+
+```
+func accumulator() {
+    let total = 0
+    while (true) {
+        let val = yield total
+        total = total + val
+    }
+}
+
+let acc = accumulator()
+acc.next()              // prime — {value: 0, done: false}
+acc.next(10)            // {value: 10, done: false}
+acc.next(5)             // {value: 15, done: false}
+acc.next(25)            // {value: 40, done: false}
+```
+
+### Generator lambdas
+
+Lambdas can be generators too.
+
+```
+let squares = lam{ n in for (i in 0..n) { yield i * i } }
+
+for (x in squares(5)) { print(x) }   // 0 1 4 9 16
+```
+
+### Return value
+
+A `return` inside a generator sets `done: true` and the return value as the final `value`.
+
+```
+func gen() {
+    yield 1
+    return 99
+}
+
+let g = gen()
+print(g.next())   // {value: 1, done: false}
+print(g.next())   // {value: 99, done: true}
+```
+
+### Generator properties
+
+| Property/Method | Description |
+|---|---|
+| `.next()` | Resume, return `{value, done}` |
+| `.next(val)` | Resume with sent value |
+| `.done` | `true` if generator is exhausted |
 
 ---
 
@@ -3591,6 +3698,58 @@ Features:
 .. }
 >> greet("world")
 hello world
+```
+
+---
+
+## Memory Management
+
+Praia uses **reference counting** (`shared_ptr`) for automatic memory management. Most objects are freed immediately when they go out of scope.
+
+### Cycle collection
+
+Circular references (e.g., two objects pointing at each other) cannot be freed by reference counting alone. Praia includes a **mark-and-sweep cycle collector** that detects and breaks these cycles automatically.
+
+```
+// This would leak without cycle collection:
+let a = []
+push(a, a)      // a references itself
+a = nil         // refcount stays 1 due to cycle — GC breaks it
+```
+
+The collector runs automatically in the background. It tracks container objects (arrays, maps, instances, classes, generators, environments) and periodically:
+
+1. **Marks** all objects reachable from roots (stack, globals, upvalues)
+2. **Sweeps** any tracked object that is alive but not reachable — these are in cycles
+3. **Breaks** the cycle by clearing the object's internal references, allowing normal refcount cleanup
+
+### What you need to know
+
+- GC is automatic — no manual intervention needed
+- It only targets **cycles**. Non-cyclic objects are freed immediately by refcounting
+- Each thread has its own collector (async tasks are isolated)
+- The collector auto-tunes its frequency based on how much garbage it finds
+
+### Common cycle patterns (all handled)
+
+```
+// Self-referencing collections
+let m = {}; m.self = m
+
+// Mutual references
+let a = Node(1); let b = Node(2)
+a.next = b; b.next = a
+
+// Instance capturing this in a closure
+class Foo {
+    func init() { this.cb = lam{ in this } }
+}
+
+// Function stored in its own closure environment
+func make() {
+    func inner() { return inner }
+    return inner
+}
 ```
 
 ---

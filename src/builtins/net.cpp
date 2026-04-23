@@ -6,6 +6,7 @@
 #include <netinet/in.h>
 #include <netdb.h>
 #include <unistd.h>
+#include "../gc_heap.h"
 
 struct AddrGuard {
     struct addrinfo* res = nullptr;
@@ -300,7 +301,7 @@ void registerNetBuiltins(std::shared_ptr<PraiaMap> netMap) {
                 }
             }
 
-            auto result = std::make_shared<PraiaMap>();
+            auto result = gcNew<PraiaMap>();
             result->entries["data"] = Value(std::string(buf.data(), n));
             result->entries["host"] = Value(std::string(addrBuf));
             result->entries["port"] = Value(static_cast<int64_t>(port));
@@ -319,7 +320,7 @@ void registerNetBuiltins(std::shared_ptr<PraiaMap> netMap) {
             AddrGuard ag;
             if (getaddrinfo(host.c_str(), nullptr, &hints, &ag.res) != 0)
                 throw RuntimeError("Cannot resolve: " + host, 0);
-            auto result = std::make_shared<PraiaArray>();
+            auto result = gcNew<PraiaArray>();
             for (auto* p = ag.get(); p; p = p->ai_next) {
                 char buf[INET6_ADDRSTRLEN];
                 if (p->ai_family == AF_INET) {
@@ -455,7 +456,7 @@ void registerNetBuiltins(std::shared_ptr<PraiaMap> netMap) {
                 std::snprintf(addrBuf, sizeof(addrBuf), "unknown");
             }
 
-            auto result = std::make_shared<PraiaMap>();
+            auto result = gcNew<PraiaMap>();
             result->entries["data"] = Value(std::string(buf.data(), n));
             result->entries["host"] = Value(std::string(addrBuf));
             return Value(result);
