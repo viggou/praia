@@ -484,6 +484,7 @@ void httpServerListen(int port, std::shared_ptr<Callable> handler, Interpreter& 
         int respStatus = 500;
         std::unordered_map<std::string, std::string> respHeaders;
 
+        bool sseHandled = false;
         try {
             // Attach the raw client fd to the request so http.sse can use it
             req->entries["__clientFd"] = Value(static_cast<double>(client));
@@ -493,8 +494,7 @@ void httpServerListen(int port, std::shared_ptr<Callable> handler, Interpreter& 
 
             // Check if SSE handled the response (it sends headers itself)
             if (result.isMap() && result.asMap()->entries.count("__sse")) {
-                // SSE already sent everything and closed the socket
-                continue;
+                sseHandled = true;
             }
 
             if (result.isMap()) {
@@ -527,6 +527,12 @@ void httpServerListen(int port, std::shared_ptr<Callable> handler, Interpreter& 
             respBody = "Error: " + std::string(e.what());
         }
 
+        if (sseHandled) {
+            // SSE handler should have closed the socket; close again
+            // as a safety net (harmless if already closed).
+            close(client);
+            continue;
+        }
         sendHttpResponse(client, respStatus, respBody, respHeaders);
         close(client);
     }
