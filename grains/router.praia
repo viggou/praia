@@ -1,22 +1,35 @@
-// HTTP Router with :param support and middleware
+// HTTP Router with :param support, middleware, and decorator syntax
 //
 // Usage:
 //   use "router"
-//   let server = router.create()
+//   let app = router.create()
 //
 //   // Middleware runs on every request, in order
-//   server.use(lam{ req, next in
+//   app.use(lam{ req, next in
 //       req.startTime = time.now()
 //       let res = next(req)
 //       return res
 //   })
 //
-//   // Routes
-//   server.get("/users/:id", lam{ req, params in
+//   // Routes (callback style)
+//   app.get("/users/:id", lam{ req, params in
 //       return {status: 200, body: "User %{params.id}"}
 //   })
 //
-//   server.listen(8080)
+//   // Routes (decorator style — single method)
+//   @app.get("/users")
+//   func listUsers(req, params) {
+//       return http.json(users)
+//   }
+//
+//   // Routes (decorator style — multiple methods, Flask-like)
+//   @app.route("/posts", ["GET", "POST"])
+//   func posts(req, params) {
+//       if (req.method == "GET") { return http.json(allPosts) }
+//       return http.json(createPost(req.json), 201)
+//   }
+//
+//   app.listen(8080)
 
 func matchRoute(pattern, path) {
     let patternParts = pattern.split("/")
@@ -52,12 +65,53 @@ func create() {
         routes.push({method: method, pattern: pattern, handler: handler})
     }
 
+    // Makes a method-specific route function.
+    // Two calling conventions:
+    //   app.get("/path", handler)  — registers directly (callback style)
+    //   app.get("/path")           — returns decorator function
+    func makeRoute(method) {
+        return lam{ pattern, handler in
+            if (handler) {
+                addRoute(method, pattern, handler)
+            } else {
+                return lam{ fn in
+                    addRoute(method, pattern, fn)
+                    return fn
+                }
+            }
+        }
+    }
+
+    // Flask-style route with multiple methods.
+    // Two calling conventions:
+    //   app.route("/path", ["GET", "POST"], handler)  — registers directly
+    //   app.route("/path", ["GET", "POST"])            — returns decorator
+    //   app.route("/path")                             — defaults to GET, returns decorator
+    func route(pattern, methods, handler) {
+        if (!methods) {
+            methods = ["GET"]
+        }
+
+        if (handler) {
+            for (m in methods) {
+                addRoute(m, pattern, handler)
+            }
+        } else {
+            return lam{ fn in
+                for (m in methods) {
+                    addRoute(m, pattern, fn)
+                }
+                return fn
+            }
+        }
+    }
+
     func findHandler(req) {
-        for (route in routes) {
-            if (route.method != "*" && route.method != req.method) { continue }
-            let params = matchRoute(route.pattern, req.path)
+        for (r in routes) {
+            if (r.method != "*" && r.method != req.method) { continue }
+            let params = matchRoute(r.pattern, req.path)
             if (params) {
-                return {handler: route.handler, params: params}
+                return {handler: r.handler, params: params}
             }
         }
         return {handler: notFoundHandler, params: {}}
@@ -86,13 +140,14 @@ func create() {
 
     return {
         use: lam{ middleware in middlewares.push(middleware) },
-        get: lam{ pattern, handler in addRoute("GET", pattern, handler) },
-        post: lam{ pattern, handler in addRoute("POST", pattern, handler) },
-        put: lam{ pattern, handler in addRoute("PUT", pattern, handler) },
-        delete: lam{ pattern, handler in addRoute("DELETE", pattern, handler) },
-        patch: lam{ pattern, handler in addRoute("PATCH", pattern, handler) },
-        options: lam{ pattern, handler in addRoute("OPTIONS", pattern, handler) },
-        all: lam{ pattern, handler in addRoute("*", pattern, handler) },
+        get: makeRoute("GET"),
+        post: makeRoute("POST"),
+        put: makeRoute("PUT"),
+        delete: makeRoute("DELETE"),
+        patch: makeRoute("PATCH"),
+        options: makeRoute("OPTIONS"),
+        all: makeRoute("*"),
+        route: route,
         notFound: lam{ handler in notFoundHandler = handler },
         handle: lam{ req in handleRequest(req) },
         listen: lam{ port in
