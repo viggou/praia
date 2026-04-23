@@ -131,7 +131,7 @@ void registerBytesBuiltins(std::shared_ptr<PraiaMap> bytesMap) {
                 bool isSigned = (f.type >= 'a' && f.type <= 'z'); // b,h,i,q are signed
                 if (isSigned) {
                     int bits = f.size * 8;
-                    if (raw & (1ULL << (bits - 1)))
+                    if (bits < 64 && (raw & (1ULL << (bits - 1))))
                         val = static_cast<int64_t>(raw | (~0ULL << bits));
                     else
                         val = static_cast<int64_t>(raw);

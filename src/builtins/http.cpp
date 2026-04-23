@@ -395,12 +395,20 @@ Value doHttpRequest(const std::string& method, const std::string& url,
         ensureSSLInit();
         conn.ctx = SSL_CTX_new(TLS_client_method());
         if (!conn.ctx) { conn.shutdown_close(); throw RuntimeError("Failed to create SSL context", 0); }
+        SSL_CTX_set_default_verify_paths(conn.ctx);
+        SSL_CTX_set_verify(conn.ctx, SSL_VERIFY_PEER, nullptr);
         conn.ssl = SSL_new(conn.ctx);
         SSL_set_fd(conn.ssl, conn.fd);
         SSL_set_tlsext_host_name(conn.ssl, p.host.c_str());
         if (SSL_connect(conn.ssl) <= 0) {
             conn.shutdown_close();
             throw RuntimeError("SSL handshake failed for " + p.host, 0);
+        }
+        long vr = SSL_get_verify_result(conn.ssl);
+        if (vr != X509_V_OK) {
+            conn.shutdown_close();
+            throw RuntimeError("SSL certificate verification failed for " + p.host +
+                               ": " + X509_verify_cert_error_string(vr), 0);
         }
     }
 #endif

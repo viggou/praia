@@ -114,6 +114,8 @@ static Value callWithContext(Interpreter& interp,
                                " argument(s) but got " + std::to_string(n), line);
         }
     }
+    if (interp.callStack.size() >= 256)
+        throw RuntimeError("Stack overflow (too many nested calls)", line);
     interp.callStack.push_back({func->name(), line});
     try {
         Value result = func->call(interp, args);
