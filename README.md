@@ -1,6 +1,6 @@
 # Praia
 
-Praia is a dynamically typed, interpreted programming language written in C++ from scratch (lexer, parser, interpreter). It has a pipe operator for chaining data transformations and comes with HTTP, JSON, YAML, regex, and async built in.
+Praia is a dynamically typed, interpreted programming language written in C++ from scratch (lexer, parser, interpreter). It has a pipe operator for chaining data transformations and comes with HTTP, JSON, YAML, regex, generators, and async built in.
 
 ## Example
 
@@ -118,7 +118,8 @@ classes, control flow, error handling, pipes/closures, and JSON.
 
 * Pipe operator (`|>`) with filter, map, each, sort, keys, values
 * Lambdas (`lam{ x in x * 2 }`)
-* Classes with inheritance, super, this
+* Generators with `yield`, lazy iteration, and `for-in` integration
+* Classes with inheritance, super, this, operator overloading
 * Enums and integer types (64-bit)
 * Error handling with try/catch/throw and `ensure` (early-exit guard)
 * String interpolation (`"%{name} is %{age}"`), regex, 14 string methods
@@ -129,6 +130,7 @@ classes, control flow, error handling, pipes/closures, and JSON.
 * Module system ("grains") with import/export
 * Package manager ([sand](https://github.com/praia-lang/sand))
 * File I/O, directories, copy/move (`sys` namespace)
+* Cycle-collecting garbage collector (refcounting + mark-and-sweep)
 * Bytecode VM (default, `--tree` for tree-walker fallback)
 * REPL with readline history and multi-line input
 
@@ -143,6 +145,7 @@ Praia/
 │   ├── parser.h/cpp             # recursive descent parser
 │   ├── value.h                  # runtime value types
 │   ├── environment.h            # variable scoping
+│   ├── gc_heap.h/cpp            # cycle-collecting garbage collector
 │   ├── grain_resolve.h          # grain/module resolution logic
 │   ├── interpreter.h            # Interpreter class + Callable subtypes
 │   ├── interpreter.cpp          # grain loading, execute(), evaluate()
@@ -179,7 +182,7 @@ Praia is still in active development. The language is generally functional, but 
 
 * **Async tasks are isolated (VM only)** - the bytecode VM deep-copies globals, arguments, upvalues, and instances for each `async` call. Tasks run in true parallel with no shared mutable state. The tree-walker (`--tree`) runs async tasks in parallel but shares environments, so concurrent mutation of globals/closures can race. Use the VM (default) for correct async isolation.
 * **No native Windows support** - Praia uses POSIX APIs for sockets, terminal I/O, and environment variables. Works on macOS, Linux, and Windows via WSL. Should work on BSD systems but is untested.
-* **No garbage collector** - memory is managed with reference counting (shared_ptr). Circular references will leak.
+* **Tree-walker GC is conservative** - the bytecode VM runs cycle collection during execution. The tree-walker (`--tree`) only collects between top-level statements, so long-running single-statement loops (e.g., server `while(true)`) won't trigger collection. Use the VM (default) for best GC behavior.
 
 ## Documentation
 
