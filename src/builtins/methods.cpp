@@ -2,9 +2,20 @@
 #include "../value.h"
 #include "../vm/vm.h"
 #include <algorithm>
+#include <future>
 #include <memory>
 #include <regex>
 #include <string>
+
+static constexpr int REGEX_TIMEOUT_MS = 5000;
+
+template<typename F>
+auto regexWithTimeout(F&& fn, const char* funcName) -> decltype(fn()) {
+    auto future = std::async(std::launch::async, std::forward<F>(fn));
+    if (future.wait_for(std::chrono::milliseconds(REGEX_TIMEOUT_MS)) == std::future_status::timeout)
+        throw RuntimeError(std::string(funcName) + " regex timed out (possible catastrophic backtracking)", 0);
+    return future.get();
+}
 
 Value getStringMethod(const std::string& str,
                       const std::string& name, int line) {
@@ -136,7 +147,9 @@ Value getStringMethod(const std::string& str,
                 throw RuntimeError("test() pattern must be a string", 0);
             try {
                 std::regex re(args[0].asString());
-                return Value(std::regex_search(str, re));
+                return regexWithTimeout([&] {
+                    return Value(std::regex_search(str, re));
+                }, "test()");
             } catch (const std::regex_error& e) {
                 throw RuntimeError(std::string("Invalid regex: ") + e.what(), 0);
             }
@@ -148,17 +161,18 @@ Value getStringMethod(const std::string& str,
                 throw RuntimeError("match() pattern must be a string", 0);
             try {
                 std::regex re(args[0].asString());
-                std::smatch m;
-                if (!std::regex_search(str, m, re)) return Value();
-                // Return map with match and groups
-                auto result = std::make_shared<PraiaMap>();
-                result->entries["match"] = Value(m[0].str());
-                result->entries["index"] = Value(static_cast<int64_t>(m.position(0)));
-                auto groups = std::make_shared<PraiaArray>();
-                for (size_t i = 1; i < m.size(); i++)
-                    groups->elements.push_back(Value(m[i].str()));
-                result->entries["groups"] = Value(groups);
-                return Value(result);
+                return regexWithTimeout([&]() -> Value {
+                    std::smatch m;
+                    if (!std::regex_search(str, m, re)) return Value();
+                    auto result = std::make_shared<PraiaMap>();
+                    result->entries["match"] = Value(m[0].str());
+                    result->entries["index"] = Value(static_cast<int64_t>(m.position(0)));
+                    auto groups = std::make_shared<PraiaArray>();
+                    for (size_t i = 1; i < m.size(); i++)
+                        groups->elements.push_back(Value(m[i].str()));
+                    result->entries["groups"] = Value(groups);
+                    return Value(result);
+                }, "match()");
             } catch (const std::regex_error& e) {
                 throw RuntimeError(std::string("Invalid regex: ") + e.what(), 0);
             }
@@ -170,20 +184,22 @@ Value getStringMethod(const std::string& str,
                 throw RuntimeError("matchAll() pattern must be a string", 0);
             try {
                 std::regex re(args[0].asString());
-                auto results = std::make_shared<PraiaArray>();
-                auto begin = std::sregex_iterator(str.begin(), str.end(), re);
-                auto end = std::sregex_iterator();
-                for (auto it = begin; it != end; ++it) {
-                    auto entry = std::make_shared<PraiaMap>();
-                    entry->entries["match"] = Value((*it)[0].str());
-                    entry->entries["index"] = Value(static_cast<int64_t>(it->position(0)));
-                    auto groups = std::make_shared<PraiaArray>();
-                    for (size_t i = 1; i < it->size(); i++)
-                        groups->elements.push_back(Value((*it)[i].str()));
-                    entry->entries["groups"] = Value(groups);
-                    results->elements.push_back(Value(entry));
-                }
-                return Value(results);
+                return regexWithTimeout([&]() -> Value {
+                    auto results = std::make_shared<PraiaArray>();
+                    auto begin = std::sregex_iterator(str.begin(), str.end(), re);
+                    auto end = std::sregex_iterator();
+                    for (auto it = begin; it != end; ++it) {
+                        auto entry = std::make_shared<PraiaMap>();
+                        entry->entries["match"] = Value((*it)[0].str());
+                        entry->entries["index"] = Value(static_cast<int64_t>(it->position(0)));
+                        auto groups = std::make_shared<PraiaArray>();
+                        for (size_t i = 1; i < it->size(); i++)
+                            groups->elements.push_back(Value((*it)[i].str()));
+                        entry->entries["groups"] = Value(groups);
+                        results->elements.push_back(Value(entry));
+                    }
+                    return Value(results);
+                }, "matchAll()");
             } catch (const std::regex_error& e) {
                 throw RuntimeError(std::string("Invalid regex: ") + e.what(), 0);
             }
@@ -195,7 +211,10 @@ Value getStringMethod(const std::string& str,
                 throw RuntimeError("replacePattern() requires string arguments", 0);
             try {
                 std::regex re(args[0].asString());
-                return Value(std::regex_replace(str, re, args[1].asString()));
+                std::string replacement = args[1].asString();
+                return regexWithTimeout([&] {
+                    return Value(std::regex_replace(str, re, replacement));
+                }, "replacePattern()");
             } catch (const std::regex_error& e) {
                 throw RuntimeError(std::string("Invalid regex: ") + e.what(), 0);
             }
