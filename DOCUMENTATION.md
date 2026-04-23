@@ -1527,6 +1527,7 @@ sys.remove("my/nested/dir")         // delete a directory (recursive)
 sys.copy("src.txt", "dst.txt")      // copy a file
 sys.copy("srcdir", "dstdir")        // copy a directory (recursive)
 sys.move("old.txt", "new.txt")      // move / rename a file or directory
+let files = sys.readDir("my/dir")   // returns array of filenames in directory
 ```
 
 ### Running Commands

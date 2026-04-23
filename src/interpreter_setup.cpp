@@ -381,6 +381,19 @@ Interpreter::Interpreter() {
             return Value();
         }));
 
+    sysMap->entries["readDir"] = Value(makeNative("sys.readDir", 1,
+        [](const std::vector<Value>& args) -> Value {
+            if (!args[0].isString())
+                throw RuntimeError("sys.readDir() requires a string path", 0);
+            auto& p = args[0].asString();
+            if (!fs::is_directory(p))
+                throw RuntimeError("sys.readDir(): not a directory: " + p, 0);
+            auto arr = gcNew<PraiaArray>();
+            for (auto& entry : fs::directory_iterator(p))
+                arr->elements.push_back(Value(entry.path().filename().string()));
+            return Value(arr);
+        }));
+
     sysMap->entries["copy"] = Value(makeNative("sys.copy", 2,
         [](const std::vector<Value>& args) -> Value {
             if (!args[0].isString() || !args[1].isString())

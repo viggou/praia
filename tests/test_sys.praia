@@ -54,6 +54,23 @@ testing.test("sys.move", lam{ in
     sys.remove("/tmp/praia_test_mv2.txt")
 })
 
+testing.test("sys.readDir", lam{ in
+    sys.mkdir("/tmp/praia_test_readdir")
+    sys.write("/tmp/praia_test_readdir/a.txt", "a")
+    sys.write("/tmp/praia_test_readdir/b.txt", "b")
+    sys.write("/tmp/praia_test_readdir/c.praia", "c")
+    let files = sort(sys.readDir("/tmp/praia_test_readdir"))
+    testing.assertEqual(len(files), 3, nil)
+    testing.assertEqual(files[0], "a.txt", nil)
+    testing.assertEqual(files[1], "b.txt", nil)
+    testing.assertEqual(files[2], "c.praia", nil)
+    sys.remove("/tmp/praia_test_readdir")
+})
+
+testing.test("sys.readDir on nonexistent throws", lam{ in
+    testing.assertThrows(lam{ in sys.readDir("/tmp/praia_nonexistent_dir_xyz") }, nil)
+})
+
 testing.test("sys.setenv and sys.env", lam{ in
     sys.setenv("PRAIA_TEST_KEY", "test_value")
     testing.assertEqual(sys.env("PRAIA_TEST_KEY"), "test_value", nil)
