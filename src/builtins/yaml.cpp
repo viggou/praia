@@ -45,12 +45,18 @@ class YamlParser {
         std::string line;
         while (pos < src.size() && src[pos] != '\n') line += src[pos++];
         if (pos < src.size()) pos++; // consume \n
-        // Strip trailing comment
+        // Strip trailing comment (skip escaped quotes and quoted regions)
         size_t comment = std::string::npos;
         bool inQuote = false;
+        char quoteChar = 0;
         for (size_t i = 0; i < line.size(); i++) {
-            if (line[i] == '"' || line[i] == '\'') inQuote = !inQuote;
-            if (!inQuote && line[i] == '#') { comment = i; break; }
+            if (inQuote) {
+                if (line[i] == '\\' && quoteChar == '"') { i++; continue; } // skip escaped char
+                if (line[i] == quoteChar) inQuote = false;
+            } else {
+                if (line[i] == '"' || line[i] == '\'') { inQuote = true; quoteChar = line[i]; }
+                else if (line[i] == '#') { comment = i; break; }
+            }
         }
         if (comment != std::string::npos) line = line.substr(0, comment);
         // Strip trailing whitespace
@@ -62,9 +68,32 @@ class YamlParser {
         if (s.empty() || s == "~" || s == "null" || s == "Null" || s == "NULL") return Value();
         if (s == "true" || s == "True" || s == "TRUE") return Value(true);
         if (s == "false" || s == "False" || s == "FALSE") return Value(false);
-        // Quoted string
-        if ((s.front() == '"' && s.back() == '"') || (s.front() == '\'' && s.back() == '\''))
+        // Single-quoted string — literal, no escapes
+        if (s.front() == '\'' && s.back() == '\'')
             return Value(s.substr(1, s.size() - 2));
+        // Double-quoted string — process escape sequences
+        if (s.front() == '"' && s.back() == '"') {
+            std::string raw = s.substr(1, s.size() - 2);
+            std::string out;
+            for (size_t i = 0; i < raw.size(); i++) {
+                if (raw[i] == '\\' && i + 1 < raw.size()) {
+                    switch (raw[++i]) {
+                        case 'n':  out += '\n'; break;
+                        case 't':  out += '\t'; break;
+                        case 'r':  out += '\r'; break;
+                        case '\\': out += '\\'; break;
+                        case '"':  out += '"';  break;
+                        case '0':  out += '\0'; break;
+                        case 'a':  out += '\a'; break;
+                        case 'b':  out += '\b'; break;
+                        default:   out += '\\'; out += raw[i]; break;
+                    }
+                } else {
+                    out += raw[i];
+                }
+            }
+            return Value(out);
+        }
         // Try number
         try {
             size_t p = 0;
