@@ -156,19 +156,24 @@ ParsedUrl parseUrl(const std::string& url) {
     return r;
 }
 
+struct AddrGuard {
+    struct addrinfo* res = nullptr;
+    ~AddrGuard() { if (res) freeaddrinfo(res); }
+    struct addrinfo* operator->() { return res; }
+};
+
 int connectToHost(const std::string& host, int port) {
-    struct addrinfo hints = {}, *res;
+    struct addrinfo hints = {};
     hints.ai_family = AF_INET;
     hints.ai_socktype = SOCK_STREAM;
-    if (getaddrinfo(host.c_str(), std::to_string(port).c_str(), &hints, &res) != 0)
+    AddrGuard ag;
+    if (getaddrinfo(host.c_str(), std::to_string(port).c_str(), &hints, &ag.res) != 0)
         throw RuntimeError("Cannot resolve host: " + host, 0);
-    int sock = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
-    if (sock < 0 || connect(sock, res->ai_addr, res->ai_addrlen) < 0) {
+    int sock = socket(ag->ai_family, ag->ai_socktype, ag->ai_protocol);
+    if (sock < 0 || connect(sock, ag->ai_addr, ag->ai_addrlen) < 0) {
         if (sock >= 0) close(sock);
-        freeaddrinfo(res);
         throw RuntimeError("Cannot connect to " + host + ":" + std::to_string(port), 0);
     }
-    freeaddrinfo(res);
     return sock;
 }
 

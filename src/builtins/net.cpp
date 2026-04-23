@@ -6,6 +6,13 @@
 #include <netdb.h>
 #include <unistd.h>
 
+struct AddrGuard {
+    struct addrinfo* res = nullptr;
+    ~AddrGuard() { if (res) freeaddrinfo(res); }
+    struct addrinfo* operator->() { return res; }
+    struct addrinfo* get() { return res; }
+};
+
 static int validatePort(double val, const char* funcName) {
     int port = static_cast<int>(val);
     if (port < 0 || port > 65535)
@@ -23,21 +30,21 @@ void registerNetBuiltins(std::shared_ptr<PraiaMap> netMap) {
             std::string host = args[0].asString();
             int port = validatePort(args[1].asNumber(), "net.connect()");
 
-            struct addrinfo hints = {}, *res;
+            struct addrinfo hints = {};
             hints.ai_family = AF_UNSPEC; // IPv4 or IPv6
             hints.ai_socktype = SOCK_STREAM;
-            if (getaddrinfo(host.c_str(), std::to_string(port).c_str(), &hints, &res) != 0)
+            AddrGuard ag;
+            if (getaddrinfo(host.c_str(), std::to_string(port).c_str(), &hints, &ag.res) != 0)
                 throw RuntimeError("Cannot resolve host: " + host, 0);
             // Try each address until one connects
             int sock = -1;
-            for (auto* p = res; p; p = p->ai_next) {
+            for (auto* p = ag.get(); p; p = p->ai_next) {
                 sock = socket(p->ai_family, p->ai_socktype, p->ai_protocol);
                 if (sock < 0) continue;
                 if (connect(sock, p->ai_addr, p->ai_addrlen) == 0) break;
                 close(sock);
                 sock = -1;
             }
-            freeaddrinfo(res);
             if (sock < 0)
                 throw RuntimeError("Cannot connect to " + host + ":" + std::to_string(port), 0);
             return Value(static_cast<int64_t>(sock));
@@ -234,21 +241,21 @@ void registerNetBuiltins(std::shared_ptr<PraiaMap> netMap) {
             if (getsockname(sock, (struct sockaddr*)&ss, &sslen) == 0)
                 family = ss.ss_family;
 
-            struct addrinfo hints = {}, *res;
+            struct addrinfo hints = {};
             hints.ai_family = family;
             hints.ai_socktype = SOCK_DGRAM;
-            if (getaddrinfo(host.c_str(), std::to_string(port).c_str(), &hints, &res) != 0) {
+            AddrGuard ag;
+            if (getaddrinfo(host.c_str(), std::to_string(port).c_str(), &hints, &ag.res) != 0) {
                 // Socket family didn't match host (e.g. IPv6 socket, IPv4 host) — retry unspec
                 if (family != AF_UNSPEC) {
                     hints.ai_family = AF_UNSPEC;
-                    if (getaddrinfo(host.c_str(), std::to_string(port).c_str(), &hints, &res) != 0)
+                    if (getaddrinfo(host.c_str(), std::to_string(port).c_str(), &hints, &ag.res) != 0)
                         throw RuntimeError("Cannot resolve host: " + host, 0);
                 } else {
                     throw RuntimeError("Cannot resolve host: " + host, 0);
                 }
             }
-            ssize_t sent = sendto(sock, data.c_str(), data.size(), 0, res->ai_addr, res->ai_addrlen);
-            freeaddrinfo(res);
+            ssize_t sent = sendto(sock, data.c_str(), data.size(), 0, ag->ai_addr, ag->ai_addrlen);
             if (sent < 0)
                 throw RuntimeError("sendTo failed", 0);
             return Value(static_cast<int64_t>(sent));
@@ -302,12 +309,13 @@ void registerNetBuiltins(std::shared_ptr<PraiaMap> netMap) {
             if (!args[0].isString())
                 throw RuntimeError("net.resolve() requires a hostname string", 0);
             std::string host = args[0].asString();
-            struct addrinfo hints = {}, *res;
+            struct addrinfo hints = {};
             hints.ai_family = AF_UNSPEC; // return both IPv4 and IPv6
-            if (getaddrinfo(host.c_str(), nullptr, &hints, &res) != 0)
+            AddrGuard ag;
+            if (getaddrinfo(host.c_str(), nullptr, &hints, &ag.res) != 0)
                 throw RuntimeError("Cannot resolve: " + host, 0);
             auto result = std::make_shared<PraiaArray>();
-            for (auto* p = res; p; p = p->ai_next) {
+            for (auto* p = ag.get(); p; p = p->ai_next) {
                 char buf[INET6_ADDRSTRLEN];
                 if (p->ai_family == AF_INET) {
                     auto* addr = (struct sockaddr_in*)p->ai_addr;
@@ -320,7 +328,6 @@ void registerNetBuiltins(std::shared_ptr<PraiaMap> netMap) {
                 }
                 result->elements.push_back(Value(std::string(buf)));
             }
-            freeaddrinfo(res);
             return Value(result);
         }));
 
@@ -403,12 +410,12 @@ void registerNetBuiltins(std::shared_ptr<PraiaMap> netMap) {
             if (getsockname(sock, (struct sockaddr*)&ss, &sslen) == 0 && ss.ss_family != 0)
                 family = ss.ss_family;
 
-            struct addrinfo hints = {}, *res;
+            struct addrinfo hints = {};
             hints.ai_family = family;
-            if (getaddrinfo(host.c_str(), nullptr, &hints, &res) != 0)
+            AddrGuard ag;
+            if (getaddrinfo(host.c_str(), nullptr, &hints, &ag.res) != 0)
                 throw RuntimeError("net.rawSend(): cannot resolve host: " + host, 0);
-            ssize_t sent = sendto(sock, data.data(), data.size(), 0, res->ai_addr, res->ai_addrlen);
-            freeaddrinfo(res);
+            ssize_t sent = sendto(sock, data.data(), data.size(), 0, ag->ai_addr, ag->ai_addrlen);
             if (sent < 0)
                 throw RuntimeError("net.rawSend() failed", 0);
             return Value(static_cast<int64_t>(sent));
