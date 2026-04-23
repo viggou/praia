@@ -6,6 +6,13 @@
 #include <netdb.h>
 #include <unistd.h>
 
+static int validatePort(double val, const char* funcName) {
+    int port = static_cast<int>(val);
+    if (port < 0 || port > 65535)
+        throw RuntimeError(std::string(funcName) + " port must be 0–65535, got " + std::to_string(port), 0);
+    return port;
+}
+
 void registerNetBuiltins(std::shared_ptr<PraiaMap> netMap) {
     netMap->entries["connect"] = Value(makeNative("net.connect", 2,
         [](const std::vector<Value>& args) -> Value {
@@ -14,7 +21,7 @@ void registerNetBuiltins(std::shared_ptr<PraiaMap> netMap) {
             if (!args[1].isNumber())
                 throw RuntimeError("net.connect() requires a port number", 0);
             std::string host = args[0].asString();
-            int port = static_cast<int>(args[1].asNumber());
+            int port = validatePort(args[1].asNumber(), "net.connect()");
 
             struct addrinfo hints = {}, *res;
             hints.ai_family = AF_UNSPEC; // IPv4 or IPv6
@@ -40,7 +47,7 @@ void registerNetBuiltins(std::shared_ptr<PraiaMap> netMap) {
         [](const std::vector<Value>& args) -> Value {
             if (!args[0].isNumber())
                 throw RuntimeError("net.listen() requires a port number", 0);
-            int port = static_cast<int>(args[0].asNumber());
+            int port = validatePort(args[0].asNumber(), "net.listen()");
 
             // Try IPv6 dual-stack first (accepts both v4 and v6), fall back to IPv4
             int fd = socket(AF_INET6, SOCK_STREAM, 0);
@@ -175,7 +182,7 @@ void registerNetBuiltins(std::shared_ptr<PraiaMap> netMap) {
         [](const std::vector<Value>& args) -> Value {
             if (!args[0].isNumber())
                 throw RuntimeError("net.udpBind() requires a port number", 0);
-            int port = static_cast<int>(args[0].asNumber());
+            int port = validatePort(args[0].asNumber(), "net.udpBind()");
 
             // Try IPv6 dual-stack first
             int sock = socket(AF_INET6, SOCK_DGRAM, 0);
@@ -217,7 +224,7 @@ void registerNetBuiltins(std::shared_ptr<PraiaMap> netMap) {
             if (!args[3].isString()) throw RuntimeError("net.sendTo() requires data string", 0);
             int sock = static_cast<int>(args[0].asNumber());
             std::string host = args[1].asString();
-            int port = static_cast<int>(args[2].asNumber());
+            int port = validatePort(args[2].asNumber(), "net.sendTo()");
             auto& data = args[3].asString();
 
             // Detect socket family to match resolution, fall back to AF_UNSPEC
