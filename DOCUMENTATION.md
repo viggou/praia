@@ -709,6 +709,40 @@ class Server {
 }
 ```
 
+### Named arguments
+
+Arguments can be passed by name using `name: value` syntax. Positional arguments must come first; once a named argument appears, all remaining arguments must be named.
+
+```
+func createUser(name, age, role = "user") {
+    return {name: name, age: age, role: role}
+}
+
+createUser("Ada", 36)                       // all positional
+createUser("Ada", role: "admin", age: 36)   // mixed
+createUser(name: "Ada", age: 36)            // all named, role uses default
+```
+
+Named arguments work with lambdas, class constructors, and the pipe operator:
+
+```
+let add = lam{ a, b in a + b }
+add(b: 10, a: 5)          // 15
+
+class Point {
+    func init(x, y) { this.x = x; this.y = y }
+}
+let p = Point(y: 20, x: 10)
+
+// Pipe — the left value is the first positional arg
+func format(value, prefix = "", suffix = "") {
+    return prefix + str(value) + suffix
+}
+42 |> format(suffix: "!")  // "42!"
+```
+
+Unknown parameter names and duplicate names throw a runtime error. Native built-in functions do not support named arguments.
+
 ### Implicit nil Return
 
 Functions without an explicit `return` return `nil`.
@@ -760,6 +794,51 @@ func double(n) { return n * 2 }
 
 print(apply(double, 21))   // 42
 ```
+
+### Decorators
+
+Decorators wrap a function with another function using the `@` syntax. They are pure syntactic sugar — `@dec func f(){}` desugars to `func f(){}; f = dec(f)`.
+
+```
+func log(fn) {
+    return lam{ ...args in
+        print("calling " + str(fn))
+        return fn(...args)
+    }
+}
+
+@log
+func add(a, b) { return a + b }
+
+add(2, 3)   // prints "calling <function add>", returns 5
+```
+
+Multiple decorators are applied bottom-up (innermost first):
+
+```
+@auth
+@log
+func handler(req) { ... }
+// equivalent to: handler = auth(log(handler))
+```
+
+Decorators can take arguments by calling the decorator to produce the wrapper:
+
+```
+func role(required) {
+    return lam{ fn in
+        return lam{ ...args in
+            print("checking role: " + required)
+            return fn(...args)
+        }
+    }
+}
+
+@role("admin")
+func deleteUser(id) { ... }
+```
+
+> **Note:** Decorators are currently supported on top-level and block-level `func` declarations only, not on class methods. To wrap a method, assign it manually after the class definition.
 
 ---
 
@@ -968,6 +1047,51 @@ print(a == b)       // true (same reference)
 let c = Animal("Rex", "woof")
 print(a == c)       // false (different instances)
 ```
+
+### Operator overloading
+
+Classes can define special "dunder" methods to customize how operators work on instances.
+
+```
+class Vec {
+    func init(x, y) { this.x = x; this.y = y }
+    func __add(other) { return Vec(this.x + other.x, this.y + other.y) }
+    func __eq(other)  { return this.x == other.x && this.y == other.y }
+    func __neg()      { return Vec(-this.x, -this.y) }
+    func __str()      { return "(%{this.x}, %{this.y})" }
+    func __len()      { return 2 }
+    func __index(key) { if (key == 0) { return this.x } return this.y }
+    func __indexSet(key, val) {
+        if (key == 0) { this.x = val } else { this.y = val }
+    }
+}
+
+let a = Vec(1, 2) + Vec(3, 4)   // Vec(4, 6)
+print(-a)                        // (-4, -6)
+print(a == Vec(4, 6))            // true
+print(len(a))                    // 2
+print(a[0])                      // 4
+```
+
+| Method | Operators |
+|--------|-----------|
+| `__add(other)` | `+` |
+| `__sub(other)` | `-` (binary) |
+| `__mul(other)` | `*` |
+| `__div(other)` | `/` |
+| `__mod(other)` | `%` |
+| `__eq(other)` | `==`, `!=` (negated) |
+| `__lt(other)` | `<`, `>=` (negated) |
+| `__gt(other)` | `>`, `<=` (negated) |
+| `__neg()` | unary `-` |
+| `__str()` | `str()`, string interpolation |
+| `__len()` | `len()` |
+| `__index(key)` | `obj[key]` |
+| `__indexSet(key, val)` | `obj[key] = val` |
+
+The existing `toString()` method convention continues to work — `str()` checks `__str` first, then falls back to `toString()` for backwards compatibility.
+
+Classes without operator overloads use default behavior (reference equality for `==`, errors for arithmetic).
 
 ---
 
