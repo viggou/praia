@@ -4,6 +4,7 @@
 #include <atomic>
 #include <csignal>
 #include <iostream>
+#include <mutex>
 #include <sstream>
 #include <string>
 #include <unordered_map>
@@ -50,14 +51,13 @@ struct SocketConn {
 };
 
 #ifdef HAVE_OPENSSL
-static bool sslInitDone = false;
+static std::once_flag sslInitFlag;
 static void ensureSSLInit() {
-    if (!sslInitDone) {
+    std::call_once(sslInitFlag, [] {
         SSL_library_init();
         SSL_load_error_strings();
         OpenSSL_add_all_algorithms();
-        sslInitDone = true;
-    }
+    });
 }
 #endif
 
