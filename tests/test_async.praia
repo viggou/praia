@@ -35,4 +35,53 @@ testing.test("future prints as <future>", lam{ in
     await f
 })
 
+testing.test("async class construction runs init", lam{ in
+    class Point {
+        func init(x, y) { this.x = x; this.y = y }
+    }
+    let fut = async Point(10, 20)
+    let p = await fut
+    testing.assertEqual(p.x, 10, nil)
+    testing.assertEqual(p.y, 20, nil)
+})
+
+testing.test("async class construction with named args", lam{ in
+    class Pair {
+        func init(a, b) { this.a = a; this.b = b }
+    }
+    let fut = async Pair(b: 99, a: 42)
+    let p = await fut
+    testing.assertEqual(p.a, 42, nil)
+    testing.assertEqual(p.b, 99, nil)
+})
+
+testing.test("async class no-init with no args", lam{ in
+    class Empty {}
+    let fut = async Empty()
+    let e = await fut
+    testing.assertEqual(type(e), "instance", nil)
+})
+
+testing.test("async class no-init rejects args", lam{ in
+    class Empty {}
+    testing.assertThrows(lam{ in
+        let fut = async Empty(1)
+        await fut
+    }, nil)
+})
+
+testing.test("async native too few args throws", lam{ in
+    testing.assertThrows(lam{ in
+        let fut = async len()
+        await fut
+    }, nil)
+})
+
+testing.test("async native too many args throws", lam{ in
+    testing.assertThrows(lam{ in
+        let fut = async len([1, 2], 99)
+        await fut
+    }, nil)
+})
+
 testing.done()

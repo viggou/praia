@@ -47,4 +47,26 @@ testing.test(".toNum() throws on invalid string", lam{ in
     testing.assertThrows(lam{ in "abc".toNum() }, nil)
 })
 
+testing.test("instance .toString() calls user method", lam{ in
+    class A {
+        func toString() { return "custom" }
+    }
+    testing.assertEqual(A().toString(), "custom", nil)
+    // str() should also use it (via __str/toString fallback)
+    testing.assertEqual(str(A()), "custom", nil)
+})
+
+testing.test("instance .toNum() calls user method", lam{ in
+    class B {
+        func init(v) { this.v = v }
+        func toNum() { return this.v }
+    }
+    testing.assertEqual(B(42).toNum(), 42, nil)
+})
+
+testing.test("instance without override gets universal .toString()", lam{ in
+    class Plain {}
+    testing.assertEqual(Plain().toString(), "<instance>", nil)
+})
+
 testing.done()

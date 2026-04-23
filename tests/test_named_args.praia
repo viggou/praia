@@ -45,4 +45,22 @@ testing.test("native function rejects named args", lam{ in
     testing.assertThrows(lam{ in len(x: [1]) }, nil)
 })
 
+testing.test("named args through async", lam{ in
+    func f(a, b, c) { return [a, b, c] }
+    let fut = async f(b: 2, a: 1, c: 3)
+    testing.assertEqual(await fut, [1, 2, 3], nil)
+})
+
+testing.test("named args through pipe", lam{ in
+    func f(a, b, c) { return [a, b, c] }
+    let r = 10 |> f(c: 30, b: 20)
+    testing.assertEqual(r, [10, 20, 30], nil)
+})
+
+testing.test("named args through pipe with defaults", lam{ in
+    func f(a, b = 5, c = 9) { return [a, b, c] }
+    let r = 1 |> f(c: 3)
+    testing.assertEqual(r, [1, 5, 3], nil)
+})
+
 testing.done()
