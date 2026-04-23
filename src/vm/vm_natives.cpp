@@ -64,6 +64,7 @@ void vmRegisterNatives(VM& vm) {
         "Lock", "Channel", "futures", "sort", "filter", "map", "each", "keys", "values",
         "sys", "http", "json", "yaml", "base64", "path", "url", "net",
         "bytes", "crypto", "random", "time", "math",
+        "loadNative",
 #ifdef HAVE_SQLITE
         "sqlite",
 #endif

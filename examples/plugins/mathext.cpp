@@ -1,0 +1,64 @@
+#include "../../src/praia_plugin.h"
+#include <cmath>
+
+extern "C" void praia_register(PraiaMap* module) {
+    // mathext.gcd(a, b) — greatest common divisor
+    module->entries["gcd"] = Value(makeNative("mathext.gcd", 2,
+        [](const std::vector<Value>& args) -> Value {
+            if (!args[0].isNumber() || !args[1].isNumber())
+                throw RuntimeError("mathext.gcd() requires two numbers", 0);
+            int64_t a = static_cast<int64_t>(args[0].asNumber());
+            int64_t b = static_cast<int64_t>(args[1].asNumber());
+            while (b != 0) { int64_t t = b; b = a % b; a = t; }
+            return Value(a < 0 ? -a : a);
+        }));
+
+    // mathext.lcm(a, b) — least common multiple
+    module->entries["lcm"] = Value(makeNative("mathext.lcm", 2,
+        [](const std::vector<Value>& args) -> Value {
+            if (!args[0].isNumber() || !args[1].isNumber())
+                throw RuntimeError("mathext.lcm() requires two numbers", 0);
+            int64_t a = static_cast<int64_t>(args[0].asNumber());
+            int64_t b = static_cast<int64_t>(args[1].asNumber());
+            if (a == 0 || b == 0) return Value(static_cast<int64_t>(0));
+            int64_t g = a;
+            int64_t tmp = b;
+            while (tmp != 0) { int64_t t = tmp; tmp = g % tmp; g = t; }
+            return Value(static_cast<int64_t>(std::abs(a / g * b)));
+        }));
+
+    // mathext.fibonacci(n) — nth Fibonacci number
+    module->entries["fibonacci"] = Value(makeNative("mathext.fibonacci", 1,
+        [](const std::vector<Value>& args) -> Value {
+            if (!args[0].isNumber())
+                throw RuntimeError("mathext.fibonacci() requires a number", 0);
+            int n = static_cast<int>(args[0].asNumber());
+            if (n < 0) throw RuntimeError("mathext.fibonacci() requires non-negative number", 0);
+            if (n <= 1) return Value(static_cast<int64_t>(n));
+            int64_t a = 0, b = 1;
+            for (int i = 2; i <= n; i++) { int64_t t = a + b; a = b; b = t; }
+            return Value(b);
+        }));
+
+    // mathext.hypot(a, b) — hypotenuse
+    module->entries["hypot"] = Value(makeNative("mathext.hypot", 2,
+        [](const std::vector<Value>& args) -> Value {
+            if (!args[0].isNumber() || !args[1].isNumber())
+                throw RuntimeError("mathext.hypot() requires two numbers", 0);
+            return Value(std::hypot(args[0].asNumber(), args[1].asNumber()));
+        }));
+
+    // mathext.sum(array) — sum all numbers in an array
+    module->entries["sum"] = Value(makeNative("mathext.sum", 1,
+        [](const std::vector<Value>& args) -> Value {
+            if (!args[0].isArray())
+                throw RuntimeError("mathext.sum() requires an array", 0);
+            double total = 0;
+            for (auto& elem : args[0].asArray()->elements) {
+                if (!elem.isNumber())
+                    throw RuntimeError("mathext.sum(): array must contain only numbers", 0);
+                total += elem.asNumber();
+            }
+            return Value(total);
+        }));
+}

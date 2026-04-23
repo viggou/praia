@@ -1,0 +1,57 @@
+use "testing"
+
+let ext = ".dylib"
+if (sys.platform != "darwin") {
+    ext = ".so"
+}
+
+let pluginPath = "examples/plugins/mathext" + ext
+
+if (!sys.exists(pluginPath)) {
+    print("Skipping loadNative tests — plugin not built")
+    print("Build with: make plugin SRC=examples/plugins/mathext.cpp OUT=examples/plugins/mathext" + ext)
+    testing.done()
+}
+
+let mathext = loadNative(pluginPath)
+
+testing.test("gcd", lam{ in
+    testing.assertEqual(mathext.gcd(48, 18), 6, nil)
+    testing.assertEqual(mathext.gcd(100, 75), 25, nil)
+    testing.assertEqual(mathext.gcd(7, 13), 1, nil)
+})
+
+testing.test("lcm", lam{ in
+    testing.assertEqual(mathext.lcm(12, 8), 24, nil)
+    testing.assertEqual(mathext.lcm(0, 5), 0, nil)
+})
+
+testing.test("fibonacci", lam{ in
+    testing.assertEqual(mathext.fibonacci(0), 0, nil)
+    testing.assertEqual(mathext.fibonacci(1), 1, nil)
+    testing.assertEqual(mathext.fibonacci(10), 55, nil)
+})
+
+testing.test("hypot", lam{ in
+    testing.assertEqual(mathext.hypot(3, 4), 5, nil)
+})
+
+testing.test("sum", lam{ in
+    testing.assertEqual(mathext.sum([1, 2, 3, 4, 5]), 15, nil)
+    testing.assertEqual(mathext.sum([]), 0, nil)
+})
+
+testing.test("cached load returns same module", lam{ in
+    let mathext2 = loadNative(pluginPath)
+    testing.assertEqual(mathext2.gcd(100, 75), 25, nil)
+})
+
+testing.test("bad path throws", lam{ in
+    testing.assertThrows(lam{ in loadNative("nonexistent.so") }, nil)
+})
+
+testing.test("non-string throws", lam{ in
+    testing.assertThrows(lam{ in loadNative(42) }, nil)
+})
+
+testing.done()

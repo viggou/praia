@@ -47,8 +47,21 @@ else
   endif
 endif
 
+# Auto-detect -ldl for dlopen (Linux needs it, macOS has it in libSystem)
+HAVE_DL := $(shell echo 'int main(){}' | $(CXX) -x c++ - -ldl -o /dev/null 2>/dev/null && echo 1)
+ifeq ($(HAVE_DL),1)
+  LDLIBS += -ldl
+endif
+
+# Export symbols so dlopen'd plugins can resolve types from the main binary
+LDFLAGS =
+UNAME_S := $(shell uname -s)
+ifeq ($(UNAME_S),Linux)
+  LDFLAGS += -rdynamic
+endif
+
 $(TARGET): $(OBJECTS)
-	$(CXX) $(CXXFLAGS) -o $@ $^ $(LDLIBS)
+	$(CXX) $(CXXFLAGS) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
 $(BUILD_DIR)/%.o: $(SRC_DIR)/%.cpp | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) -c -o $@ $<
@@ -114,4 +127,9 @@ test-input: $(TARGET)
 	  echo "$$out" | grep -q "No input" && \
 	  echo "sys.input EOF: ok"
 
-.PHONY: all clean install uninstall test test-input
+# ── Plugin build helper ──
+# Usage: make plugin SRC=examples/plugins/mathext.cpp OUT=examples/plugins/mathext.dylib
+plugin:
+	$(CXX) -std=c++17 -shared -fPIC -I$(SRC_DIR) -o $(OUT) $(SRC)
+
+.PHONY: all clean install uninstall test test-input plugin
