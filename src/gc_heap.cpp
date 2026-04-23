@@ -57,9 +57,13 @@ void GcHeap::collect() {
     mark();
     sweep();
 
-    // Auto-tune: if we collected nothing, increase threshold (fewer wasted scans)
+    // Auto-tune threshold based on results
     if (lastCollected_ == 0 && threshold_ < 10000) {
+        // No garbage found — collect less frequently
         threshold_ = std::min(threshold_ * 2, 10000);
+    } else if (lastCollected_ > 0 && threshold_ > 500) {
+        // Found garbage — collect more frequently
+        threshold_ = std::max(threshold_ / 2, 500);
     }
     collecting_ = false;
 }
