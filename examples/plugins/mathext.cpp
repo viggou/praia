@@ -53,12 +53,21 @@ extern "C" void praia_register(PraiaMap* module) {
         [](const std::vector<Value>& args) -> Value {
             if (!args[0].isArray())
                 throw RuntimeError("mathext.sum() requires an array", 0);
-            double total = 0;
+            bool allInt = true;
+            int64_t intTotal = 0;
+            double floatTotal = 0;
             for (auto& elem : args[0].asArray()->elements) {
                 if (!elem.isNumber())
                     throw RuntimeError("mathext.sum(): array must contain only numbers", 0);
-                total += elem.asNumber();
+                if (elem.isInt()) {
+                    intTotal += elem.asInt();
+                    floatTotal += static_cast<double>(elem.asInt());
+                } else {
+                    allInt = false;
+                    floatTotal += elem.asNumber();
+                }
             }
-            return Value(total);
+            if (allInt) return Value(intTotal);
+            return Value(floatTotal);
         }));
 }

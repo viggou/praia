@@ -1801,13 +1801,13 @@ Interpreter::Interpreter() {
                 throw RuntimeError("loadNative(): file not found: " + path, 0);
             }
 
+            // Lock for the entire load to prevent double-loading
+            std::lock_guard<std::mutex> lock(g_pluginMutex);
+
             // Check cache
-            {
-                std::lock_guard<std::mutex> lock(g_pluginMutex);
-                auto it = g_pluginCache.find(absPath);
-                if (it != g_pluginCache.end())
-                    return Value(it->second);
-            }
+            auto it = g_pluginCache.find(absPath);
+            if (it != g_pluginCache.end())
+                return Value(it->second);
 
             // dlopen
             void* handle = dlopen(absPath.c_str(), RTLD_NOW | RTLD_LOCAL);
@@ -1816,13 +1816,15 @@ Interpreter::Interpreter() {
                 throw RuntimeError("loadNative(): failed to load '" + path + "': " + err, 0);
             }
 
+            // Keep handle alive — never dlclose (function pointers live in lambdas)
+            g_pluginHandles.push_back(handle);
+
             // dlsym for the entry point
             using RegisterFn = void (*)(PraiaMap*);
             dlerror(); // clear any old error
             auto registerFn = reinterpret_cast<RegisterFn>(dlsym(handle, "praia_register"));
             const char* dlErr = dlerror();
             if (dlErr) {
-                dlclose(handle);
                 throw RuntimeError(
                     "loadNative(): plugin '" + path +
                     "' missing 'praia_register' symbol: " + std::string(dlErr), 0);
@@ -1833,18 +1835,13 @@ Interpreter::Interpreter() {
             try {
                 registerFn(moduleMap.get());
             } catch (const std::exception& e) {
-                dlclose(handle);
                 throw RuntimeError(
                     "loadNative(): plugin '" + path +
                     "' threw during registration: " + std::string(e.what()), 0);
             }
 
-            // Cache and keep handle alive
-            {
-                std::lock_guard<std::mutex> lock(g_pluginMutex);
-                g_pluginCache[absPath] = moduleMap;
-                g_pluginHandles.push_back(handle);
-            }
+            // Cache
+            g_pluginCache[absPath] = moduleMap;
 
             return Value(moduleMap);
         })));

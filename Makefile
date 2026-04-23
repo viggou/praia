@@ -54,7 +54,6 @@ ifeq ($(HAVE_DL),1)
 endif
 
 # Export symbols so dlopen'd plugins can resolve types from the main binary
-LDFLAGS =
 UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S),Linux)
   LDFLAGS += -rdynamic

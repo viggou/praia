@@ -23,7 +23,7 @@
 //   make plugin SRC=myplugin.cpp OUT=myplugin.so       # Linux
 //
 // Use in Praia:
-//   let mymod = loadNative("./myplugin.dylib")
+//   let mymod = loadNative("./myplugin")  // extension auto-detected
 //   print(mymod.double(21))  // 42
 
 #pragma once
