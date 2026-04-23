@@ -135,8 +135,7 @@ Value VM::pop() {
 Value& VM::peek(int distance) {
     int idx = stackTop - 1 - distance;
     if (idx < 0) {
-        std::cerr << "Internal error: stack underflow (peek)" << std::endl;
-        idx = 0;
+        throw RuntimeError("Internal error: stack underflow (peek)", 0);
     }
     return stack[idx];
 }
