@@ -241,6 +241,7 @@ void vmRegisterNatives(VM& vm) {
     vm.defineNative("__iterEntries", makeNat("__iterEntries", 1,
         [](const std::vector<Value>& args) -> Value {
             const Value& v = args[0];
+            if (v.isGenerator()) return v; // generators are their own iterator
             if (v.isArray()) return v;
             if (v.isMap()) {
                 auto arr = std::make_shared<PraiaArray>();
@@ -259,6 +260,37 @@ void vmRegisterNatives(VM& vm) {
                 return Value(arr);
             }
             return Value(); // nil for non-iterables
+        }));
+
+    // __iterNext(iter, idx) — unified iteration step for for-in loops.
+    // For arrays: returns {value: iter[idx], done: false} or {done: true}.
+    // For generators: calls .next(), returns {value, done}.
+    vm.defineNative("__iterNext", makeNat("__iterNext", 2,
+        [](const std::vector<Value>& args) -> Value {
+            auto result = std::make_shared<PraiaMap>();
+            if (args[0].isGenerator()) {
+                auto gen = args[0].asGenerator();
+                auto* vm = VM::current();
+                if (!vm) throw RuntimeError("No active VM for generator iteration", 0);
+                return vm->resumeGenerator(gen, Value());
+            }
+            // Array path
+            if (args[0].isArray()) {
+                auto& elems = args[0].asArray()->elements;
+                int idx = static_cast<int>(args[1].asNumber());
+                if (idx >= static_cast<int>(elems.size())) {
+                    result->entries["value"] = Value();
+                    result->entries["done"] = Value(true);
+                } else {
+                    result->entries["value"] = elems[idx];
+                    result->entries["done"] = Value(false);
+                }
+                return Value(result);
+            }
+            // Nil or unknown — done
+            result->entries["value"] = Value();
+            result->entries["done"] = Value(true);
+            return Value(result);
         }));
 
     vm.defineNative("__arraySlice", makeNat("__arraySlice", 2,

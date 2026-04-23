@@ -480,18 +480,52 @@ void Interpreter::execute(const Stmt* stmt) {
                     catch (const ContinueSignal&) {}
                 }
             } catch (const BreakSignal&) {}
+        } else if (iterable.isGenerator()) {
+            auto gen = iterable.asGenerator();
+            try {
+                while (true) {
+                    if (gen->state == PraiaGenerator::State::COMPLETED) break;
+                    // Call .next() inline
+                    {
+                        std::unique_lock<std::mutex> lock(gen->mtx);
+                        gen->sendValue = Value();
+                        gen->resumed = true;
+                        gen->hasValue = false;
+                        gen->callerCV.notify_one();
+                        gen->genCV.wait(lock, [&] { return gen->hasValue; });
+                    }
+                    if (!gen->errorMessage.empty())
+                        throw RuntimeError(gen->errorMessage, s->line);
+                    if (gen->done) break;
+
+                    auto iterEnv = std::make_shared<Environment>(env);
+                    defineLoopVar(iterEnv, gen->lastYielded);
+                    try { executeBlock(bodyBlock, iterEnv); }
+                    catch (const ContinueSignal&) {}
+                }
+            } catch (const BreakSignal&) {}
         } else {
-            throw RuntimeError("for-in requires an array, map, or string", s->line);
+            throw RuntimeError("for-in requires an array, map, string, or generator", s->line);
         }
 
     } else if (auto* s = dynamic_cast<const FuncStmt*>(stmt)) {
-        auto func = std::make_shared<PraiaFunction>();
-        func->funcName = s->name;
-        func->params = s->params;
-        func->defaults = &s->defaults;
-        func->body = static_cast<const BlockStmt*>(s->body.get());
-        func->closure = env;
-        env->define(s->name, Value(func));
+        if (s->isGenerator) {
+            auto func = std::make_shared<PraiaGeneratorFunction>();
+            func->funcName = s->name;
+            func->params = s->params;
+            func->defaults = &s->defaults;
+            func->body = static_cast<const BlockStmt*>(s->body.get());
+            func->closure = env;
+            env->define(s->name, Value(std::static_pointer_cast<Callable>(func)));
+        } else {
+            auto func = std::make_shared<PraiaFunction>();
+            func->funcName = s->name;
+            func->params = s->params;
+            func->defaults = &s->defaults;
+            func->body = static_cast<const BlockStmt*>(s->body.get());
+            func->closure = env;
+            env->define(s->name, Value(std::static_pointer_cast<Callable>(func)));
+        }
 
     } else if (auto* s = dynamic_cast<const EnumStmt*>(stmt)) {
         auto enumMap = std::make_shared<PraiaMap>();
@@ -969,9 +1003,42 @@ Value Interpreter::evaluate(const Expr* expr) {
         }
     }
 
+    // ── Yield ──
+
+    if (auto* e = dynamic_cast<const YieldExpr*>(expr)) {
+        Value val;
+        if (e->value) val = evaluate(e->value.get());
+
+        // Find the generator object stored in the environment
+        Value genVal;
+        try { genVal = env->get("__gen__", e->line); }
+        catch (...) { throw RuntimeError("yield outside of generator", e->line); }
+        if (!genVal.isGenerator())
+            throw RuntimeError("yield outside of generator", e->line);
+        auto gen = genVal.asGenerator();
+
+        std::unique_lock<std::mutex> lock(gen->mtx);
+        gen->lastYielded = val;
+        gen->hasValue = true;
+        gen->state = PraiaGenerator::State::SUSPENDED;
+        gen->genCV.notify_one();  // wake caller waiting in .next()
+        gen->callerCV.wait(lock, [&] { return gen->resumed; }); // wait for next .next()
+        gen->resumed = false;
+        if (gen->done) throw ReturnSignal{Value()}; // generator was destroyed
+        gen->state = PraiaGenerator::State::RUNNING;
+        return gen->sendValue;
+    }
+
     // ── Lambda ──
 
     if (auto* e = dynamic_cast<const LambdaExpr*>(expr)) {
+        if (e->isGenerator) {
+            auto lam = std::make_shared<PraiaGeneratorLambda>();
+            lam->params = e->params;
+            lam->expr = e;
+            lam->closure = env;
+            return Value(std::static_pointer_cast<Callable>(lam));
+        }
         auto lam = std::make_shared<PraiaLambda>();
         lam->params = e->params;
         lam->expr = e;
@@ -1075,6 +1142,40 @@ Value Interpreter::evaluate(const Expr* expr) {
 
     if (auto* e = dynamic_cast<const DotExpr*>(expr)) {
         Value obj = evaluate(e->object.get());
+
+        if (obj.isGenerator()) {
+            auto gen = obj.asGenerator();
+            if (e->field == "next") {
+                return Value(makeNative("next", -1,
+                    [gen](const std::vector<Value>& args) -> Value {
+                        if (gen->state == PraiaGenerator::State::COMPLETED) {
+                            auto result = std::make_shared<PraiaMap>();
+                            result->entries["value"] = Value();
+                            result->entries["done"] = Value(true);
+                            return Value(result);
+                        }
+                        std::unique_lock<std::mutex> lock(gen->mtx);
+                        gen->sendValue = args.empty() ? Value() : args[0];
+                        gen->resumed = true;
+                        gen->hasValue = false;
+                        gen->callerCV.notify_one();
+                        gen->genCV.wait(lock, [&] { return gen->hasValue; });
+
+                        // Propagate errors from generator body
+                        if (!gen->errorMessage.empty())
+                            throw RuntimeError(gen->errorMessage, 0);
+
+                        auto result = std::make_shared<PraiaMap>();
+                        result->entries["value"] = gen->lastYielded;
+                        result->entries["done"] = Value(gen->done);
+                        return Value(result);
+                    }));
+            }
+            if (e->field == "done") {
+                return Value(gen->state == PraiaGenerator::State::COMPLETED);
+            }
+            throw RuntimeError("Generator has no property '" + e->field + "'", e->line);
+        }
 
         if (obj.isInstance()) {
             auto inst = obj.asInstance();

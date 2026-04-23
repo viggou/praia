@@ -121,6 +121,8 @@ public:
     void push(Value value);
     Value pop();
     Value& peek(int distance = 0);
+    int getStackTop() const { return stackTop; }
+    Value resumeGenerator(std::shared_ptr<PraiaGenerator> gen, Value sendVal);
 private:
     void resetStack();
 
@@ -174,6 +176,13 @@ private:
     void runtimeError(const std::string& msg, int line);
     bool tryHandleError(Value error);  // returns true if caught, false if uncaught
     std::string formatStackTrace() const;
+
+public:
+    // Generator state — set while executing a generator's body via .next()
+    std::shared_ptr<PraiaGenerator> currentGenerator_;
+    int genBaseFrame_ = 0;
+    int genBaseStackTop_ = 0;
+private:
 
     // Error capture — suppresses stderr output in re-entrant/async contexts
     // so errors propagate instead of being printed prematurely

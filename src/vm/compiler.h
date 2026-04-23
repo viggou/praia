@@ -13,6 +13,7 @@ struct CompiledFunction {
     int upvalueCount = 0;
     Chunk chunk;
     std::vector<std::string> paramNames; // for named argument support
+    bool isGenerator = false;
 };
 
 class Compiler {
@@ -48,6 +49,7 @@ private:
         std::vector<Upvalue> upvalues;
         int scopeDepth = 0;
         int tryDepth = 0;      // number of active try handlers in this function
+        bool isGenerator = false;
         std::vector<LoopContext> loops;
     };
 
@@ -100,6 +102,7 @@ private:
     void compileSuperExpr(const SuperExpr* expr);
     void compileAsyncExpr(const AsyncExpr* expr);
     void compileAwaitExpr(const AwaitExpr* expr);
+    void compileYieldExpr(const YieldExpr* expr);
 
     // Scope
     void beginScope();

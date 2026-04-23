@@ -374,7 +374,8 @@ void Compiler::compileForInStmt(const ForInStmt* stmt) {
     beginScope();
 
     // Normalize iterable via __iterEntries (arrays pass through,
-    // maps become [{key,value},...], strings become char arrays)
+    // maps become [{key,value},...], strings become char arrays,
+    // generators pass through as-is)
     emit(OpCode::OP_GET_GLOBAL, stmt->line);
     emitU16(identifierConstant("__iterEntries"), stmt->line);
     compileExpr(stmt->iterable.get());
@@ -383,43 +384,49 @@ void Compiler::compileForInStmt(const ForInStmt* stmt) {
     addLocal("__iter__");
     int iterSlot = resolveLocal(current, "__iter__");
 
-    // Index counter = 0
+    // Index counter (only meaningful for arrays, ignored for generators)
     emitConstant(Value(static_cast<int64_t>(0)), stmt->line);
     addLocal("__idx__");
     int idxSlot = resolveLocal(current, "__idx__");
 
-    // Cache len(iterable) — call once, store as local
-    emit(OpCode::OP_GET_GLOBAL, stmt->line);
-    emitU16(identifierConstant("len"), stmt->line);
-    emit(OpCode::OP_GET_LOCAL, stmt->line);
-    emitU16(static_cast<uint16_t>(iterSlot), stmt->line);
-    emit(OpCode::OP_CALL, stmt->line);
-    emit(1, stmt->line);
-    addLocal("__len__");
-    int lenSlot = resolveLocal(current, "__len__");
+    // Placeholder for __result__ (reused each iteration)
+    emit(OpCode::OP_NIL, stmt->line);
+    addLocal("__result__");
+    int resultSlot = resolveLocal(current, "__result__");
 
     int loopStart = currentChunk().size();
     current->loops.push_back({loopStart, loopStart, {}, {}, current->scopeDepth, current->tryDepth});
 
-    // Condition: __idx__ < __len__
-    emit(OpCode::OP_GET_LOCAL, stmt->line);
-    emitU16(static_cast<uint16_t>(idxSlot), stmt->line);
-    emit(OpCode::OP_GET_LOCAL, stmt->line);
-    emitU16(static_cast<uint16_t>(lenSlot), stmt->line);
-    emit(OpCode::OP_LESS, stmt->line);
-    int exitJump = emitJump(OpCode::OP_POP_JUMP_IF_FALSE, stmt->line);
-
-    // Loop var = iterable[idx]
-    beginScope();
+    // Call __iterNext(__iter__, __idx__) — returns {value, done}
+    emit(OpCode::OP_GET_GLOBAL, stmt->line);
+    emitU16(identifierConstant("__iterNext"), stmt->line);
     emit(OpCode::OP_GET_LOCAL, stmt->line);
     emitU16(static_cast<uint16_t>(iterSlot), stmt->line);
     emit(OpCode::OP_GET_LOCAL, stmt->line);
     emitU16(static_cast<uint16_t>(idxSlot), stmt->line);
+    emit(OpCode::OP_CALL, stmt->line);
+    emit(2, stmt->line);
+    // Store result in pre-allocated local
+    emit(OpCode::OP_SET_LOCAL, stmt->line);
+    emitU16(static_cast<uint16_t>(resultSlot), stmt->line);
+    emit(OpCode::OP_POP, stmt->line); // pop SET_LOCAL's leftover
+
+    // Check __result__.done — exit loop if true
+    emit(OpCode::OP_GET_LOCAL, stmt->line);
+    emitU16(static_cast<uint16_t>(resultSlot), stmt->line);
+    emitConstant(Value("done"), stmt->line);
+    emit(OpCode::OP_INDEX_GET, stmt->line);
+    emit(OpCode::OP_NOT, stmt->line);
+    int exitJump = emitJump(OpCode::OP_POP_JUMP_IF_FALSE, stmt->line);
+
+    // Loop var = __result__.value
+    beginScope();
+    emit(OpCode::OP_GET_LOCAL, stmt->line);
+    emitU16(static_cast<uint16_t>(resultSlot), stmt->line);
+    emitConstant(Value("value"), stmt->line);
     emit(OpCode::OP_INDEX_GET, stmt->line);
 
     if (!stmt->destructureKeys.empty()) {
-        // Destructuring: for ({key, value} in map)
-        // The element is on the stack. Store it as a temp, then extract each key.
         addLocal("__entry__");
         int entrySlot = resolveLocal(current, "__entry__");
         for (auto& dk : stmt->destructureKeys) {
@@ -452,13 +459,15 @@ void Compiler::compileForInStmt(const ForInStmt* stmt) {
     emit(OpCode::OP_POP, stmt->line);
 
     emitLoop(loopStart, stmt->line);
+
+    // Exit jump from done check lands here
     patchJump(exitJump);
 
     auto& loop = current->loops.back();
     for (int j : loop.breakJumps) patchJump(j);
     current->loops.pop_back();
 
-    endScope(stmt->line); // pops __iter__, __idx__
+    endScope(stmt->line); // pops __iter__, __idx__, __result__
 }
 
 void Compiler::compileFuncStmt(const FuncStmt* stmt) {
@@ -467,10 +476,12 @@ void Compiler::compileFuncStmt(const FuncStmt* stmt) {
     fn->name = stmt->name;
     fn->arity = static_cast<int>(stmt->params.size());
     fn->paramNames = stmt->params;
+    fn->isGenerator = stmt->isGenerator;
 
     CompilerState funcState;
     funcState.enclosing = current;
     funcState.function = fn;
+    funcState.isGenerator = stmt->isGenerator;
     funcState.scopeDepth = current->scopeDepth + 1;
     current = &funcState;
 
@@ -653,10 +664,12 @@ void Compiler::compileClassStmt(const ClassStmt* stmt) {
         fn->name = method.name;
         fn->arity = static_cast<int>(method.params.size());
         fn->paramNames = method.params;
+        fn->isGenerator = method.isGenerator;
 
         CompilerState methodState;
         methodState.enclosing = current;
         methodState.function = fn;
+        methodState.isGenerator = method.isGenerator;
         methodState.scopeDepth = 0;
         current = &methodState;
 

@@ -26,6 +26,7 @@ void Compiler::compileExpr(const Expr* expr) {
     else if (auto* e = dynamic_cast<const SuperExpr*>(expr)) compileSuperExpr(e);
     else if (auto* e = dynamic_cast<const AsyncExpr*>(expr)) compileAsyncExpr(e);
     else if (auto* e = dynamic_cast<const AwaitExpr*>(expr)) compileAwaitExpr(e);
+    else if (auto* e = dynamic_cast<const YieldExpr*>(expr)) compileYieldExpr(e);
     else error("Unknown expression type", expr->line);
 }
 
@@ -234,10 +235,12 @@ void Compiler::compileLambdaExpr(const LambdaExpr* expr) {
     fn->name = "<lambda>";
     fn->arity = static_cast<int>(expr->params.size());
     fn->paramNames = expr->params;
+    fn->isGenerator = expr->isGenerator;
 
     CompilerState lamState;
     lamState.enclosing = current;
     lamState.function = fn;
+    lamState.isGenerator = expr->isGenerator;
     lamState.scopeDepth = current->scopeDepth + 1;
     current = &lamState;
 
@@ -483,4 +486,17 @@ void Compiler::compileAsyncExpr(const AsyncExpr* expr) {
 void Compiler::compileAwaitExpr(const AwaitExpr* expr) {
     compileExpr(expr->expr.get());
     emit(OpCode::OP_AWAIT, expr->line);
+}
+
+void Compiler::compileYieldExpr(const YieldExpr* expr) {
+    if (!current->isGenerator) {
+        error("'yield' outside of generator function", expr->line);
+        return;
+    }
+    if (expr->value) {
+        compileExpr(expr->value.get());
+    } else {
+        emit(OpCode::OP_NIL, expr->line);
+    }
+    emit(OpCode::OP_YIELD, expr->line);
 }

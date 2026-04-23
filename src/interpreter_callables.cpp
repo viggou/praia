@@ -141,3 +141,130 @@ Value PraiaFunction::call(Interpreter& interp, const std::vector<Value>& args) {
     interp.env = prevEnv;
     return Value(); // implicit nil
 }
+
+// ── Generator callables ──────────────────────────────────────
+// Calling a generator function returns a PraiaGenerator object.
+// The body runs on a dedicated thread, synchronized via condvars.
+
+// Declared as friend in interpreter.h via PraiaGeneratorFunction/Lambda
+// which call this helper. Access to private Interpreter members is needed
+// for the generator thread to set env and call execute().
+Value makeGeneratorFromEnv(
+    std::shared_ptr<Environment> funcEnv,
+    std::shared_ptr<Environment> sharedGlobals,
+    const std::vector<StmtPtr>& bodyStmts,
+    std::shared_ptr<PraiaGenerator> gen) {
+
+    gen->isVM = false;
+    gen->state = PraiaGenerator::State::CREATED;
+
+    // Capture pointer to the AST statements (AST is kept alive by grainAsts/program)
+    const auto* stmtsPtr = &bodyStmts;
+    gen->thread = std::thread([gen, funcEnv, stmtsPtr, sharedGlobals]() {
+        Interpreter genInterp(sharedGlobals);
+        genInterp.env = funcEnv;
+
+        // Wait for first next() call
+        {
+            std::unique_lock<std::mutex> lock(gen->mtx);
+            gen->callerCV.wait(lock, [&] { return gen->resumed; });
+            gen->resumed = false;
+            if (gen->done) return;
+        }
+
+        gen->state = PraiaGenerator::State::RUNNING;
+
+        try {
+            for (const auto& stmt : *stmtsPtr)
+                genInterp.execute(stmt.get());
+        } catch (const ReturnSignal& ret) {
+            std::lock_guard<std::mutex> lock(gen->mtx);
+            gen->lastYielded = ret.value;
+            gen->done = true;
+            gen->hasValue = true;
+            gen->state = PraiaGenerator::State::COMPLETED;
+            gen->genCV.notify_one();
+            return;
+        } catch (const ThrowSignal& ts) {
+            std::lock_guard<std::mutex> lock(gen->mtx);
+            gen->errorMessage = ts.value.toString();
+            gen->done = true;
+            gen->hasValue = true;
+            gen->state = PraiaGenerator::State::COMPLETED;
+            gen->genCV.notify_one();
+            return;
+        } catch (const RuntimeError& err) {
+            std::lock_guard<std::mutex> lock(gen->mtx);
+            gen->errorMessage = err.what();
+            gen->done = true;
+            gen->hasValue = true;
+            gen->state = PraiaGenerator::State::COMPLETED;
+            gen->genCV.notify_one();
+            return;
+        } catch (...) {
+            std::lock_guard<std::mutex> lock(gen->mtx);
+            gen->errorMessage = "Generator failed";
+            gen->done = true;
+            gen->hasValue = true;
+            gen->state = PraiaGenerator::State::COMPLETED;
+            gen->genCV.notify_one();
+            return;
+        }
+
+        // Body finished without return
+        std::lock_guard<std::mutex> lock(gen->mtx);
+        gen->lastYielded = Value();
+        gen->done = true;
+        gen->hasValue = true;
+        gen->state = PraiaGenerator::State::COMPLETED;
+        gen->genCV.notify_one();
+    });
+
+    return Value(gen);
+}
+
+Value PraiaGeneratorFunction::call(Interpreter& interp, const std::vector<Value>& args) {
+    auto funcEnv = std::make_shared<Environment>(closure);
+    auto gen = std::make_shared<PraiaGenerator>();
+
+    auto prevEnv = interp.env;
+    interp.env = funcEnv;
+    for (size_t i = 0; i < params.size(); i++) {
+        if (i < args.size() && !args[i].isNil()) {
+            funcEnv->define(params[i], args[i]);
+        } else if (defaults && i < defaults->size() && (*defaults)[i]) {
+            funcEnv->define(params[i], interp.evaluate((*defaults)[i].get()));
+        } else if (i < args.size()) {
+            funcEnv->define(params[i], args[i]);
+        } else {
+            funcEnv->define(params[i], Value());
+        }
+    }
+    interp.env = prevEnv;
+
+    funcEnv->define("__gen__", Value(gen));
+    return makeGeneratorFromEnv(funcEnv, interp.globals, body->statements, gen);
+}
+
+Value PraiaGeneratorLambda::call(Interpreter& interp, const std::vector<Value>& args) {
+    auto funcEnv = std::make_shared<Environment>(closure);
+    auto gen = std::make_shared<PraiaGenerator>();
+
+    auto prevEnv = interp.env;
+    interp.env = funcEnv;
+    for (size_t i = 0; i < params.size(); i++) {
+        if (i < args.size() && !args[i].isNil()) {
+            funcEnv->define(params[i], args[i]);
+        } else if (i < expr->defaults.size() && expr->defaults[i]) {
+            funcEnv->define(params[i], interp.evaluate(expr->defaults[i].get()));
+        } else if (i < args.size()) {
+            funcEnv->define(params[i], args[i]);
+        } else {
+            funcEnv->define(params[i], Value());
+        }
+    }
+    interp.env = prevEnv;
+
+    funcEnv->define("__gen__", Value(gen));
+    return makeGeneratorFromEnv(funcEnv, interp.globals, expr->body, gen);
+}

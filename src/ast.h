@@ -74,6 +74,7 @@ struct LambdaExpr : Expr {
     std::vector<std::string> params;
     std::vector<ExprPtr> defaults; // parallel to params, nullptr if no default
     std::vector<StmtPtr> body;
+    bool isGenerator = false;
 };
 
 struct TernaryExpr : Expr {
@@ -129,6 +130,10 @@ struct AsyncExpr : Expr {
 
 struct AwaitExpr : Expr {
     ExprPtr expr;  // the future to await
+};
+
+struct YieldExpr : Expr {
+    ExprPtr value;  // nullptr = yield nil
 };
 
 struct ThisExpr : Expr {};
@@ -209,6 +214,7 @@ struct FuncStmt : Stmt {
     std::vector<std::string> params;
     std::vector<ExprPtr> defaults; // parallel to params, nullptr if no default
     StmtPtr body;
+    bool isGenerator = false;
 };
 
 struct ReturnStmt : Stmt {
@@ -221,6 +227,7 @@ struct ClassMethod {
     std::vector<ExprPtr> defaults; // parallel to params, nullptr if no default
     std::vector<StmtPtr> body;
     int line = 0;
+    bool isGenerator = false;
 };
 
 struct ClassStmt : Stmt {

@@ -75,5 +75,6 @@ private:
     bool hadError = false;
     int loopDepth = 0;
     int functionDepth = 0;
+    int yieldCount = 0; // tracks yield expressions in current function body
     std::vector<StmtPtr> pending_; // for decorator desugaring (extra stmts to emit)
 };
