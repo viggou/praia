@@ -19,6 +19,8 @@ void Chunk::writeU16(uint16_t value, int line) {
 }
 
 uint16_t Chunk::addConstant(Value value) {
+    if (constants.size() >= 65535)
+        throw RuntimeError("Too many constants in one chunk (max 65535)", 0);
     constants.push_back(std::move(value));
     return static_cast<uint16_t>(constants.size() - 1);
 }

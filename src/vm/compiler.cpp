@@ -11,20 +11,12 @@ void Compiler::emit(uint8_t byte, int line) { currentChunk().write(byte, line); 
 void Compiler::emitU16(uint16_t val, int line) { currentChunk().writeU16(val, line); }
 
 void Compiler::emitConstant(Value value, int line) {
-    if (currentChunk().constants.size() >= 65535) {
-        error("Too many constants in one chunk (max 65535)", line);
-        return;
-    }
     uint16_t idx = currentChunk().addConstant(std::move(value));
     emit(OpCode::OP_CONSTANT, line);
     emitU16(idx, line);
 }
 
 uint16_t Compiler::identifierConstant(const std::string& name) {
-    if (currentChunk().constants.size() >= 65535) {
-        error("Too many constants in one chunk (max 65535)", 0);
-        return 0;
-    }
     return currentChunk().addConstant(Value(name));
 }
 
