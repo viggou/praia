@@ -241,6 +241,7 @@ void vmRegisterNatives(VM& vm) {
     vm.defineNative("__iterEntries", makeNat("__iterEntries", 1,
         [](const std::vector<Value>& args) -> Value {
             const Value& v = args[0];
+            if (v.isGenerator()) return v; // generators are their own iterator
             if (v.isArray()) return v;
             if (v.isMap()) {
                 auto arr = std::make_shared<PraiaArray>();
@@ -259,6 +260,85 @@ void vmRegisterNatives(VM& vm) {
                 return Value(arr);
             }
             return Value(); // nil for non-iterables
+        }));
+
+    // __iterNext(iter, idx) — unified iteration step for for-in loops.
+    // For arrays: returns {value: iter[idx], done: false} or {done: true}.
+    // For generators: calls .next(), returns {value, done}.
+    vm.defineNative("__iterNext", makeNat("__iterNext", 2,
+        [](const std::vector<Value>& args) -> Value {
+            auto result = std::make_shared<PraiaMap>();
+            if (args[0].isGenerator()) {
+                auto gen = args[0].asGenerator();
+                if (gen->state == PraiaGenerator::State::COMPLETED) {
+                    result->entries["value"] = Value();
+                    result->entries["done"] = Value(true);
+                    return Value(result);
+                }
+                // Resume the generator via its .next() mechanism
+                if (gen->isVM) {
+                    auto* vm = VM::current();
+                    if (!vm) throw RuntimeError("No active VM for generator iteration", 0);
+                    int restoreBase = vm->getStackTop();
+                    for (auto& val : gen->savedStack) vm->push(val);
+                    auto* closure = static_cast<ObjClosure*>(gen->vmClosure);
+                    int genBase = vm->frameCount;
+                    auto& frame = vm->frames[vm->frameCount++];
+                    frame.closure = closure;
+                    frame.function = closure->function;
+                    frame.ip = gen->savedIp;
+                    frame.baseSlot = restoreBase;
+                    frame.definingClass = nullptr;
+                    if (gen->state != PraiaGenerator::State::CREATED)
+                        vm->push(Value()); // sendValue = nil
+                    gen->state = PraiaGenerator::State::RUNNING;
+                    auto prevGen = vm->currentGenerator_;
+                    auto prevGenBase = vm->genBaseFrame_;
+                    auto prevGenStackTop = vm->genBaseStackTop_;
+                    vm->currentGenerator_ = gen;
+                    vm->genBaseFrame_ = genBase;
+                    vm->genBaseStackTop_ = restoreBase;
+                    auto execResult = vm->execute(genBase);
+                    vm->currentGenerator_ = prevGen;
+                    vm->genBaseFrame_ = prevGenBase;
+                    vm->genBaseStackTop_ = prevGenStackTop;
+                    if (execResult != VM::Result::OK) {
+                        gen->state = PraiaGenerator::State::COMPLETED;
+                        result->entries["value"] = Value();
+                        result->entries["done"] = Value(true);
+                        return Value(result);
+                    }
+                    return vm->pop();
+                } else {
+                    // Tree-walker generator
+                    std::unique_lock<std::mutex> lock(gen->mtx);
+                    gen->sendValue = Value();
+                    gen->resumed = true;
+                    gen->hasValue = false;
+                    gen->callerCV.notify_one();
+                    gen->genCV.wait(lock, [&] { return gen->hasValue; });
+                    result->entries["value"] = gen->lastYielded;
+                    result->entries["done"] = Value(gen->done);
+                    return Value(result);
+                }
+            }
+            // Array path
+            if (args[0].isArray()) {
+                auto& elems = args[0].asArray()->elements;
+                int idx = static_cast<int>(args[1].asNumber());
+                if (idx >= static_cast<int>(elems.size())) {
+                    result->entries["value"] = Value();
+                    result->entries["done"] = Value(true);
+                } else {
+                    result->entries["value"] = elems[idx];
+                    result->entries["done"] = Value(false);
+                }
+                return Value(result);
+            }
+            // Nil or unknown — done
+            result->entries["value"] = Value();
+            result->entries["done"] = Value(true);
+            return Value(result);
         }));
 
     vm.defineNative("__arraySlice", makeNat("__arraySlice", 2,

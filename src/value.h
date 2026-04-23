@@ -1,10 +1,13 @@
 #pragma once
 
+#include <condition_variable>
 #include <future>
 #include <memory>
+#include <mutex>
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <unordered_map>
 #include <variant>
 #include <vector>
@@ -15,6 +18,7 @@ struct PraiaArray;
 struct PraiaMap;
 struct PraiaInstance;
 struct PraiaFuture;
+struct PraiaGenerator;
 class Interpreter;
 
 // Runtime error with line info
@@ -36,7 +40,8 @@ struct Value {
         std::shared_ptr<PraiaArray>,
         std::shared_ptr<PraiaMap>,
         std::shared_ptr<PraiaInstance>,
-        std::shared_ptr<PraiaFuture>
+        std::shared_ptr<PraiaFuture>,
+        std::shared_ptr<PraiaGenerator>
     >;
 
     Data data;
@@ -55,6 +60,7 @@ struct Value {
     Value(std::shared_ptr<PraiaMap> m) : data(std::move(m)) {}
     Value(std::shared_ptr<PraiaInstance> i) : data(std::move(i)) {}
     Value(std::shared_ptr<PraiaFuture> f) : data(std::move(f)) {}
+    Value(std::shared_ptr<PraiaGenerator> g) : data(std::move(g)) {}
 
     bool isNil()      const { return std::holds_alternative<std::nullptr_t>(data); }
     bool isBool()     const { return std::holds_alternative<bool>(data); }
@@ -67,6 +73,7 @@ struct Value {
     bool isMap()      const { return std::holds_alternative<std::shared_ptr<PraiaMap>>(data); }
     bool isInstance() const { return std::holds_alternative<std::shared_ptr<PraiaInstance>>(data); }
     bool isFuture()   const { return std::holds_alternative<std::shared_ptr<PraiaFuture>>(data); }
+    bool isGenerator() const { return std::holds_alternative<std::shared_ptr<PraiaGenerator>>(data); }
 
     bool                        asBool()     const { return std::get<bool>(data); }
     int64_t                     asInt()      const { return std::get<int64_t>(data); }
@@ -81,6 +88,7 @@ struct Value {
     std::shared_ptr<PraiaMap>      asMap()      const { return std::get<std::shared_ptr<PraiaMap>>(data); }
     std::shared_ptr<PraiaInstance> asInstance() const { return std::get<std::shared_ptr<PraiaInstance>>(data); }
     std::shared_ptr<PraiaFuture>   asFuture()   const { return std::get<std::shared_ptr<PraiaFuture>>(data); }
+    std::shared_ptr<PraiaGenerator> asGenerator() const { return std::get<std::shared_ptr<PraiaGenerator>>(data); }
 
     // Declared here, defined after PraiaArray/PraiaMap (needs complete types)
     bool isTruthy() const;
@@ -100,6 +108,47 @@ struct PraiaMap {
 
 struct PraiaFuture {
     std::shared_future<Value> future;
+};
+
+struct PraiaGenerator {
+    enum class State { CREATED, SUSPENDED, RUNNING, COMPLETED };
+    State state = State::CREATED;
+    Value lastYielded;
+    Value sendValue;
+
+    // Tree-walker: thread-based coroutine
+    std::thread thread;
+    std::mutex mtx;
+    std::condition_variable genCV;     // generator signals yield/done
+    std::condition_variable callerCV;  // caller signals resume
+    bool hasValue = false;
+    bool resumed = false;
+    bool done = false;
+    bool isVM = false;
+
+    // VM: snapshot state (filled on yield, restored on next)
+    std::vector<Value> savedStack;
+    int savedStackTop = 0;
+    int savedBaseSlot = 0;
+    int savedFrameCount = 0;
+    const uint8_t* savedIp = nullptr;
+    void* vmClosure = nullptr; // ObjClosure* — stored as void* to avoid circular include
+
+    // prevent GC of closures/upvalues used by the generator
+    std::vector<std::shared_ptr<void>> ownedResources;
+
+    ~PraiaGenerator() {
+        if (thread.joinable()) {
+            // Signal the generator thread to finish if it's waiting
+            {
+                std::lock_guard<std::mutex> lock(mtx);
+                done = true;
+                resumed = true;
+                callerCV.notify_one();
+            }
+            thread.join();
+        }
+    }
 };
 
 struct PraiaClass;  // defined in interpreter.h (it's a Callable)
@@ -130,6 +179,7 @@ inline std::string Value::toString() const {
     if (isCallable()) return "<function>";
     if (isInstance()) return "<instance>";
     if (isFuture()) return "<future>";
+    if (isGenerator()) return "<generator>";
     if (isArray()) {
         std::ostringstream o;
         o << "[";

@@ -176,9 +176,13 @@ StmtPtr Parser::funcStatement() {
     stmt->name = name.lexeme;
     stmt->params = std::move(params);
     stmt->defaults = std::move(defaults);
+    int savedYieldCount = yieldCount;
+    yieldCount = 0;
     functionDepth++;
     stmt->body = block();
     functionDepth--;
+    stmt->isGenerator = (yieldCount > 0);
+    yieldCount = savedYieldCount;
     return stmt;
 }
 
@@ -219,11 +223,15 @@ StmtPtr Parser::classStatement() {
         consume(TokenType::RPAREN, "Expected ')' after parameters");
         consume(TokenType::LBRACE, "Expected '{' before method body");
 
+        int savedYieldCount = yieldCount;
+        yieldCount = 0;
         functionDepth++;
         while (!check(TokenType::RBRACE) && !isAtEnd()) {
             method.body.push_back(statement());
         }
         functionDepth--;
+        method.isGenerator = (yieldCount > 0);
+        yieldCount = savedYieldCount;
         consume(TokenType::RBRACE, "Expected '}' after method body");
 
         methods.push_back(std::move(method));
@@ -391,6 +399,7 @@ StmtPtr Parser::returnStatement() {
         case TokenType::LAM:
         case TokenType::ASYNC:
         case TokenType::AWAIT:
+        case TokenType::YIELD:
         case TokenType::THIS:
         case TokenType::SUPER:
         case TokenType::NOT:
@@ -970,6 +979,31 @@ ExprPtr Parser::primary() {
         return e;
     }
 
+    if (match(TokenType::YIELD)) {
+        if (functionDepth == 0)
+            throw error(previous(), "'yield' outside of function");
+        int ln = previous().line;
+        yieldCount++;
+        auto e = std::make_unique<YieldExpr>();
+        e->line = ln;
+        // Parse optional value — check if what follows could be a value expression
+        if (!check(TokenType::RBRACE) && !check(TokenType::EOF_TOKEN) && !isAtEnd()) {
+            auto t = peek().type;
+            if (t == TokenType::NUMBER || t == TokenType::STRING ||
+                t == TokenType::IDENTIFIER || t == TokenType::LPAREN ||
+                t == TokenType::LBRACKET || t == TokenType::LBRACE ||
+                t == TokenType::MINUS || t == TokenType::NOT ||
+                t == TokenType::TRUE || t == TokenType::FALSE ||
+                t == TokenType::NIL || t == TokenType::THIS ||
+                t == TokenType::SUPER || t == TokenType::LAM ||
+                t == TokenType::ASYNC || t == TokenType::AWAIT ||
+                t == TokenType::YIELD || t == TokenType::INTERP_START) {
+                e->value = expression();
+            }
+        }
+        return e;
+    }
+
     if (match(TokenType::THIS)) {
         auto e = std::make_unique<ThisExpr>();
         e->line = previous().line;
@@ -1041,6 +1075,8 @@ ExprPtr Parser::primary() {
         lam->line = ln;
         lam->params = std::move(params);
         lam->defaults = std::move(defaults);
+        int savedYieldCount = yieldCount;
+        yieldCount = 0;
         functionDepth++;
         while (!check(TokenType::RBRACE) && !isAtEnd()) {
             lam->body.push_back(statement());
@@ -1050,6 +1086,8 @@ ExprPtr Parser::primary() {
             }
         }
         functionDepth--;
+        lam->isGenerator = (yieldCount > 0);
+        yieldCount = savedYieldCount;
         consume(TokenType::RBRACE, "Expected '}' after lambda body");
 
         // If the body is a single expression statement, make it auto-return
@@ -1187,7 +1225,7 @@ bool Parser::isNameToken(TokenType t) const {
            t == TokenType::TRY || t == TokenType::CATCH || t == TokenType::THROW ||
            t == TokenType::ENSURE || t == TokenType::USE || t == TokenType::EXPORT ||
            t == TokenType::EXTENDS || t == TokenType::THIS || t == TokenType::SUPER ||
-           t == TokenType::LAM || t == TokenType::ASYNC || t == TokenType::AWAIT ||
+           t == TokenType::LAM || t == TokenType::ASYNC || t == TokenType::AWAIT || t == TokenType::YIELD ||
            t == TokenType::TRUE || t == TokenType::FALSE || t == TokenType::NIL;
 }
 

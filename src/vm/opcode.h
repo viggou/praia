@@ -92,6 +92,7 @@ enum class OpCode : uint8_t {
     OP_THROW,
 
     // ── Advanced ──
+    OP_YIELD,           // yield value from generator
     OP_ASYNC,           // [argc:8]
     OP_ASYNC_NAMED,     // [argc:8] [names_idx:16] — async call with named arguments
     OP_AWAIT,

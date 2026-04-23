@@ -204,6 +204,9 @@ int disassembleInstruction(const Chunk& chunk, int offset) {
         case OpCode::OP_TRY_END:        return simpleInstruction("OP_TRY_END", offset);
         case OpCode::OP_THROW:          return simpleInstruction("OP_THROW", offset);
 
+        // Generators
+        case OpCode::OP_YIELD:          return simpleInstruction("OP_YIELD", offset);
+
         // Advanced
         case OpCode::OP_ASYNC:          return byteInstruction("OP_ASYNC", chunk, offset);
         case OpCode::OP_ASYNC_NAMED:    return callNamedInstruction("OP_ASYNC_NAMED", chunk, offset);

@@ -52,6 +52,32 @@ struct PraiaLambda : Callable {
     const std::vector<std::string>* paramNames() const override { return &params; }
 };
 
+// A generator function — calling it returns a PraiaGenerator instead of executing
+struct PraiaGeneratorFunction : Callable {
+    std::string funcName;
+    std::vector<std::string> params;
+    const std::vector<ExprPtr>* defaults = nullptr;
+    const BlockStmt* body;
+    std::shared_ptr<Environment> closure;
+
+    Value call(Interpreter& interp, const std::vector<Value>& args) override;
+    int arity() const override { return static_cast<int>(params.size()); }
+    std::string name() const override { return funcName; }
+    const std::vector<std::string>* paramNames() const override { return &params; }
+};
+
+// A generator lambda
+struct PraiaGeneratorLambda : Callable {
+    std::vector<std::string> params;
+    const LambdaExpr* expr;
+    std::shared_ptr<Environment> closure;
+
+    Value call(Interpreter& interp, const std::vector<Value>& args) override;
+    int arity() const override { return static_cast<int>(params.size()); }
+    std::string name() const override { return "<generator>"; }
+    const std::vector<std::string>* paramNames() const override { return &params; }
+};
+
 // A built-in native function
 struct NativeFunction : Callable {
     std::string funcName;
@@ -133,6 +159,11 @@ class Interpreter {
     friend struct PraiaFunction;
     friend struct PraiaLambda;
     friend struct PraiaMethod;
+    friend struct PraiaGeneratorFunction;
+    friend struct PraiaGeneratorLambda;
+    friend Value makeGeneratorFromEnv(
+        std::shared_ptr<Environment>, std::shared_ptr<Environment>,
+        const std::vector<StmtPtr>&, std::shared_ptr<PraiaGenerator>);
 public:
     Interpreter();
     // Lightweight constructor for async tasks — shares globals, owns env

@@ -1,0 +1,156 @@
+use "testing"
+
+testing.test("basic yield and next", lam{ in
+    func gen() { yield 1; yield 2; yield 3 }
+    let g = gen()
+    testing.assertEqual(g.next().value, 1, nil)
+    testing.assertEqual(g.next().value, 2, nil)
+    testing.assertEqual(g.next().value, 3, nil)
+    testing.assert(g.next().done, "should be done")
+})
+
+testing.test("generator exhaustion returns done", lam{ in
+    func gen() { yield 42 }
+    let g = gen()
+    let r1 = g.next()
+    testing.assertEqual(r1.value, 42, nil)
+    testing.assertEqual(r1.done, false, nil)
+    let r2 = g.next()
+    testing.assertEqual(r2.done, true, nil)
+    // Calling next after done still returns done
+    let r3 = g.next()
+    testing.assertEqual(r3.done, true, nil)
+})
+
+testing.test("for-in over generator", lam{ in
+    func range(n) {
+        for (i in 0..n) { yield i }
+    }
+    let result = []
+    for (x in range(5)) { push(result, x) }
+    testing.assertEqual(result, [0, 1, 2, 3, 4], nil)
+})
+
+testing.test("infinite generator with break", lam{ in
+    func naturals() {
+        let n = 0
+        while (true) { yield n; n = n + 1 }
+    }
+    let result = []
+    for (x in naturals()) {
+        if (x >= 5) { break }
+        push(result, x)
+    }
+    testing.assertEqual(result, [0, 1, 2, 3, 4], nil)
+})
+
+testing.test("yield as expression receives send value", lam{ in
+    func acc() {
+        let total = 0
+        while (true) {
+            let val = yield total
+            total = total + val
+        }
+    }
+    let g = acc()
+    g.next()              // prime
+    testing.assertEqual(g.next(10).value, 10, nil)
+    testing.assertEqual(g.next(5).value, 15, nil)
+    testing.assertEqual(g.next(25).value, 40, nil)
+})
+
+testing.test("generator with closure", lam{ in
+    let base = 100
+    func gen() {
+        yield base + 1
+        yield base + 2
+    }
+    let g = gen()
+    testing.assertEqual(g.next().value, 101, nil)
+    testing.assertEqual(g.next().value, 102, nil)
+})
+
+testing.test("nested yield in loops", lam{ in
+    func pairs() {
+        for (i in 0..3) {
+            for (j in 0..2) {
+                yield [i, j]
+            }
+        }
+    }
+    let result = []
+    for (p in pairs()) { push(result, p) }
+    testing.assertEqual(len(result), 6, nil)
+    testing.assertEqual(result[0], [0, 0], nil)
+    testing.assertEqual(result[5], [2, 1], nil)
+})
+
+testing.test("generator lambda", lam{ in
+    let gen = lam{ n in for (i in 0..n) { yield i * i } }
+    let result = []
+    for (x in gen(4)) { push(result, x) }
+    testing.assertEqual(result, [0, 1, 4, 9], nil)
+})
+
+testing.test("multiple generators interleaved", lam{ in
+    func gen(start) {
+        yield start
+        yield start + 1
+    }
+    let a = gen(10)
+    let b = gen(20)
+    testing.assertEqual(a.next().value, 10, nil)
+    testing.assertEqual(b.next().value, 20, nil)
+    testing.assertEqual(a.next().value, 11, nil)
+    testing.assertEqual(b.next().value, 21, nil)
+})
+
+testing.test(".done property", lam{ in
+    func gen() { yield 1 }
+    let g = gen()
+    testing.assertEqual(g.done, false, nil)
+    g.next()
+    g.next()
+    testing.assertEqual(g.done, true, nil)
+})
+
+testing.test("generator with return value", lam{ in
+    func gen() {
+        yield 1
+        return 99
+    }
+    let g = gen()
+    testing.assertEqual(g.next().value, 1, nil)
+    let last = g.next()
+    testing.assertEqual(last.value, 99, nil)
+    testing.assertEqual(last.done, true, nil)
+})
+
+testing.test("bare yield produces nil", lam{ in
+    func gen() { yield }
+    let g = gen()
+    testing.assertEqual(g.next().value, nil, nil)
+})
+
+testing.test("for-in still works with arrays", lam{ in
+    let result = []
+    for (x in [10, 20, 30]) { push(result, x) }
+    testing.assertEqual(result, [10, 20, 30], nil)
+})
+
+testing.test("for-in still works with maps", lam{ in
+    let result = []
+    for ({key, value} in {a: 1}) {
+        push(result, key)
+        push(result, value)
+    }
+    testing.assertEqual(result, ["a", 1], nil)
+})
+
+testing.test("for-in still works with strings", lam{ in
+    let result = []
+    for (c in "abc") { push(result, c) }
+    testing.assertEqual(result, ["a", "b", "c"], nil)
+})
+
+testing.done()
