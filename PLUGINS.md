@@ -104,7 +104,7 @@ map->entries["key"] = Value("value");
 return Value(map);
 ```
 
-Always use `gcNew` instead of `std::make_shared` — it registers the object with Praia's garbage collector.
+Always use `gcNew` instead of `std::make_shared` - it registers the object with Praia's garbage collector.
 
 ### Error handling
 
