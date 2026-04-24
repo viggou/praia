@@ -36,6 +36,7 @@
 #include <unistd.h>
 #include <csignal>
 #include <atomic>
+#include <dlfcn.h>
 
 namespace fs = std::filesystem;
 
@@ -45,6 +46,11 @@ namespace fs = std::filesystem;
 static std::mutex g_signalMutex;
 static std::unordered_map<int, std::shared_ptr<Callable>> g_signalHandlers;
 static std::atomic<uint32_t> g_pendingSignals{0}; // bitmask of pending signals
+
+// ── Plugin loading infrastructure ──
+static std::mutex g_pluginMutex;
+static std::unordered_map<std::string, std::shared_ptr<PraiaMap>> g_pluginCache;
+static std::vector<void*> g_pluginHandles; // never dlclose'd — function pointers must stay valid
 
 static int signalNameToNum(const std::string& name) {
     if (name == "SIGINT" || name == "INT") return SIGINT;
@@ -1767,6 +1773,78 @@ Interpreter::Interpreter() {
 
     globals->define("sqlite", Value(sqliteMap));
 #endif
+
+    // ── loadNative(path) — load a native C++ plugin ──
+    globals->define("loadNative", Value(makeNative("loadNative", 1,
+        [](const std::vector<Value>& args) -> Value {
+            if (!args[0].isString())
+                throw RuntimeError("loadNative() requires a string path", 0);
+
+            std::string path = args[0].asString();
+
+            // Auto-resolve platform extension if omitted
+            if (!fs::exists(path)) {
+#ifdef __APPLE__
+                if (fs::exists(path + ".dylib")) path += ".dylib";
+                else if (fs::exists(path + ".so")) path += ".so";
+#else
+                if (fs::exists(path + ".so")) path += ".so";
+                else if (fs::exists(path + ".dylib")) path += ".dylib";
+#endif
+            }
+
+            // Resolve to absolute path for consistent caching
+            std::string absPath;
+            try {
+                absPath = fs::canonical(path).string();
+            } catch (const std::filesystem::filesystem_error&) {
+                throw RuntimeError("loadNative(): file not found: " + path, 0);
+            }
+
+            // Lock for the entire load to prevent double-loading
+            std::lock_guard<std::mutex> lock(g_pluginMutex);
+
+            // Check cache
+            auto it = g_pluginCache.find(absPath);
+            if (it != g_pluginCache.end())
+                return Value(it->second);
+
+            // dlopen
+            void* handle = dlopen(absPath.c_str(), RTLD_NOW | RTLD_LOCAL);
+            if (!handle) {
+                std::string err = dlerror();
+                throw RuntimeError("loadNative(): failed to load '" + path + "': " + err, 0);
+            }
+
+            // Keep handle alive — never dlclose (function pointers live in lambdas)
+            g_pluginHandles.push_back(handle);
+
+            // dlsym for the entry point
+            using RegisterFn = void (*)(PraiaMap*);
+            dlerror(); // clear any old error
+            auto registerFn = reinterpret_cast<RegisterFn>(dlsym(handle, "praia_register"));
+            const char* dlErr = dlerror();
+            if (dlErr) {
+                throw RuntimeError(
+                    "loadNative(): plugin '" + path +
+                    "' missing 'praia_register' symbol: " + std::string(dlErr), 0);
+            }
+
+            // Create the module map and call the plugin's register function
+            auto moduleMap = gcNew<PraiaMap>();
+            try {
+                registerFn(moduleMap.get());
+            } catch (const std::exception& e) {
+                throw RuntimeError(
+                    "loadNative(): plugin '" + path +
+                    "' threw during registration: " + std::string(e.what()), 0);
+            }
+
+            // Cache
+            g_pluginCache[absPath] = moduleMap;
+
+            return Value(moduleMap);
+        })));
 }
 
 void Interpreter::setArgs(const std::vector<std::string>& args) {

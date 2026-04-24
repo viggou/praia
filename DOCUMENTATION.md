@@ -3755,6 +3755,21 @@ func make() {
 
 ---
 
+## Native Plugins
+
+Praia can load native C++ modules at runtime:
+
+```
+let mathext = loadNative("./mathext")
+print(mathext.gcd(48, 18))  // 6
+```
+
+`loadNative(path)` opens a shared library (`.dylib`/`.so`) and returns a map of native functions. The extension is auto-detected if omitted. Results are cached — loading the same path twice returns the same module.
+
+See [PLUGINS.md](PLUGINS.md) for the full plugin authoring guide.
+
+---
+
 ## Command-Line Usage
 
 ```

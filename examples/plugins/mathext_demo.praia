@@ -1,0 +1,7 @@
+let mathext = loadNative("./examples/plugins/mathext")
+
+print("gcd(48, 18) =", mathext.gcd(48, 18))
+print("lcm(12, 8) =", mathext.lcm(12, 8))
+print("fibonacci(10) =", mathext.fibonacci(10))
+print("hypot(3, 4) =", mathext.hypot(3, 4))
+print("sum([1,2,3,4,5]) =", mathext.sum([1, 2, 3, 4, 5]))
