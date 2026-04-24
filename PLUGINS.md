@@ -148,7 +148,27 @@ g++ -std=c++17 -shared -fPIC -Isrc -o myplugin.dylib myplugin.cpp
 g++ -std=c++17 -shared -fPIC -Isrc -o myplugin.so myplugin.cpp
 ```
 
-Plugins must be compiled with the same C++ compiler and standard library as Praia.
+Plugins must be compiled with a C++ compiler (the plugin API uses C++ types). They can freely call C functions and wrap C libraries.
+
+## Wrapping C libraries
+
+Plugins are `.cpp` files, but can wrap any C library. For example, wrapping C's `strtoll` for base conversion:
+
+```cpp
+#include "praia_plugin.h"
+#include <cstdlib>
+
+extern "C" void praia_register(PraiaMap* module) {
+    module->entries["parseBase"] = Value(makeNative("mymod.parseBase", 2,
+        [](const std::vector<Value>& args) -> Value {
+            auto& str = args[0].asString();
+            int base = static_cast<int>(args[1].asInt());
+            return Value(static_cast<int64_t>(strtoll(str.c_str(), nullptr, base)));
+        }));
+}
+```
+
+See [`examples/plugins/strutil.cpp`](examples/plugins/strutil.cpp) for a full example wrapping C standard library functions.
 
 ## Behavior
 
@@ -160,4 +180,5 @@ Plugins must be compiled with the same C++ compiler and standard library as Prai
 
 ## Example
 
-See [`examples/plugins/mathext.cpp`](examples/plugins/mathext.cpp) for a complete example with `gcd`, `lcm`, `fibonacci`, `hypot`, and `sum`.
+- [`examples/plugins/mathext.cpp`](examples/plugins/mathext.cpp) — math functions (gcd, lcm, fibonacci, hypot, sum)
+- [`examples/plugins/strutil.cpp`](examples/plugins/strutil.cpp) — wrapping C stdlib functions (isAlpha, isDigit, base conversion)

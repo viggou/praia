@@ -1,0 +1,14 @@
+// Demonstrates a plugin that wraps C standard library functions
+
+let strutil = loadNative("./examples/plugins/strutil")
+
+print("isAlpha('hello'):", strutil.isAlpha("hello"))
+print("isAlpha('hello123'):", strutil.isAlpha("hello123"))
+print("isDigit('42'):", strutil.isDigit("42"))
+print("isDigit('42x'):", strutil.isDigit("42x"))
+
+// Base conversion using C's strtoll/manual formatting
+print("parseBase('ff', 16):", strutil.parseBase("ff", 16))
+print("parseBase('101010', 2):", strutil.parseBase("101010", 2))
+print("toBase(255, 16):", strutil.toBase(255, 16))
+print("toBase(42, 2):", strutil.toBase(42, 2))
