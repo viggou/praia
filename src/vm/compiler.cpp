@@ -129,6 +129,7 @@ void Compiler::compileStmt(const Stmt* stmt) {
     else if (auto* s = dynamic_cast<const LetStmt*>(stmt)) compileLetStmt(s);
     else if (auto* s = dynamic_cast<const BlockStmt*>(stmt)) compileBlockStmt(s);
     else if (auto* s = dynamic_cast<const IfStmt*>(stmt)) compileIfStmt(s);
+    else if (auto* s = dynamic_cast<const MatchStmt*>(stmt)) compileMatchStmt(s);
     else if (auto* s = dynamic_cast<const WhileStmt*>(stmt)) compileWhileStmt(s);
     else if (auto* s = dynamic_cast<const ForStmt*>(stmt)) compileForStmt(s);
     else if (auto* s = dynamic_cast<const ForInStmt*>(stmt)) compileForInStmt(s);
@@ -287,6 +288,43 @@ void Compiler::compileIfStmt(const IfStmt* stmt) {
 
     patchJump(elseJump);
     for (int j : elifEndJumps) patchJump(j);
+}
+
+void Compiler::compileMatchStmt(const MatchStmt* stmt) {
+    // Evaluate subject once, keep on stack
+    compileExpr(stmt->subject.get());
+
+    std::vector<int> endJumps;
+    bool hasDefault = false;
+
+    for (auto& c : stmt->cases) {
+        if (!c.pattern) {
+            // Default case — pop subject, execute body
+            emit(OpCode::OP_POP, stmt->line);
+            compileStmt(c.body.get());
+            hasDefault = true;
+            break;
+        }
+        // Duplicate subject for comparison
+        emit(OpCode::OP_DUP, stmt->line);
+        compileExpr(c.pattern.get());
+        emit(OpCode::OP_EQUAL, stmt->line);
+        int skipJump = emitJump(OpCode::OP_POP_JUMP_IF_FALSE, stmt->line);
+
+        // Match — pop subject, execute body, jump to end
+        emit(OpCode::OP_POP, stmt->line);
+        compileStmt(c.body.get());
+        endJumps.push_back(emitJump(OpCode::OP_JUMP, stmt->line));
+
+        patchJump(skipJump);
+    }
+
+    // If no case matched and no default, pop the subject
+    if (!hasDefault) {
+        emit(OpCode::OP_POP, stmt->line);
+    }
+
+    for (int j : endJumps) patchJump(j);
 }
 
 void Compiler::compileWhileStmt(const WhileStmt* stmt) {

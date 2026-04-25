@@ -6,34 +6,34 @@ testing.test("re.test", lam{ in
     testing.assert(!re.test("hello", "\\d+"), "no digits")
 })
 
-testing.test("re.match basic", lam{ in
-    let m = re.match("age: 25", "(\\w+): (\\d+)")
+testing.test("re.find basic", lam{ in
+    let m = re.find("age: 25", "(\\w+): (\\d+)")
     testing.assertEqual(m.match, "age: 25", nil)
     testing.assertEqual(m.groups, ["age", "25"], nil)
     testing.assertEqual(m.index, 0, nil)
 })
 
-testing.test("re.match nil on no match", lam{ in
-    testing.assertEqual(re.match("hello", "\\d+"), nil, nil)
+testing.test("re.find nil on no match", lam{ in
+    testing.assertEqual(re.find("hello", "\\d+"), nil, nil)
 })
 
-testing.test("re.match named groups", lam{ in
-    let m = re.match("2026-04-22", "(?<year>\\d{4})-(?<month>\\d{2})-(?<day>\\d{2})")
+testing.test("re.find named groups", lam{ in
+    let m = re.find("2026-04-22", "(?<year>\\d{4})-(?<month>\\d{2})-(?<day>\\d{2})")
     testing.assertEqual(m.named.year, "2026", nil)
     testing.assertEqual(m.named.month, "04", nil)
     testing.assertEqual(m.named.day, "22", nil)
 })
 
-testing.test("re.matchAll", lam{ in
-    let matches = re.matchAll("a1b2c3", "\\d")
+testing.test("re.findAll", lam{ in
+    let matches = re.findAll("a1b2c3", "\\d")
     testing.assertEqual(len(matches), 3, nil)
     testing.assertEqual(matches[0].match, "1", nil)
     testing.assertEqual(matches[2].match, "3", nil)
 })
 
-testing.test("re.matchAll named groups", lam{ in
+testing.test("re.findAll named groups", lam{ in
     let text = "x=1 y=2"
-    let matches = re.matchAll(text, "(?<key>\\w)=(?<val>\\d)")
+    let matches = re.findAll(text, "(?<key>\\w)=(?<val>\\d)")
     testing.assertEqual(len(matches), 2, nil)
     testing.assertEqual(matches[0].named.key, "x", nil)
     testing.assertEqual(matches[1].named.val, "2", nil)

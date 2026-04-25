@@ -685,6 +685,7 @@ VM::Result VM::execute(int baseFrameCount_) {
         case OpCode::OP_TRUE: push(Value(true)); break;
         case OpCode::OP_FALSE: push(Value(false)); break;
         case OpCode::OP_POP: pop(); break;
+        case OpCode::OP_DUP: push(peek()); break;
         case OpCode::OP_POPN: {
             uint8_t n = READ_BYTE();
             if (n > stackTop) n = static_cast<uint8_t>(stackTop);

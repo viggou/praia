@@ -68,6 +68,7 @@ StmtPtr Parser::statement() {
     if (match(TokenType::CLASS))  return classStatement();
     if (match(TokenType::ENUM))   return enumStatement();
     if (match(TokenType::IF))     return ifStatement();
+    if (match(TokenType::MATCH))  return matchStatement();
     if (match(TokenType::WHILE))  return whileStatement();
     if (match(TokenType::FOR))    return forStatement();
     if (match(TokenType::RETURN)) return returnStatement();
@@ -303,6 +304,35 @@ StmtPtr Parser::ifStatement() {
         stmt->elseBranch = block();
     }
 
+    return stmt;
+}
+
+StmtPtr Parser::matchStatement() {
+    int ln = previous().line;
+    consume(TokenType::LPAREN, "Expected '(' after 'match'");
+    auto subject = expression();
+    consume(TokenType::RPAREN, "Expected ')' after match subject");
+    consume(TokenType::LBRACE, "Expected '{' after match subject");
+
+    auto stmt = std::make_unique<MatchStmt>();
+    stmt->line = ln;
+    stmt->subject = std::move(subject);
+
+    while (!check(TokenType::RBRACE) && !isAtEnd()) {
+        MatchStmt::CaseBranch branch;
+        if (check(TokenType::IDENTIFIER) && peek().lexeme == "_") {
+            advance(); // consume '_'
+            branch.pattern = nullptr;
+        } else {
+            branch.pattern = expression();
+        }
+        consume(TokenType::LBRACE, "Expected '{' after match case");
+        branch.body = block();
+        stmt->cases.push_back(std::move(branch));
+        if (!stmt->cases.back().pattern) break; // default must be last
+    }
+
+    consume(TokenType::RBRACE, "Expected '}' to close match");
     return stmt;
 }
 
@@ -1219,7 +1249,7 @@ Parser::ParseError Parser::error(const Token& token, const std::string& message)
 bool Parser::isNameToken(TokenType t) const {
     return t == TokenType::IDENTIFIER ||
            t == TokenType::LET || t == TokenType::FUNC || t == TokenType::CLASS || t == TokenType::ENUM ||
-           t == TokenType::IF || t == TokenType::ELSE || t == TokenType::ELIF ||
+           t == TokenType::IF || t == TokenType::ELSE || t == TokenType::ELIF || t == TokenType::MATCH ||
            t == TokenType::WHILE || t == TokenType::FOR || t == TokenType::IN ||
            t == TokenType::RETURN || t == TokenType::BREAK || t == TokenType::CONTINUE ||
            t == TokenType::TRY || t == TokenType::CATCH || t == TokenType::THROW ||

@@ -118,9 +118,9 @@ func create() {
     }
 
     func handleRequest(req) {
-        let match = findHandler(req)
-        let handler = match.handler
-        let params = match.params
+        let found = findHandler(req)
+        let handler = found.handler
+        let params = found.params
 
         // Build the middleware chain from inside out:
         // The innermost function calls the actual route handler.

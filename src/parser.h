@@ -24,6 +24,7 @@ private:
     StmtPtr classStatement();
     StmtPtr enumStatement();
     StmtPtr ifStatement();
+    StmtPtr matchStatement();
     StmtPtr whileStatement();
     StmtPtr forStatement();
     StmtPtr returnStatement();

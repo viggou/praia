@@ -533,6 +533,36 @@ if (name) {
 }
 ```
 
+### match
+
+Match a value against multiple cases. Cases are tested top-to-bottom; first match wins. Use `_` for the default case.
+
+```
+let cmd = "stop"
+
+match (cmd) {
+    "start" { print("starting") }
+    "stop" { print("stopping") }
+    "restart" { print("restarting") }
+    _ { print("unknown command") }
+}
+```
+
+Cases can be any expression:
+
+```
+let x = 10
+
+match (x) {
+    5 * 2 { print("ten") }
+    5 * 3 { print("fifteen") }
+    _ { print("other") }
+}
+// ten
+```
+
+If no case matches and there's no default, nothing happens. `match` uses `==` for comparison, which respects `__eq` operator overloading on classes.
+
 ---
 
 ## Error Handling
@@ -1456,8 +1486,8 @@ use "re"
 | Function | Description |
 |----------|-------------|
 | `re.test(str, pattern)` | Returns `true` if pattern matches anywhere |
-| `re.match(str, pattern)` | First match with `groups`, `named`, and `index` (or `nil`) |
-| `re.matchAll(str, pattern)` | Array of all matches, each with `groups` and `named` |
+| `re.find(str, pattern)` | First match with `groups`, `named`, and `index` (or `nil`) |
+| `re.findAll(str, pattern)` | Array of all matches, each with `groups` and `named` |
 | `re.replace(str, pattern, repl)` | Replace all matches (`$1`, `$2` back-references work) |
 | `re.split(str, pattern)` | Split string by regex pattern |
 | `re.escape(str)` | Escape special regex characters for literal matching |
@@ -1467,7 +1497,7 @@ use "re"
 Use `(?<name>...)` syntax. Named groups appear in `m.named` as a map:
 
 ```
-let m = re.match("2026-04-22", "(?<year>\\d{4})-(?<month>\\d{2})-(?<day>\\d{2})")
+let m = re.find("2026-04-22", "(?<year>\\d{4})-(?<month>\\d{2})-(?<day>\\d{2})")
 print(m.named.year)    // "2026"
 print(m.named.month)   // "04"
 print(m.named.day)     // "22"
@@ -1480,7 +1510,7 @@ Named and unnamed groups can be mixed. Unnamed groups get `nil` in the name list
 
 ```
 let text = "name=Alice age=30 city=London"
-let matches = re.matchAll(text, "(?<key>\\w+)=(?<val>\\w+)")
+let matches = re.findAll(text, "(?<key>\\w+)=(?<val>\\w+)")
 for (m in matches) {
     print(m.named.key, "=>", m.named.val)
 }
@@ -1513,10 +1543,10 @@ re.test("file (1).txt", literal)          // true
 use "re"
 
 let log = "2026-04-22 ERROR [auth] Login failed user=admin"
-let m = re.match(log, "(?<date>\\S+) (?<level>\\w+) \\[(?<mod>\\w+)\\] (?<msg>.*)")
+let m = re.find(log, "(?<date>\\S+) (?<level>\\w+) \\[(?<mod>\\w+)\\] (?<msg>.*)")
 print(m.named.level)    // "ERROR"
 
-let pairs = re.matchAll(m.named.msg, "(?<key>\\w+)=(?<val>\\S+)")
+let pairs = re.findAll(m.named.msg, "(?<key>\\w+)=(?<val>\\S+)")
 for (p in pairs) {
     print(p.named.key, "=", p.named.val)   // user = admin
 }
@@ -3837,7 +3867,8 @@ These operations work on raw UTF-8 bytes, which is correct and intentional:
 - `.contains()`, `.startsWith()`, `.endsWith()` — byte-sequence matching (safe for UTF-8)
 - `.replace()` — byte-sequence replacement (safe for UTF-8)
 - `.strip()`, `.trimStart()`, `.trimEnd()` — ASCII whitespace is single-byte
-- `.test()`, `.match()`, `.matchAll()`, `.replacePattern()` — regex operates on bytes; match `index` is a byte offset
+- `.test()`, `.replacePattern()` — regex pattern matching operates on bytes internally
+- `.match()`, `.matchAll()` — regex matching on bytes, but returned `index` is a grapheme index (consistent with `slice` and `indexOf`)
 - `.repeat()`, `.join()` — concatenate whole strings
 - `bytes.len(str)` — byte length
 

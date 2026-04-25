@@ -187,6 +187,15 @@ struct IfStmt : Stmt {
     StmtPtr elseBranch; // nullptr if no else
 };
 
+struct MatchStmt : Stmt {
+    ExprPtr subject;
+    struct CaseBranch {
+        ExprPtr pattern; // nullptr = default (_)
+        StmtPtr body;
+    };
+    std::vector<CaseBranch> cases;
+};
+
 struct WhileStmt : Stmt {
     ExprPtr condition;
     StmtPtr body;

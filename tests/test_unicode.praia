@@ -158,4 +158,18 @@ testing.test("replace with unicode", lam{ in
     testing.assertEqual("caf\u{E9}".replace("\u{E9}", "e"), "cafe", nil)
 })
 
+// ── Regex index consistency ──
+
+testing.test("regex match index is grapheme-based", lam{ in
+    let m = "A\u{1F600}BC".match("[BC]+")
+    testing.assertEqual(m.index, 2, "B is at grapheme index 2")
+    testing.assertEqual(m.match, "BC", nil)
+})
+
+testing.test("regex matchAll index is grapheme-based", lam{ in
+    let ms = "\u{E9}ab".matchAll("[ab]")
+    testing.assertEqual(ms[0].index, 1, "a is at grapheme index 1")
+    testing.assertEqual(ms[1].index, 2, "b is at grapheme index 2")
+})
+
 testing.done()

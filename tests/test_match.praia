@@ -1,0 +1,140 @@
+use "testing"
+
+testing.test("match literal strings", lam{ in
+    let result = ""
+    match ("hello") {
+        "world" { result = "world" }
+        "hello" { result = "hello" }
+    }
+    testing.assertEqual(result, "hello", nil)
+})
+
+testing.test("match integers", lam{ in
+    let result = 0
+    match (2) {
+        1 { result = 10 }
+        2 { result = 20 }
+        3 { result = 30 }
+    }
+    testing.assertEqual(result, 20, nil)
+})
+
+testing.test("match with default", lam{ in
+    let result = ""
+    match ("unknown") {
+        "a" { result = "a" }
+        "b" { result = "b" }
+        _ { result = "default" }
+    }
+    testing.assertEqual(result, "default", nil)
+})
+
+testing.test("match no case hit and no default", lam{ in
+    let result = "untouched"
+    match ("xyz") {
+        "a" { result = "a" }
+        "b" { result = "b" }
+    }
+    testing.assertEqual(result, "untouched", nil)
+})
+
+testing.test("match first case wins", lam{ in
+    let result = ""
+    match ("x") {
+        "x" { result = "first" }
+        "x" { result = "second" }
+    }
+    testing.assertEqual(result, "first", nil)
+})
+
+testing.test("match expression subject", lam{ in
+    let result = 0
+    match (1 + 1) {
+        1 { result = 1 }
+        2 { result = 2 }
+        3 { result = 3 }
+    }
+    testing.assertEqual(result, 2, nil)
+})
+
+testing.test("match expression patterns", lam{ in
+    let x = 5
+    let result = ""
+    match (10) {
+        x * 3 { result = "fifteen" }
+        x * 2 { result = "ten" }
+        x { result = "five" }
+    }
+    testing.assertEqual(result, "ten", nil)
+})
+
+testing.test("match with variables", lam{ in
+    let cmd = "restart"
+    let result = ""
+    match (cmd) {
+        "start" { result = "starting" }
+        "stop" { result = "stopping" }
+        "restart" { result = "restarting" }
+        _ { result = "unknown" }
+    }
+    testing.assertEqual(result, "restarting", nil)
+})
+
+testing.test("match booleans", lam{ in
+    let result = ""
+    match (true) {
+        false { result = "no" }
+        true { result = "yes" }
+    }
+    testing.assertEqual(result, "yes", nil)
+})
+
+testing.test("match nil", lam{ in
+    let result = "miss"
+    match (nil) {
+        0 { result = "zero" }
+        false { result = "false" }
+        nil { result = "nil" }
+    }
+    testing.assertEqual(result, "nil", nil)
+})
+
+testing.test("match with function calls in body", lam{ in
+    func double(n) { return n * 2 }
+    let result = 0
+    match ("go") {
+        "go" { result = double(21) }
+        _ { result = -1 }
+    }
+    testing.assertEqual(result, 42, nil)
+})
+
+testing.test("match default only", lam{ in
+    let result = ""
+    match ("anything") {
+        _ { result = "caught" }
+    }
+    testing.assertEqual(result, "caught", nil)
+})
+
+testing.test("match with operator overloading", lam{ in
+    class Point {
+        func init(x, y) {
+            this.x = x
+            this.y = y
+        }
+        func __eq(other) {
+            return this.x == other.x && this.y == other.y
+        }
+    }
+    let p = Point(1, 2)
+    let result = ""
+    match (p) {
+        Point(0, 0) { result = "origin" }
+        Point(1, 2) { result = "one-two" }
+        _ { result = "other" }
+    }
+    testing.assertEqual(result, "one-two", nil)
+})
+
+testing.done()
