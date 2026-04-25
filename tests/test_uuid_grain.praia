@@ -1,0 +1,18 @@
+use "testing"
+use "uuid"
+use "validate"
+
+testing.test("uuid v4 format", lam{ in
+    let id = uuid.v4()
+    testing.assertEqual(len(id), 36, "uuid is 36 chars")
+    testing.assert(validate.uuid(id), "should be valid uuid format")
+    testing.assertEqual(id[14], "4", "version nibble is 4")
+})
+
+testing.test("uuid v4 uniqueness", lam{ in
+    let a = uuid.v4()
+    let b = uuid.v4()
+    testing.assert(a != b, "two uuids should differ")
+})
+
+testing.done()

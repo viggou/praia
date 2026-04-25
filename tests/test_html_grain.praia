@@ -1,0 +1,46 @@
+use "testing"
+use "html"
+
+testing.test("escape", lam{ in
+    testing.assertEqual(html.escape("<b>hi</b>"), "&lt;b&gt;hi&lt;/b&gt;", nil)
+    testing.assertEqual(html.escape("a & b"), "a &amp; b", nil)
+    testing.assertEqual(html.escape("\"quoted\""), "&quot;quoted&quot;", nil)
+})
+
+testing.test("unescape", lam{ in
+    testing.assertEqual(html.unescape("&lt;b&gt;"), "<b>", nil)
+    testing.assertEqual(html.unescape("&amp;"), "&", nil)
+    testing.assertEqual(html.unescape("&quot;"), "\"", nil)
+})
+
+testing.test("escape unescape roundtrip", lam{ in
+    let original = "<script>alert('xss')</script>"
+    testing.assertEqual(html.unescape(html.escape(original)), original, nil)
+})
+
+testing.test("stripTags", lam{ in
+    testing.assertEqual(html.stripTags("<p>hello <b>world</b></p>"), "hello world", nil)
+    testing.assertEqual(html.stripTags("no tags"), "no tags", nil)
+})
+
+testing.test("element", lam{ in
+    let result = html.element("div", {class: "box"}, "content")
+    testing.assert(result.contains("<div"), nil)
+    testing.assert(result.contains("class=\"box\""), nil)
+    testing.assert(result.contains("content"), nil)
+    testing.assert(result.contains("</div>"), nil)
+})
+
+testing.test("a helper", lam{ in
+    let link = html.a("https://example.com", "click")
+    testing.assert(link.contains("href=\"https://example.com\""), nil)
+    testing.assert(link.contains("click"), nil)
+})
+
+testing.test("img helper", lam{ in
+    let image = html.img("/logo.png", "Logo")
+    testing.assert(image.contains("src=\"/logo.png\""), nil)
+    testing.assert(image.contains("alt=\"Logo\""), nil)
+})
+
+testing.done()

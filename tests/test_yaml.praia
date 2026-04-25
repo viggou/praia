@@ -1,0 +1,42 @@
+use "testing"
+
+testing.test("yaml parse simple", lam{ in
+    let data = yaml.parse("name: Ada\nage: 36")
+    testing.assertEqual(data.name, "Ada", nil)
+    testing.assertEqual(data.age, 36, nil)
+})
+
+testing.test("yaml parse nested", lam{ in
+    let data = yaml.parse("server:\n  host: localhost\n  port: 8080")
+    testing.assertEqual(data.server.host, "localhost", nil)
+    testing.assertEqual(data.server.port, 8080, nil)
+})
+
+testing.test("yaml parse array", lam{ in
+    let data = yaml.parse("items:\n  - one\n  - two\n  - three")
+    testing.assertEqual(len(data.items), 3, nil)
+    testing.assertEqual(data.items[0], "one", nil)
+})
+
+testing.test("yaml parse booleans and nil", lam{ in
+    let data = yaml.parse("a: true\nb: false\nc: null")
+    testing.assertEqual(data.a, true, nil)
+    testing.assertEqual(data.b, false, nil)
+    testing.assertEqual(data.c, nil, nil)
+})
+
+testing.test("yaml stringify", lam{ in
+    let result = yaml.stringify({name: "Ada", age: 36})
+    testing.assert(result.contains("name: Ada"), nil)
+    testing.assert(result.contains("age: 36"), nil)
+})
+
+testing.test("yaml roundtrip", lam{ in
+    let original = {x: 1, y: "hello", z: true}
+    let result = yaml.parse(yaml.stringify(original))
+    testing.assertEqual(result.x, 1, nil)
+    testing.assertEqual(result.y, "hello", nil)
+    testing.assertEqual(result.z, true, nil)
+})
+
+testing.done()
