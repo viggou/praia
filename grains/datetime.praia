@@ -1,0 +1,314 @@
+// Datetime grain — parsing, formatting, arithmetic on dates and times
+//
+// Usage:
+//   use "datetime"
+//
+//   let now = datetime.now()
+//   print(now.year, now.month, now.day)
+//   print(datetime.format(now, "%Y-%m-%d"))
+//
+//   let d = datetime.create(2026, 4, 24, 14, 30, 0)
+//   let tomorrow = datetime.addDays(d, 1)
+//   let diff = datetime.diff(tomorrow, d)  // {days: 1, hours: 0, ...}
+//
+//   let parsed = datetime.parse("2026-04-24", "%Y-%m-%d")
+
+// ── Internal helpers ──
+
+// Integer floor division (Praia's / always returns float)
+func idiv(a, b) {
+    let r = a / b
+    if (r >= 0) { return num(str(r).split(".")[0]) }
+    return num(str(r).split(".")[0]) - 1
+}
+
+func isLeapYear(y) {
+    return (y % 4 == 0 && y % 100 != 0) || (y % 400 == 0)
+}
+
+func daysInMonth(y, m) {
+    let days = [0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    if (m == 2 && isLeapYear(y)) { return 29 }
+    return days[m]
+}
+
+func dayOfYear(y, m, d) {
+    let total = 0
+    for (i in 1..m) {
+        total = total + daysInMonth(y, i)
+    }
+    return total + d
+}
+
+// Day of week: 0=Sunday, 1=Monday, ..., 6=Saturday
+func weekday(y, m, d) {
+    let t = [0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4]
+    let yr = y
+    if (m < 3) { yr = yr - 1 }
+    return (yr + idiv(yr, 4) - idiv(yr, 100) + idiv(yr, 400) + t[m - 1] + d) % 7
+}
+
+let WEEKDAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
+let WEEKDAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+let MONTH_NAMES = ["", "January", "February", "March", "April", "May", "June",
+                   "July", "August", "September", "October", "November", "December"]
+let MONTH_SHORT = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+func pad2(n) {
+    if (n < 10) { return "0" + str(n) }
+    return str(n)
+}
+
+func pad3(n) {
+    if (n < 10) { return "00" + str(n) }
+    if (n < 100) { return "0" + str(n) }
+    return str(n)
+}
+
+// ── Factory functions ──
+
+func create(year, month, day, hour, minute, second, ms) {
+    if (!month) { month = 1 }
+    if (!day) { day = 1 }
+    if (!hour) { hour = 0 }
+    if (!minute) { minute = 0 }
+    if (!second) { second = 0 }
+    if (!ms) { ms = 0 }
+    return {
+        year: year, month: month, day: day,
+        hour: hour, minute: minute, second: second, ms: ms
+    }
+}
+
+func now() {
+    return fromEpoch(time.now())
+}
+
+func today() {
+    let n = now()
+    return create(n.year, n.month, n.day)
+}
+
+func fromEpoch(ms) {
+    let formatted = time.format("%Y %m %d %H %M %S", ms)
+    let parts = formatted.split(" ")
+    return {
+        year: num(parts[0]),
+        month: num(parts[1]),
+        day: num(parts[2]),
+        hour: num(parts[3]),
+        minute: num(parts[4]),
+        second: num(parts[5]),
+        ms: ms % 1000
+    }
+}
+
+func toEpoch(dt) {
+    // Use time.now() as a known reference: we know its epoch ms and can
+    // decompose it to local time via fromEpoch. Then compute the ms offset
+    // between the reference and the target date using pure integer math.
+    let refMs = time.now()
+    let ref = fromEpoch(refMs)
+
+    let refDays = _totalDays(ref.year, ref.month, ref.day)
+    let targetDays = _totalDays(dt.year, dt.month, dt.day)
+    let dayDiff = targetDays - refDays
+
+    let refTimeMs = ref.hour * 3600000 + ref.minute * 60000 + ref.second * 1000 + ref.ms
+    let targetTimeMs = dt.hour * 3600000 + dt.minute * 60000 + dt.second * 1000 + dt.ms
+
+    return refMs + dayDiff * 86400000 + (targetTimeMs - refTimeMs)
+}
+
+// Days since year 1 using integer math
+func _totalDays(y, m, d) {
+    let n = y - 1
+    let yDays = n * 365 + idiv(n, 4) - idiv(n, 100) + idiv(n, 400)
+    return yDays + dayOfYear(y, m, d)
+}
+
+// ── Parsing ──
+
+func parse(s, fmt) {
+    if (!fmt) { fmt = "%Y-%m-%d" }
+
+    let year = 0
+    let month = 1
+    let day = 1
+    let hour = 0
+    let minute = 0
+    let second = 0
+
+    let si = 0
+    let fi = 0
+
+    while (fi < len(fmt) && si < len(s)) {
+        if (fmt[fi] == "%" && fi + 1 < len(fmt)) {
+            let spec = fmt[fi + 1]
+            fi = fi + 2
+
+            if (spec == "Y") {
+                year = num(s.slice(si, si + 4))
+                si = si + 4
+            } elif (spec == "m") {
+                month = num(s.slice(si, si + 2))
+                si = si + 2
+            } elif (spec == "d") {
+                day = num(s.slice(si, si + 2))
+                si = si + 2
+            } elif (spec == "H") {
+                hour = num(s.slice(si, si + 2))
+                si = si + 2
+            } elif (spec == "M") {
+                minute = num(s.slice(si, si + 2))
+                si = si + 2
+            } elif (spec == "S") {
+                second = num(s.slice(si, si + 2))
+                si = si + 2
+            } else {
+                si = si + 1
+            }
+        } else {
+            fi = fi + 1
+            si = si + 1
+        }
+    }
+
+    return create(year, month, day, hour, minute, second)
+}
+
+// ── Formatting ──
+
+func format(dt, fmt) {
+    if (!fmt) { fmt = "%Y-%m-%d %H:%M:%S" }
+
+    let result = ""
+    let i = 0
+
+    while (i < len(fmt)) {
+        if (fmt[i] == "%" && i + 1 < len(fmt)) {
+            let spec = fmt[i + 1]
+            i = i + 2
+
+            if (spec == "Y") { result = result + str(dt.year) }
+            elif (spec == "m") { result = result + pad2(dt.month) }
+            elif (spec == "d") { result = result + pad2(dt.day) }
+            elif (spec == "H") { result = result + pad2(dt.hour) }
+            elif (spec == "M") { result = result + pad2(dt.minute) }
+            elif (spec == "S") { result = result + pad2(dt.second) }
+            elif (spec == "A") { result = result + WEEKDAY_NAMES[weekday(dt.year, dt.month, dt.day)] }
+            elif (spec == "a") { result = result + WEEKDAY_SHORT[weekday(dt.year, dt.month, dt.day)] }
+            elif (spec == "B") { result = result + MONTH_NAMES[dt.month] }
+            elif (spec == "b") { result = result + MONTH_SHORT[dt.month] }
+            elif (spec == "j") { result = result + pad3(dayOfYear(dt.year, dt.month, dt.day)) }
+            elif (spec == "w") { result = result + str(weekday(dt.year, dt.month, dt.day)) }
+            elif (spec == "%") { result = result + "%" }
+            else { result = result + "%" + spec }
+        } else {
+            result = result + fmt[i]
+            i = i + 1
+        }
+    }
+
+    return result
+}
+
+func iso(dt) {
+    return format(dt, "%Y-%m-%dT%H:%M:%S")
+}
+
+// ── Arithmetic ──
+
+func addDays(dt, n) {
+    return fromEpoch(toEpoch(dt) + n * 86400000)
+}
+
+func addHours(dt, n) {
+    return fromEpoch(toEpoch(dt) + n * 3600000)
+}
+
+func addMinutes(dt, n) {
+    return fromEpoch(toEpoch(dt) + n * 60000)
+}
+
+func addSeconds(dt, n) {
+    return fromEpoch(toEpoch(dt) + n * 1000)
+}
+
+func addMonths(dt, n) {
+    let totalMonths = (dt.year * 12 + dt.month - 1) + n
+    let newYear = idiv(totalMonths, 12)
+    let newMonth = totalMonths % 12 + 1
+    if (newMonth <= 0) {
+        newMonth = newMonth + 12
+        newYear = newYear - 1
+    }
+    let maxDay = daysInMonth(newYear, newMonth)
+    let newDay = dt.day
+    if (newDay > maxDay) { newDay = maxDay }
+    return create(newYear, newMonth, newDay, dt.hour, dt.minute, dt.second, dt.ms)
+}
+
+func addYears(dt, n) {
+    return addMonths(dt, n * 12)
+}
+
+// ── Difference ──
+
+func diff(a, b) {
+    let ms = toEpoch(a) - toEpoch(b)
+    let negative = ms < 0
+    if (negative) { ms = -ms }
+
+    return {
+        ms: ms,
+        seconds: idiv(ms, 1000),
+        minutes: idiv(ms, 60000),
+        hours: idiv(ms, 3600000),
+        days: idiv(ms, 86400000),
+        negative: negative
+    }
+}
+
+// ── Comparison ──
+
+func isBefore(a, b) {
+    return toEpoch(a) < toEpoch(b)
+}
+
+func isAfter(a, b) {
+    return toEpoch(a) > toEpoch(b)
+}
+
+func isEqual(a, b) {
+    return toEpoch(a) == toEpoch(b)
+}
+
+// ── Utilities ──
+
+func startOfDay(dt) {
+    return create(dt.year, dt.month, dt.day)
+}
+
+func endOfDay(dt) {
+    return create(dt.year, dt.month, dt.day, 23, 59, 59, 999)
+}
+
+func startOfMonth(dt) {
+    return create(dt.year, dt.month, 1)
+}
+
+func endOfMonth(dt) {
+    return create(dt.year, dt.month, daysInMonth(dt.year, dt.month), 23, 59, 59, 999)
+}
+
+export {
+    create, now, today, fromEpoch, toEpoch,
+    parse, format, iso,
+    addDays, addHours, addMinutes, addSeconds, addMonths, addYears,
+    diff, isBefore, isAfter, isEqual,
+    startOfDay, endOfDay, startOfMonth, endOfMonth,
+    isLeapYear, daysInMonth, weekday,
+    WEEKDAY_NAMES, WEEKDAY_SHORT, MONTH_NAMES, MONTH_SHORT
+}

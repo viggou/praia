@@ -1171,6 +1171,83 @@ Interpreter::Interpreter() {
             return Value(fs::absolute(args[0].asString()).string());
         }));
 
+    // path.walk(dir) — recursively list all files as relative paths
+    pathMap->entries["walk"] = Value(makeNative("path.walk", 1,
+        [](const std::vector<Value>& args) -> Value {
+            if (!args[0].isString())
+                throw RuntimeError("path.walk() requires a string path", 0);
+            auto& dir = args[0].asString();
+            if (!fs::is_directory(dir))
+                throw RuntimeError("path.walk(): not a directory: " + dir, 0);
+            auto arr = gcNew<PraiaArray>();
+            for (auto& entry : fs::recursive_directory_iterator(dir)) {
+                if (entry.is_regular_file())
+                    arr->elements.push_back(Value(entry.path().string()));
+            }
+            return Value(arr);
+        }));
+
+    // path.glob(dir, pattern) — match files by extension pattern (e.g. "*.praia", "*.cpp")
+    pathMap->entries["glob"] = Value(makeNative("path.glob", 2,
+        [](const std::vector<Value>& args) -> Value {
+            if (!args[0].isString() || !args[1].isString())
+                throw RuntimeError("path.glob() requires (directory, pattern)", 0);
+            auto& dir = args[0].asString();
+            auto& pattern = args[1].asString();
+            if (!fs::is_directory(dir))
+                throw RuntimeError("path.glob(): not a directory: " + dir, 0);
+
+            // Extract extension from pattern like "*.praia" or ".praia"
+            std::string ext;
+            bool recursive = pattern.find("**") != std::string::npos;
+            auto starDot = pattern.find("*.");
+            if (starDot != std::string::npos) {
+                ext = pattern.substr(starDot + 1); // ".praia"
+            } else if (pattern[0] == '.') {
+                ext = pattern;
+            }
+
+            auto arr = gcNew<PraiaArray>();
+            if (recursive) {
+                for (auto& entry : fs::recursive_directory_iterator(dir)) {
+                    if (!entry.is_regular_file()) continue;
+                    if (ext.empty() || entry.path().extension().string() == ext)
+                        arr->elements.push_back(Value(entry.path().string()));
+                }
+            } else {
+                for (auto& entry : fs::directory_iterator(dir)) {
+                    if (!entry.is_regular_file()) continue;
+                    if (ext.empty() || entry.path().extension().string() == ext)
+                        arr->elements.push_back(Value(entry.path().string()));
+                }
+            }
+            return Value(arr);
+        }));
+
+    // path.isDir(path) — check if path is a directory
+    pathMap->entries["isDir"] = Value(makeNative("path.isDir", 1,
+        [](const std::vector<Value>& args) -> Value {
+            if (!args[0].isString()) throw RuntimeError("path.isDir() requires a string", 0);
+            return Value(fs::is_directory(args[0].asString()));
+        }));
+
+    // path.isFile(path) — check if path is a regular file
+    pathMap->entries["isFile"] = Value(makeNative("path.isFile", 1,
+        [](const std::vector<Value>& args) -> Value {
+            if (!args[0].isString()) throw RuntimeError("path.isFile() requires a string", 0);
+            return Value(fs::is_regular_file(args[0].asString()));
+        }));
+
+    // path.size(path) — file size in bytes
+    pathMap->entries["size"] = Value(makeNative("path.size", 1,
+        [](const std::vector<Value>& args) -> Value {
+            if (!args[0].isString()) throw RuntimeError("path.size() requires a string", 0);
+            auto& p = args[0].asString();
+            if (!fs::exists(p))
+                throw RuntimeError("path.size(): file not found: " + p, 0);
+            return Value(static_cast<int64_t>(fs::file_size(p)));
+        }));
+
     globals->define("path", Value(pathMap));
 
     // ── url namespace ──
