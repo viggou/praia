@@ -13,6 +13,7 @@ Praia is a dynamically typed, interpreted programming language built in C++.
 - [Strings](#strings)
 - [Arrays](#arrays)
 - [Maps](#maps)
+- [Integers and Numbers](#integers-and-numbers)
 - [Enums](#enums)
 - [Control Flow](#control-flow)
 - [Error Handling](#error-handling)
@@ -22,10 +23,13 @@ Praia is a dynamically typed, interpreted programming language built in C++.
 - [Generators](#generators)
 - [Classes](#classes)
 - [Built-in Functions](#built-in-functions)
+- [Universal Methods](#universal-methods)
 - [String Methods](#string-methods)
 - [Regex](#regex)
+- [re Grain (Advanced Regex)](#re-grain-advanced-regex)
 - [Array Methods](#array-methods)
 - [The sys Namespace](#the-sys-namespace)
+- [Terminal I/O](#terminal-io)
 - [Pipe Operator](#pipe-operator)
 - [JSON](#json)
 - [YAML](#yaml)
@@ -44,15 +48,23 @@ Praia is a dynamically typed, interpreted programming language built in C++.
 - [Math](#math)
 - [Random](#random)
 - [Time](#time)
+- [OS extras (sys)](#os-extras-sys)
 - [Bitwise Operators](#bitwise-operators)
 - [Bytes](#bytes)
 - [Crypto](#crypto)
-- [TCP Sockets](#tcp-sockets)
+- [Networking (net)](#networking-net)
+- [hex Grain](#hex-grain)
+- [colors Grain](#colors-grain)
+- [progress Grain](#progress-grain)
+- [table Grain](#table-grain)
 - [Grains (Modules)](#grains-modules)
 - [Comments](#comments)
 - [Operator Precedence](#operator-precedence)
+- [Error Stack Traces](#error-stack-traces)
 - [REPL](#repl)
 - [Memory Management](#memory-management)
+- [Unicode](#unicode)
+- [Native Plugins](#native-plugins)
 - [Command-Line Usage](#command-line-usage)
 
 ---
@@ -281,8 +293,11 @@ Strings are enclosed in double quotes.
 |--------|---------|
 | `\n` | Newline |
 | `\t` | Tab |
+| `\r` | Carriage return |
+| `\0` | Null byte |
 | `\\` | Backslash |
 | `\"` | Double quote |
+| `\'` | Single quote |
 | `\%` | Literal `%` (prevents interpolation) |
 | `\xHH` | Byte from 2-digit hex value |
 | `\u{HHHH}` | Unicode codepoint (1-6 hex digits) |
@@ -3783,6 +3798,72 @@ func make() {
     func inner() { return inner }
     return inner
 }
+```
+
+---
+
+## Unicode
+
+Praia strings are UTF-8 encoded. When built with [utf8proc](https://github.com/JuliaStrings/utf8proc), all user-facing string operations work on **grapheme clusters** — the visible characters a user perceives, regardless of how many bytes or codepoints make them up.
+
+### Grapheme clusters
+
+A grapheme cluster is a single user-perceived character. It may consist of multiple Unicode codepoints (which may be multiple bytes each in UTF-8):
+
+| String | Graphemes | Codepoints | UTF-8 bytes |
+|--------|-----------|------------|-------------|
+| `"hello"` | 5 | 5 | 5 |
+| `"cafe\u{301}"` | 4 | 5 | 6 |
+| `"\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}\u{200D}\u{1F466}"` | 1 | 7 | 25 |
+| `"\u{1F1F5}\u{1F1F9}"` | 1 | 2 | 8 |
+
+### What uses grapheme clusters
+
+These operations count and index by grapheme cluster:
+
+- `len(str)` — number of grapheme clusters
+- `str[i]` — i-th grapheme cluster
+- `for (c in str)` — iterates grapheme clusters
+- `.slice(start, end)` — grapheme indices
+- `.split("")` — split into grapheme clusters
+- `.indexOf()` / `.lastIndexOf()` — returns grapheme index
+- `.padStart(n)` / `.padEnd(n)` — counts graphemes for target length
+- `.charCode(i)` — first codepoint of i-th grapheme
+
+### What stays byte-based
+
+These operations work on raw UTF-8 bytes, which is correct and intentional:
+
+- `.contains()`, `.startsWith()`, `.endsWith()` — byte-sequence matching (safe for UTF-8)
+- `.replace()` — byte-sequence replacement (safe for UTF-8)
+- `.strip()`, `.trimStart()`, `.trimEnd()` — ASCII whitespace is single-byte
+- `.test()`, `.match()`, `.matchAll()`, `.replacePattern()` — regex operates on bytes; match `index` is a byte offset
+- `.repeat()`, `.join()` — concatenate whole strings
+- `bytes.len(str)` — byte length
+
+### Inspecting string internals
+
+Three methods give access to every level:
+
+```
+"A\u{1F600}".graphemes()     // ["A", "\u{1F600}"]    — visible characters
+"A\u{1F600}".codepoints()    // [65, 128512]           — Unicode codepoints
+"A\u{1F600}".bytes()         // [65, 240, 159, 152, 128]  — raw UTF-8 bytes
+```
+
+### Without utf8proc
+
+If Praia is built without utf8proc, all string operations fall back to byte-based behavior (each byte is treated as a character). Install utf8proc for proper Unicode support:
+
+```sh
+# macOS
+brew install utf8proc
+
+# Ubuntu / Debian
+sudo apt install libutf8proc-dev
+
+# Fedora / RHEL
+sudo dnf install utf8proc-devel
 ```
 
 ---
