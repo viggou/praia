@@ -86,11 +86,41 @@ size_t utf8_grapheme_count(const std::string& str) {
     return count;
 }
 
+// Walk grapheme clusters, returning the nth one directly without allocating a full vector.
+// Negative indexing is handled by the caller (pre-resolved via utf8_grapheme_count).
 std::string utf8_grapheme_at(const std::string& str, int index) {
-    auto gs = utf8_graphemes(str);
-    if (index < 0) index += static_cast<int>(gs.size());
-    if (index < 0 || index >= static_cast<int>(gs.size())) return "";
-    return gs[index];
+    if (str.empty() || index < 0) return "";
+
+    const uint8_t* data = reinterpret_cast<const uint8_t*>(str.data());
+    ssize_t len = static_cast<ssize_t>(str.size());
+    ssize_t pos = 0;
+    ssize_t cluster_start = 0;
+    int cluster_idx = 0;
+
+    int32_t prev_cp = -1;
+    int32_t state = 0;
+
+    while (pos < len) {
+        int32_t cp;
+        ssize_t bytes = utf8proc_iterate(data + pos, len - pos, &cp);
+        if (bytes < 1) { pos++; continue; }
+
+        if (prev_cp >= 0 && utf8proc_grapheme_break_stateful(prev_cp, cp, &state)) {
+            if (cluster_idx == index)
+                return str.substr(cluster_start, pos - cluster_start);
+            cluster_idx++;
+            cluster_start = pos;
+        }
+
+        prev_cp = cp;
+        pos += bytes;
+    }
+
+    // Last cluster
+    if (cluster_idx == index && cluster_start < len)
+        return str.substr(cluster_start);
+
+    return "";
 }
 
 std::string utf8_upper(const std::string& str) {
@@ -169,33 +199,11 @@ std::string utf8_title(const std::string& str) {
             uint8_t buf[4];
             ssize_t enc = utf8proc_encode_char(upper, buf);
             result.append(reinterpret_cast<char*>(buf), enc);
-
-            // Lowercase remaining codepoints in this grapheme
-            ssize_t pos = first_bytes;
-            while (pos < glen) {
-                int32_t cp;
-                ssize_t bytes = utf8proc_iterate(data + pos, glen - pos, &cp);
-                if (bytes < 1) { result += g[pos]; pos++; continue; }
-                int32_t low = utf8proc_tolower(cp);
-                enc = utf8proc_encode_char(low, buf);
-                result.append(reinterpret_cast<char*>(buf), enc);
-                pos += bytes;
-            }
+            if (first_bytes < glen)
+                result += utf8_lower(g.substr(first_bytes));
             cap_next = false;
         } else {
-            // Lowercase the entire grapheme
-            const uint8_t* d = reinterpret_cast<const uint8_t*>(g.data());
-            ssize_t p = 0;
-            while (p < glen) {
-                int32_t cp;
-                ssize_t bytes = utf8proc_iterate(d + p, glen - p, &cp);
-                if (bytes < 1) { result += g[p]; p++; continue; }
-                int32_t low = utf8proc_tolower(cp);
-                uint8_t buf2[4];
-                ssize_t enc2 = utf8proc_encode_char(low, buf2);
-                result.append(reinterpret_cast<char*>(buf2), enc2);
-                p += bytes;
-            }
+            result += utf8_lower(g);
         }
     }
     return result;
@@ -233,25 +241,66 @@ std::vector<int32_t> utf8_codepoints(const std::string& str) {
     return result;
 }
 
+size_t utf8_first_grapheme_bytes(const std::string& str) {
+    if (str.empty()) return 0;
+
+    const uint8_t* data = reinterpret_cast<const uint8_t*>(str.data());
+    ssize_t len = static_cast<ssize_t>(str.size());
+    ssize_t pos = 0;
+
+    int32_t prev_cp = -1;
+    int32_t state = 0;
+
+    while (pos < len) {
+        int32_t cp;
+        ssize_t bytes = utf8proc_iterate(data + pos, len - pos, &cp);
+        if (bytes < 1) { pos++; continue; }
+
+        if (prev_cp >= 0 && utf8proc_grapheme_break_stateful(prev_cp, cp, &state))
+            return static_cast<size_t>(pos); // break before this codepoint
+
+        prev_cp = cp;
+        pos += bytes;
+    }
+
+    return str.size(); // entire string is one grapheme
+}
+
 int utf8_byte_to_grapheme_index(const std::string& str, size_t byte_offset) {
     if (str.empty() || byte_offset == std::string::npos) return -1;
 
-    // Walk grapheme clusters, track their starting byte offsets
-    auto gs = utf8_graphemes(str);
-    size_t byte_pos = 0;
-    for (int i = 0; i < static_cast<int>(gs.size()); i++) {
-        if (byte_pos == byte_offset) return i;
-        byte_pos += gs[i].size();
+    const uint8_t* data = reinterpret_cast<const uint8_t*>(str.data());
+    ssize_t len = static_cast<ssize_t>(str.size());
+    ssize_t pos = 0;
+    ssize_t cluster_start = 0;
+    int grapheme_idx = 0;
+
+    int32_t prev_cp = -1;
+    int32_t state = 0;
+
+    while (pos < len) {
+        int32_t cp;
+        ssize_t bytes = utf8proc_iterate(data + pos, len - pos, &cp);
+        if (bytes < 1) { pos++; continue; }
+
+        if (prev_cp >= 0 && utf8proc_grapheme_break_stateful(prev_cp, cp, &state)) {
+            // byte_offset falls within the previous cluster
+            if (byte_offset >= static_cast<size_t>(cluster_start) &&
+                byte_offset < static_cast<size_t>(pos))
+                return grapheme_idx;
+            grapheme_idx++;
+            cluster_start = pos;
+        }
+
+        prev_cp = cp;
+        pos += bytes;
     }
-    // byte_offset at end of string
-    if (byte_pos == byte_offset) return static_cast<int>(gs.size());
-    // byte_offset falls mid-grapheme — return the containing grapheme
-    byte_pos = 0;
-    for (int i = 0; i < static_cast<int>(gs.size()); i++) {
-        if (byte_offset >= byte_pos && byte_offset < byte_pos + gs[i].size())
-            return i;
-        byte_pos += gs[i].size();
-    }
+
+    // Check if byte_offset falls in the last cluster
+    if (byte_offset >= static_cast<size_t>(cluster_start) &&
+        byte_offset < static_cast<size_t>(pos))
+        return grapheme_idx;
+
     return -1;
 }
 

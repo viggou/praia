@@ -17,6 +17,9 @@ int32_t utf8_first_codepoint(const std::string& str);
 std::string utf8_from_codepoint(int32_t cp);
 std::vector<int32_t> utf8_codepoints(const std::string& str);
 
+// Byte length of the first grapheme cluster (0 if empty)
+size_t utf8_first_grapheme_bytes(const std::string& str);
+
 // Convert byte offset from str.find() to grapheme cluster index
 int utf8_byte_to_grapheme_index(const std::string& str, size_t byte_offset);
 

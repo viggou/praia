@@ -332,14 +332,16 @@ void Lexer::string(char quote) {
                     };
                     int32_t cp = 0;
                     int digits = 0;
+                    bool bad = false;
                     while (!isAtEnd() && peek() != '}') {
                         int d = hexVal(peek());
-                        if (d < 0) { error("Invalid hex digit in \\u{} escape"); break; }
+                        if (d < 0) { error("Invalid hex digit in \\u{} escape"); bad = true; break; }
                         cp = (cp << 4) | d;
                         digits++;
-                        if (digits > 6) { error("Too many digits in \\u{} escape"); break; }
+                        if (digits > 6) { error("Too many digits in \\u{} escape"); bad = true; break; }
                         advance();
                     }
+                    if (bad) break;
                     if (isAtEnd() || peek() != '}') { error("Unterminated \\u{} escape"); break; }
                     advance(); // consume '}'
                     if (digits == 0) { error("Empty \\u{} escape"); break; }
@@ -498,14 +500,16 @@ void Lexer::tripleString(char quote) {
                     };
                     int32_t cp = 0;
                     int digits = 0;
+                    bool bad = false;
                     while (!isAtEnd() && peek() != '}') {
                         int d = hexVal(peek());
-                        if (d < 0) { error("Invalid hex digit in \\u{} escape"); break; }
+                        if (d < 0) { error("Invalid hex digit in \\u{} escape"); bad = true; break; }
                         cp = (cp << 4) | d;
                         digits++;
-                        if (digits > 6) { error("Too many digits in \\u{} escape"); break; }
+                        if (digits > 6) { error("Too many digits in \\u{} escape"); bad = true; break; }
                         advance();
                     }
+                    if (bad) break;
                     if (isAtEnd() || peek() != '}') { error("Unterminated \\u{} escape"); break; }
                     advance();
                     if (digits == 0) { error("Empty \\u{} escape"); break; }

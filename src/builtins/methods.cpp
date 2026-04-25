@@ -135,11 +135,9 @@ Value getStringMethod(const std::string& str,
         return Value(makeNative("capitalize", 0, [str](const std::vector<Value>&) -> Value {
 #ifdef HAVE_UTF8PROC
             if (str.empty()) return Value(str);
-            auto gs = utf8_graphemes(str);
-            std::string result = utf8_upper(gs[0]);
-            for (size_t i = 1; i < gs.size(); i++)
-                result += utf8_lower(gs[i]);
-            return Value(std::move(result));
+            size_t first_len = utf8_first_grapheme_bytes(str);
+            return Value(utf8_upper(str.substr(0, first_len)) +
+                         utf8_lower(str.substr(first_len)));
 #else
             std::string r = str;
             if (!r.empty()) {
@@ -155,11 +153,8 @@ Value getStringMethod(const std::string& str,
         return Value(makeNative("capitalizeFirst", 0, [str](const std::vector<Value>&) -> Value {
 #ifdef HAVE_UTF8PROC
             if (str.empty()) return Value(str);
-            auto gs = utf8_graphemes(str);
-            std::string result = utf8_upper(gs[0]);
-            for (size_t i = 1; i < gs.size(); i++)
-                result += gs[i];
-            return Value(std::move(result));
+            size_t first_len = utf8_first_grapheme_bytes(str);
+            return Value(utf8_upper(str.substr(0, first_len)) + str.substr(first_len));
 #else
             std::string r = str;
             if (!r.empty()) r[0] = std::toupper(r[0]);
@@ -173,12 +168,12 @@ Value getStringMethod(const std::string& str,
             if (!args.empty() && args[0].isNumber())
                 idx = static_cast<int>(args[0].asNumber());
 #ifdef HAVE_UTF8PROC
-            int len = static_cast<int>(utf8_grapheme_count(str));
+            auto gs = utf8_graphemes(str);
+            int len = static_cast<int>(gs.size());
             if (idx < 0) idx += len;
             if (idx < 0 || idx >= len)
                 throw RuntimeError("charCode index out of bounds", 0);
-            std::string g = utf8_grapheme_at(str, idx);
-            return Value(static_cast<int64_t>(utf8_first_codepoint(g)));
+            return Value(static_cast<int64_t>(utf8_first_codepoint(gs[idx])));
 #else
             if (idx < 0) idx += static_cast<int>(str.size());
             if (idx < 0 || idx >= static_cast<int>(str.size()))
@@ -364,8 +359,13 @@ Value getStringMethod(const std::string& str,
             if (args.size() > 1 && args[1].isString()) pad = args[1].asString();
             std::string result = str;
 #ifdef HAVE_UTF8PROC
-            while (static_cast<int>(utf8_grapheme_count(result)) < target)
+            int currentLen = static_cast<int>(utf8_grapheme_count(result));
+            int padLen = static_cast<int>(utf8_grapheme_count(pad));
+            if (padLen < 1) padLen = 1; // avoid infinite loop on empty pad
+            while (currentLen < target) {
                 result = pad + result;
+                currentLen += padLen;
+            }
 #else
             while (static_cast<int>(result.size()) < target)
                 result = pad + result;
@@ -382,8 +382,13 @@ Value getStringMethod(const std::string& str,
             if (args.size() > 1 && args[1].isString()) pad = args[1].asString();
             std::string result = str;
 #ifdef HAVE_UTF8PROC
-            while (static_cast<int>(utf8_grapheme_count(result)) < target)
+            int currentLen = static_cast<int>(utf8_grapheme_count(result));
+            int padLen = static_cast<int>(utf8_grapheme_count(pad));
+            if (padLen < 1) padLen = 1; // avoid infinite loop on empty pad
+            while (currentLen < target) {
                 result += pad;
+                currentLen += padLen;
+            }
 #else
             while (static_cast<int>(result.size()) < target)
                 result += pad;

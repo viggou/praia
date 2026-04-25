@@ -1105,11 +1105,12 @@ Value Interpreter::evaluate(const Expr* expr) {
             auto& str = obj.asString();
             int i = static_cast<int>(idx.asNumber());
 #ifdef HAVE_UTF8PROC
-            int len = static_cast<int>(utf8_grapheme_count(str));
+            auto gs = utf8_graphemes(str);
+            int len = static_cast<int>(gs.size());
             if (i < 0) i += len;
             if (i < 0 || i >= len)
                 throw RuntimeError("String index out of bounds", e->line);
-            return Value(utf8_grapheme_at(str, i));
+            return Value(gs[i]);
 #else
             if (i < 0) i += static_cast<int>(str.size());
             if (i < 0 || i >= static_cast<int>(str.size()))
