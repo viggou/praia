@@ -742,7 +742,17 @@ VM::Result VM::execute(int baseFrameCount_) {
             if (a.isInstance()) { auto [ok, r] = vmCallDunder(*this, a, "__mul", {b}); if (ok) { push(r); break; } }
             if (a.isInt() && b.isInt()) { push(Value(a.asInt() * b.asInt())); break; }
             if (a.isNumber() && b.isNumber()) { push(Value(a.asNumber() * b.asNumber())); break; }
-            RUNTIME_ERR("Operands of '*' must be numbers");
+            if ((a.isString() && b.isInt()) || (a.isInt() && b.isString())) {
+                auto& str = a.isString() ? a.asString() : b.asString();
+                int64_t n = a.isInt() ? a.asInt() : b.asInt();
+                if (n < 0) { RUNTIME_ERR("String repeat count cannot be negative"); }
+                std::string result;
+                result.reserve(str.size() * n);
+                for (int64_t i = 0; i < n; i++) result += str;
+                push(Value(std::move(result)));
+                break;
+            }
+            RUNTIME_ERR("Operands of '*' must be numbers, or string * int");
         }
         case OpCode::OP_DIVIDE: {
             Value b = pop(), a = pop();

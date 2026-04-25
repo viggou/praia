@@ -838,7 +838,23 @@ Value Interpreter::evaluate(const Expr* expr) {
                 return Value(left.asInt() * right.asInt());
             if (left.isNumber() && right.isNumber())
                 return Value(left.asNumber() * right.asNumber());
-            throw RuntimeError("Operands of '*' must be numbers", e->line);
+            if (left.isString() && right.isInt()) {
+                int64_t n = right.asInt();
+                if (n < 0) throw RuntimeError("String repeat count cannot be negative", e->line);
+                std::string result;
+                result.reserve(left.asString().size() * n);
+                for (int64_t i = 0; i < n; i++) result += left.asString();
+                return Value(std::move(result));
+            }
+            if (left.isInt() && right.isString()) {
+                int64_t n = left.asInt();
+                if (n < 0) throw RuntimeError("String repeat count cannot be negative", e->line);
+                std::string result;
+                result.reserve(right.asString().size() * n);
+                for (int64_t i = 0; i < n; i++) result += right.asString();
+                return Value(std::move(result));
+            }
+            throw RuntimeError("Operands of '*' must be numbers, or string * int", e->line);
         case TokenType::SLASH:
             // Division always returns double (like Python 3)
             if (left.isNumber() && right.isNumber()) {

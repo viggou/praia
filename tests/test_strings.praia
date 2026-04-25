@@ -53,4 +53,11 @@ testing.test("regex", lam{ in
     testing.assertEqual(m.match, "2026", nil)
 })
 
+testing.test("string multiplication", lam{ in
+    testing.assertEqual("ab" * 3, "ababab", nil)
+    testing.assertEqual(3 * "ha", "hahaha", nil)
+    testing.assertEqual("x" * 0, "", nil)
+    testing.assertEqual("hi" * 1, "hi", nil)
+})
+
 testing.done()

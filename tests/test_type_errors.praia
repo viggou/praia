@@ -9,7 +9,7 @@ testing.test("comparison type errors", lam{ in
 
 testing.test("arithmetic type errors", lam{ in
     testing.assertThrows(lam{ in "a" - 1 }, nil)
-    testing.assertThrows(lam{ in "a" * 1 }, nil)
+    testing.assertThrows(lam{ in "a" * "b" }, nil)
     testing.assertThrows(lam{ in "a" / 1 }, nil)
     testing.assertThrows(lam{ in "a" % 1 }, nil)
 })
