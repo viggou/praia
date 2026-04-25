@@ -1100,9 +1100,13 @@ VM::Result VM::execute(int baseFrameCount_) {
             break;
         }
 
+        case OpCode::OP_GET_PROPERTY_OPT:
         case OpCode::OP_GET_PROPERTY: {
+            bool _propOpt = (static_cast<OpCode>(instruction) == OpCode::OP_GET_PROPERTY_OPT);
             std::string name = READ_STRING();
             Value obj = pop();
+
+            if (_propOpt && obj.isNil()) { push(Value()); break; }
 
             if (obj.isGenerator()) {
                 auto gen = obj.asGenerator();
@@ -1213,9 +1217,11 @@ VM::Result VM::execute(int baseFrameCount_) {
 
             // Instance/map with no matching field and no universal method match
             if (obj.isInstance()) {
+                if (_propOpt) { push(Value()); break; }
                 RUNTIME_ERR("Instance has no property '" + name + "'");
             }
             if (obj.isMap()) {
+                if (_propOpt) { push(Value()); break; }
                 RUNTIME_ERR("Map has no field '" + name + "'");
             }
 
@@ -1258,52 +1264,8 @@ VM::Result VM::execute(int baseFrameCount_) {
                 }
             }
 
+            if (_propOpt) { push(Value()); break; }
             RUNTIME_ERR("Cannot access property '" + name + "' on this type");
-        }
-
-        case OpCode::OP_GET_PROPERTY_OPT: {
-            std::string name = READ_STRING();
-            Value obj = pop();
-            if (obj.isNil()) { push(Value()); break; }
-            if (obj.isInstance()) {
-                auto inst = obj.asInstance();
-                auto fit = inst->fields.find(name);
-                if (fit != inst->fields.end()) { push(fit->second); break; }
-                std::shared_ptr<PraiaClass> methodOwner;
-                Value methodVal;
-                {
-                    auto walk = inst->klass;
-                    while (walk) {
-                        auto sit = walk->vmMethods.find(name);
-                        if (sit != walk->vmMethods.end()) {
-                            methodOwner = walk;
-                            methodVal = sit->second;
-                            break;
-                        }
-                        walk = walk->superclass;
-                    }
-                }
-                if (methodOwner) {
-                    if (methodVal.isCallable()) {
-                        auto* vmcc = dynamic_cast<VMClosureCallable*>(methodVal.asCallable().get());
-                        if (vmcc) {
-                            auto bm = std::make_shared<VMBoundMethod>(obj, vmcc->closure, methodOwner);
-                            push(Value(std::static_pointer_cast<Callable>(bm)));
-                            break;
-                        }
-                    }
-                    push(methodVal);
-                    break;
-                }
-            }
-            if (obj.isMap()) {
-                auto& entries = obj.asMap()->entries;
-                auto it = entries.find(name);
-                if (it != entries.end()) { push(it->second); break; }
-            }
-            // Nothing found — return nil (optional chaining)
-            push(Value());
-            break;
         }
 
         case OpCode::OP_SET_PROPERTY: {
@@ -1415,9 +1377,12 @@ VM::Result VM::execute(int baseFrameCount_) {
             break;
         }
 
+        case OpCode::OP_INDEX_GET_OPT:
         case OpCode::OP_INDEX_GET: {
+            bool _idxOpt = (static_cast<OpCode>(instruction) == OpCode::OP_INDEX_GET_OPT);
             Value idx = pop();
             Value obj = pop();
+            if (_idxOpt && obj.isNil()) { push(Value()); break; }
             if (obj.isArray()) {
                 if (!idx.isNumber()) { RUNTIME_ERR("Array index must be a number"); }
                 auto& elems = obj.asArray()->elements;
@@ -1456,28 +1421,6 @@ VM::Result VM::execute(int baseFrameCount_) {
             break;
         }
 
-        case OpCode::OP_INDEX_GET_OPT: {
-            Value idx = pop();
-            Value obj = pop();
-            if (obj.isNil()) { push(Value()); break; }
-            if (obj.isArray()) {
-                if (!idx.isNumber()) { push(Value()); break; }
-                auto& elems = obj.asArray()->elements;
-                int i = static_cast<int>(idx.asNumber());
-                if (i < 0) i += static_cast<int>(elems.size());
-                if (i < 0 || i >= static_cast<int>(elems.size())) { push(Value()); break; }
-                push(elems[i]);
-            } else if (obj.isMap()) {
-                if (!idx.isString()) { push(Value()); break; }
-                auto& entries = obj.asMap()->entries;
-                auto it = entries.find(idx.asString());
-                if (it == entries.end()) { push(Value()); break; }
-                push(it->second);
-            } else {
-                push(Value()); // unknown type, return nil
-            }
-            break;
-        }
 
         case OpCode::OP_INDEX_SET: {
             Value val = pop();
