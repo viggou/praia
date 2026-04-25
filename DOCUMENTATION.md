@@ -167,6 +167,28 @@ let config = {...defaults, ...overrides}
 
 Later spreads override earlier keys (like `Object.assign` in JavaScript).
 
+### Spread in function calls
+
+Spread an array as arguments to a function:
+
+```
+func add(a, b, c) { return a + b + c }
+let args = [1, 2, 3]
+print(add(...args))       // 6
+
+// Mixed positional and spread
+func f(a, b, c, d) { return [a, b, c, d] }
+print(f(1, 2, ...[3, 4])) // [1, 2, 3, 4]
+```
+
+This enables generic function wrappers:
+
+```
+func wrapper(fn) {
+    return lam{ ...args in fn(...args) }
+}
+```
+
 ---
 
 ## Data Types
@@ -992,7 +1014,24 @@ func role(required) {
 func deleteUser(id) { ... }
 ```
 
-> **Note:** Decorators are currently supported on top-level and block-level `func` declarations only, not on class methods. To wrap a method, assign it manually after the class definition.
+Decorators also work on class methods (both instance and static):
+
+```
+func logged(fn) {
+    return lam{ ...args in
+        print("calling")
+        return fn(...args)
+    }
+}
+
+class API {
+    @logged
+    func fetch(url) { return http.get(url) }
+
+    @logged
+    static func version() { return "1.0" }
+}
+```
 
 ---
 

@@ -239,6 +239,7 @@ struct ClassMethod {
     std::vector<std::string> params;
     std::vector<ExprPtr> defaults; // parallel to params, nullptr if no default
     std::string restParam;         // empty = no rest param
+    std::vector<ExprPtr> decorators;
     std::vector<StmtPtr> body;
     int line = 0;
     bool isGenerator = false;

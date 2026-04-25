@@ -779,9 +779,30 @@ void Compiler::compileClassStmt(const ClassStmt* stmt) {
             emitU16(uv.index, method.line);
         }
 
-        // Add method to class
-        emit(method.isStatic ? OpCode::OP_STATIC_METHOD : OpCode::OP_METHOD, method.line);
-        emitU16(identifierConstant(method.name), method.line);
+        // Apply decorators and store method
+        if (!method.decorators.empty() && method.isStatic) {
+            // Static: apply decorators at compile time (no this binding)
+            for (int i = static_cast<int>(method.decorators.size()) - 1; i >= 0; i--) {
+                compileExpr(method.decorators[i].get());
+                emit(OpCode::OP_SWAP, method.line);
+                emit(OpCode::OP_CALL, method.line);
+                emit(1, method.line);
+            }
+            emit(OpCode::OP_STATIC_METHOD, method.line);
+            emitU16(identifierConstant(method.name), method.line);
+        } else if (!method.decorators.empty()) {
+            // Instance: store method, then store decorators for runtime application
+            emit(OpCode::OP_METHOD, method.line);
+            emitU16(identifierConstant(method.name), method.line);
+            for (int i = static_cast<int>(method.decorators.size()) - 1; i >= 0; i--) {
+                compileExpr(method.decorators[i].get());
+                emit(OpCode::OP_METHOD_DECORATOR, method.line);
+                emitU16(identifierConstant(method.name), method.line);
+            }
+        } else {
+            emit(method.isStatic ? OpCode::OP_STATIC_METHOD : OpCode::OP_METHOD, method.line);
+            emitU16(identifierConstant(method.name), method.line);
+        }
     }
 
     // Pop the class from the stack

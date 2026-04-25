@@ -106,6 +106,7 @@ int disassembleInstruction(const Chunk& chunk, int offset) {
         case OpCode::OP_POP:            return simpleInstruction("OP_POP", offset);
         case OpCode::OP_POPN:           return byteInstruction("OP_POPN", chunk, offset);
         case OpCode::OP_DUP:            return simpleInstruction("OP_DUP", offset);
+        case OpCode::OP_SWAP:           return simpleInstruction("OP_SWAP", offset);
 
         // Arithmetic
         case OpCode::OP_ADD:            return simpleInstruction("OP_ADD", offset);
@@ -156,6 +157,7 @@ int disassembleInstruction(const Chunk& chunk, int offset) {
 
         // Functions
         case OpCode::OP_CALL:           return byteInstruction("OP_CALL", chunk, offset);
+        case OpCode::OP_CALL_SPREAD:    return simpleInstruction("OP_CALL_SPREAD", offset);
         case OpCode::OP_CALL_NAMED:     return callNamedInstruction("OP_CALL_NAMED", chunk, offset);
         case OpCode::OP_RETURN:         return simpleInstruction("OP_RETURN", offset);
         case OpCode::OP_CLOSURE: {

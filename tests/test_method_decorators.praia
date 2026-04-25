@@ -1,0 +1,79 @@
+use "testing"
+
+func doubleResult(fn) {
+    return lam{ ...args in fn(...args) * 2 }
+}
+
+func addPrefix(prefix) {
+    return lam{ fn in
+        return lam{ ...args in prefix + fn(...args) }
+    }
+}
+
+testing.test("basic method decorator", lam{ in
+    class Calc {
+        func init(base) { this.base = base }
+        @doubleResult
+        func value() { return this.base }
+    }
+    let c = Calc(21)
+    testing.assertEqual(c.value(), 42, nil)
+})
+
+testing.test("decorator with arguments", lam{ in
+    class Greeter {
+        func init(name) { this.name = name }
+        @addPrefix(">>> ")
+        func greet() { return "hello " + this.name }
+    }
+    let g = Greeter("Ada")
+    testing.assertEqual(g.greet(), ">>> hello Ada", nil)
+})
+
+testing.test("decorator on method with params", lam{ in
+    class Math {
+        @doubleResult
+        func add(a, b) { return a + b }
+    }
+    let m = Math()
+    testing.assertEqual(m.add(3, 4), 14, nil)
+})
+
+testing.test("stacked decorators", lam{ in
+    func exclaim(fn) {
+        return lam{ ...args in fn(...args) + "!" }
+    }
+    func upper(fn) {
+        return lam{ ...args in fn(...args).upper() }
+    }
+    class Msg {
+        @exclaim
+        @upper
+        func text() { return "hello" }
+    }
+    let m = Msg()
+    // upper applied first (innermost), then exclaim: "HELLO!"
+    testing.assertEqual(m.text(), "HELLO!", nil)
+})
+
+testing.test("decorator on static method", lam{ in
+    class Utils {
+        @doubleResult
+        static func compute(x) { return x + 1 }
+    }
+    testing.assertEqual(Utils.compute(5), 12, nil)
+})
+
+testing.test("undecorated methods still work", lam{ in
+    class Foo {
+        func init(x) { this.x = x }
+        @doubleResult
+        func decorated() { return this.x }
+        func plain() { return this.x }
+    }
+    let f = Foo(10)
+    testing.assertEqual(f.decorated(), 20, nil)
+    testing.assertEqual(f.plain(), 10, nil)
+})
+
+testing.done()

@@ -13,6 +13,7 @@ enum class OpCode : uint8_t {
     OP_POP,
     OP_POPN,            // [n:8]
     OP_DUP,             // duplicate top of stack
+    OP_SWAP,            // swap top two stack values
 
     // ── Arithmetic ──
     OP_ADD,
@@ -63,6 +64,7 @@ enum class OpCode : uint8_t {
 
     // ── Functions ──
     OP_CALL,            // [argc:8]
+    OP_CALL_SPREAD,     // stack: [callee, argsArray] — call with spread args
     OP_CALL_NAMED,      // [argc:8] [names_idx:16] — call with named arguments
     OP_RETURN,
     OP_CLOSURE,         // [fn_idx:16] followed by upvalue descriptors
@@ -74,6 +76,7 @@ enum class OpCode : uint8_t {
     OP_CLASS,           // [name_idx:16]
     OP_METHOD,          // [name_idx:16]
     OP_STATIC_METHOD,   // [name_idx:16]
+    OP_METHOD_DECORATOR,// [name_idx:16] — store decorator callable for method
     OP_INHERIT,
     OP_GET_PROPERTY,    // [name_idx:16]
     OP_GET_PROPERTY_OPT,// [name_idx:16] — nil if object is nil
