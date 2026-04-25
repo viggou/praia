@@ -1,0 +1,61 @@
+// Timers — setTimeout and scheduling utilities
+//
+// Usage:
+//   use "timers"
+//
+//   timers.setTimeout(lam{ in print("fired!") }, 1000)
+//   timers.repeat(5, 200, lam{ i in print("tick", i) })
+
+// Run fn after ms milliseconds. Returns the async future.
+func setTimeout(fn, ms) {
+    return async _runTimeout(fn, ms)
+}
+
+func _runTimeout(fn, ms) {
+    time.sleep(ms)
+    fn()
+}
+
+// Run fn n times with ms delay between each. Synchronous (blocks).
+func repeat(n, ms, fn) {
+    for (i in 0..n) {
+        if (i > 0) { time.sleep(ms) }
+        fn(i)
+    }
+}
+
+// Run fn every ms for duration. Synchronous (blocks).
+func every(ms, duration, fn) {
+    let start = time.now()
+    let i = 0
+    while (time.now() - start < duration) {
+        fn(i)
+        i = i + 1
+        time.sleep(ms)
+    }
+}
+
+func debounce(fn, ms) {
+    let lastCall = [0]
+    return lam{ in
+        lastCall[0] = time.now()
+        let myTime = lastCall[0]
+        time.sleep(ms)
+        if (lastCall[0] == myTime) {
+            fn()
+        }
+    }
+}
+
+func throttle(fn, ms) {
+    let last = [0]
+    return lam{ in
+        let now = time.now()
+        if (now - last[0] >= ms) {
+            last[0] = now
+            fn()
+        }
+    }
+}
+
+export { setTimeout, repeat, every, debounce, throttle }

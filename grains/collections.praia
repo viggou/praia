@@ -140,4 +140,159 @@ class Set {
     }
 }
 
-export { Stack, Queue, Set }
+// Deque — double-ended queue with O(1) amortized push/pop on both ends
+// Uses two stacks (front reversed, back normal) to avoid O(n) shifts
+class Deque {
+    func init() {
+        this.front = []   // reversed — front[last] is the logical first element
+        this.back = []    // normal order
+    }
+
+    func pushFront(val) {
+        this.front.push(val)
+    }
+
+    func pushBack(val) {
+        this.back.push(val)
+    }
+
+    func popFront() {
+        ensure (this.size() > 0) else { throw "popFront() on empty deque" }
+        if (len(this.front) == 0) { this._rebalance() }
+        return this.front.pop()
+    }
+
+    func popBack() {
+        ensure (this.size() > 0) else { throw "popBack() on empty deque" }
+        if (len(this.back) == 0) { this._rebalanceBack() }
+        return this.back.pop()
+    }
+
+    func peekFront() {
+        ensure (this.size() > 0) else { throw "peekFront() on empty deque" }
+        if (len(this.front) == 0) { this._rebalance() }
+        return this.front[len(this.front) - 1]
+    }
+
+    func peekBack() {
+        ensure (this.size() > 0) else { throw "peekBack() on empty deque" }
+        if (len(this.back) == 0) { this._rebalanceBack() }
+        return this.back[len(this.back) - 1]
+    }
+
+    func size() {
+        return len(this.front) + len(this.back)
+    }
+
+    func isEmpty() {
+        return this.size() == 0
+    }
+
+    // Move all back items to front (reversed)
+    func _rebalance() {
+        let i = len(this.back) - 1
+        while (i >= 0) {
+            this.front.push(this.back[i])
+            i = i - 1
+        }
+        this.back = []
+    }
+
+    // Move all front items to back (reversed)
+    func _rebalanceBack() {
+        let i = len(this.front) - 1
+        while (i >= 0) {
+            this.back.push(this.front[i])
+            i = i - 1
+        }
+        this.front = []
+    }
+
+    func toArray() {
+        let result = []
+        let i = len(this.front) - 1
+        while (i >= 0) {
+            result.push(this.front[i])
+            i = i - 1
+        }
+        for (item in this.back) {
+            result.push(item)
+        }
+        return result
+    }
+}
+
+// OrderedMap — map that maintains insertion order
+class OrderedMap {
+    func init() {
+        this._keys = []
+        this._data = {}
+    }
+
+    func set(key, value) {
+        if (!keys(this._data).contains(key)) {
+            this._keys.push(key)
+        }
+        this._data[key] = value
+    }
+
+    func get(key) {
+        if (!keys(this._data).contains(key)) { return nil }
+        return this._data[key]
+    }
+
+    func has(key) {
+        return keys(this._data).contains(key)
+    }
+
+    func remove(key) {
+        if (!this.has(key)) { return }
+        let newKeys = []
+        for (k in this._keys) {
+            if (k != key) { newKeys.push(k) }
+        }
+        this._keys = newKeys
+        // Rebuild data without the key
+        let newData = {}
+        for (k in this._keys) {
+            newData[k] = this._data[k]
+        }
+        this._data = newData
+    }
+
+    func size() {
+        return len(this._keys)
+    }
+
+    func getKeys() {
+        let result = []
+        for (k in this._keys) { result.push(k) }
+        return result
+    }
+
+    func getValues() {
+        let result = []
+        for (k in this._keys) {
+            result.push(this._data[k])
+        }
+        return result
+    }
+
+    func entries() {
+        let result = []
+        for (k in this._keys) {
+            result.push({key: k, value: this._data[k]})
+        }
+        return result
+    }
+
+    func toMap() {
+        let result = {}
+        for (k in this._keys) {
+            result[k] = this._data[k]
+        }
+        return result
+    }
+}
+
+export { Stack, Queue, Set, Deque, OrderedMap }

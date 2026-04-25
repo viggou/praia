@@ -1,0 +1,97 @@
+// Sync — concurrency primitives beyond Lock and Channel
+//
+// Usage:
+//   use "sync"
+//
+//   let sem = sync.Semaphore(3)   // allow 3 concurrent
+//   sem.acquire()
+//   // ... do work ...
+//   sem.release()
+//
+//   let limiter = sync.RateLimiter(10, 1000)  // 10 ops per 1000ms
+//   limiter.acquire()  // blocks if rate exceeded
+
+// Counting semaphore — limits concurrent access to N
+class Semaphore {
+    func init(permits) {
+        this.ch = Channel(permits)
+        // Pre-fill channel with permits
+        for (i in 0..permits) {
+            this.ch.send(true)
+        }
+    }
+
+    func acquire() {
+        this.ch.recv()
+    }
+
+    func tryAcquire() {
+        let val = this.ch.tryRecv()
+        return val != nil
+    }
+
+    func release() {
+        this.ch.send(true)
+    }
+
+    // Run fn with automatic acquire/release
+    func withPermit(fn) {
+        this.acquire()
+        try {
+            let result = fn()
+            this.release()
+            return result
+        } catch (err) {
+            this.release()
+            throw err
+        }
+    }
+}
+
+// Token bucket rate limiter
+class RateLimiter {
+    func init(maxTokens, intervalMs) {
+        this.maxTokens = maxTokens
+        this.intervalMs = intervalMs
+        this.tokens = [maxTokens]
+        this.lastRefill = [time.now()]
+        this.lock = Lock()
+    }
+
+    func _refill() {
+        let now = time.now()
+        let elapsed = now - this.lastRefill[0]
+        if (elapsed >= this.intervalMs) {
+            this.tokens[0] = this.maxTokens
+            this.lastRefill[0] = now
+        }
+    }
+
+    func acquire() {
+        while (true) {
+            let got = this.lock.withLock(lam{ in
+                this._refill()
+                if (this.tokens[0] > 0) {
+                    this.tokens[0] = this.tokens[0] - 1
+                    return true
+                }
+                return false
+            })
+            if (got) { return }
+            time.sleep(10)
+        }
+    }
+
+    func tryAcquire() {
+        return this.lock.withLock(lam{ in
+            this._refill()
+            if (this.tokens[0] > 0) {
+                this.tokens[0] = this.tokens[0] - 1
+                return true
+            }
+            return false
+        })
+    }
+}
+
+export { Semaphore, RateLimiter }
