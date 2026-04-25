@@ -514,6 +514,7 @@ void Compiler::compileFuncStmt(const FuncStmt* stmt) {
     fn->name = stmt->name;
     fn->arity = static_cast<int>(stmt->params.size());
     fn->paramNames = stmt->params;
+    fn->restParam = stmt->restParam;
     fn->isGenerator = stmt->isGenerator;
 
     CompilerState funcState;
@@ -529,6 +530,11 @@ void Compiler::compileFuncStmt(const FuncStmt* stmt) {
     // Parameters become locals
     for (auto& param : stmt->params) {
         addLocal(param);
+    }
+
+    // Rest param local (filled at runtime by VM::callClosure)
+    if (!stmt->restParam.empty()) {
+        addLocal(stmt->restParam);
     }
 
     // Emit default parameter evaluation: if param is nil and default exists, replace it
@@ -702,6 +708,7 @@ void Compiler::compileClassStmt(const ClassStmt* stmt) {
         fn->name = method.name;
         fn->arity = static_cast<int>(method.params.size());
         fn->paramNames = method.params;
+        fn->restParam = method.restParam;
         fn->isGenerator = method.isGenerator;
 
         CompilerState methodState;
@@ -717,6 +724,10 @@ void Compiler::compileClassStmt(const ClassStmt* stmt) {
         // Parameters
         for (auto& param : method.params) {
             addLocal(param);
+        }
+
+        if (!method.restParam.empty()) {
+            addLocal(method.restParam);
         }
 
         // Default parameter evaluation: if param is nil and default exists, replace it

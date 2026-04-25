@@ -244,10 +244,10 @@ void VM::closeUpvalues(Value* last) {
 
 bool VM::callClosure(ObjClosure* closure, int argCount, int line) {
     auto& fn = closure->function;
+    bool hasRest = !fn->restParam.empty();
 
-    // Allow fewer args (defaults to nil) but not more.
-    // Throw RuntimeError so callers can route through tryHandleError.
-    if (argCount > fn->arity) {
+    // Allow fewer args (defaults to nil) but not more (unless rest param).
+    if (!hasRest && argCount > fn->arity) {
         throw RuntimeError(fn->name + "() expected at most " + std::to_string(fn->arity) +
             " " + argStr(fn->arity) + " but got " + std::to_string(argCount), line);
     }
@@ -256,6 +256,21 @@ bool VM::callClosure(ObjClosure* closure, int argCount, int line) {
     while (argCount < fn->arity) {
         push(Value());
         argCount++;
+    }
+
+    // Collect extra args into rest array
+    if (hasRest) {
+        int extraCount = argCount - fn->arity;
+        auto rest = gcNew<PraiaArray>();
+        // Extra args are at the top of the stack
+        for (int i = extraCount - 1; i >= 0; i--)
+            rest->elements.push_back(stack[stackTop - 1 - i]);
+        // Pop the extra args
+        stackTop -= extraCount;
+        argCount -= extraCount;
+        // Push rest array in place of the extra args
+        push(Value(rest));
+        argCount++; // rest param occupies one slot
     }
 
     if (frameCount >= FRAMES_MAX) {

@@ -553,6 +553,7 @@ void Interpreter::execute(const Stmt* stmt) {
             func->funcName = s->name;
             func->params = s->params;
             func->defaults = &s->defaults;
+            func->restParam = s->restParam;
             func->body = static_cast<const BlockStmt*>(s->body.get());
             func->closure = env;
             env->define(s->name, Value(std::static_pointer_cast<Callable>(func)));
@@ -561,6 +562,7 @@ void Interpreter::execute(const Stmt* stmt) {
             func->funcName = s->name;
             func->params = s->params;
             func->defaults = &s->defaults;
+            func->restParam = s->restParam;
             func->body = static_cast<const BlockStmt*>(s->body.get());
             func->closure = env;
             env->define(s->name, Value(std::static_pointer_cast<Callable>(func)));
@@ -1075,12 +1077,14 @@ Value Interpreter::evaluate(const Expr* expr) {
         if (e->isGenerator) {
             auto lam = std::make_shared<PraiaGeneratorLambda>();
             lam->params = e->params;
+            lam->restParam = e->restParam;
             lam->expr = e;
             lam->closure = env;
             return Value(std::static_pointer_cast<Callable>(lam));
         }
         auto lam = std::make_shared<PraiaLambda>();
         lam->params = e->params;
+        lam->restParam = e->restParam;
         lam->expr = e;
         lam->closure = env;
         return Value(std::static_pointer_cast<Callable>(lam));

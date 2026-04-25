@@ -33,11 +33,12 @@ struct PraiaFunction : Callable {
     std::string funcName;
     std::vector<std::string> params;
     const std::vector<ExprPtr>* defaults = nullptr; // from FuncStmt, nullptr entries = no default
+    std::string restParam;
     const BlockStmt* body;
     std::shared_ptr<Environment> closure;
 
     Value call(Interpreter& interp, const std::vector<Value>& args) override;
-    int arity() const override { return static_cast<int>(params.size()); }
+    int arity() const override { return restParam.empty() ? static_cast<int>(params.size()) : -1; }
     std::string name() const override { return funcName; }
     const std::vector<std::string>* paramNames() const override { return &params; }
 };
@@ -45,11 +46,12 @@ struct PraiaFunction : Callable {
 // A lambda (anonymous function)
 struct PraiaLambda : Callable {
     std::vector<std::string> params;
+    std::string restParam;
     const LambdaExpr* expr;  // points into AST (kept alive by grainAsts/astStore)
     std::shared_ptr<Environment> closure;
 
     Value call(Interpreter& interp, const std::vector<Value>& args) override;
-    int arity() const override { return static_cast<int>(params.size()); }
+    int arity() const override { return restParam.empty() ? static_cast<int>(params.size()) : -1; }
     std::string name() const override { return "<lambda>"; }
     const std::vector<std::string>* paramNames() const override { return &params; }
 };
@@ -59,11 +61,12 @@ struct PraiaGeneratorFunction : Callable {
     std::string funcName;
     std::vector<std::string> params;
     const std::vector<ExprPtr>* defaults = nullptr;
+    std::string restParam;
     const BlockStmt* body;
     std::shared_ptr<Environment> closure;
 
     Value call(Interpreter& interp, const std::vector<Value>& args) override;
-    int arity() const override { return static_cast<int>(params.size()); }
+    int arity() const override { return restParam.empty() ? static_cast<int>(params.size()) : -1; }
     std::string name() const override { return funcName; }
     const std::vector<std::string>* paramNames() const override { return &params; }
 };
@@ -71,11 +74,12 @@ struct PraiaGeneratorFunction : Callable {
 // A generator lambda
 struct PraiaGeneratorLambda : Callable {
     std::vector<std::string> params;
+    std::string restParam;
     const LambdaExpr* expr;
     std::shared_ptr<Environment> closure;
 
     Value call(Interpreter& interp, const std::vector<Value>& args) override;
-    int arity() const override { return static_cast<int>(params.size()); }
+    int arity() const override { return restParam.empty() ? static_cast<int>(params.size()) : -1; }
     std::string name() const override { return "<generator>"; }
     const std::vector<std::string>* paramNames() const override { return &params; }
 };
@@ -101,7 +105,9 @@ struct PraiaMethod : Callable {
     std::shared_ptr<PraiaClass> definingClass;  // class where this method is defined
 
     Value call(Interpreter& interp, const std::vector<Value>& args) override;
-    int arity() const override { return static_cast<int>(params.size()); }
+    int arity() const override {
+        return (decl && !decl->restParam.empty()) ? -1 : static_cast<int>(params.size());
+    }
     std::string name() const override { return methodName; }
     const std::vector<std::string>* paramNames() const override { return &params; }
 };
