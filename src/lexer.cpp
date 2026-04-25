@@ -68,7 +68,11 @@ void Lexer::scanToken() {
             }
             break;
         case ':': addToken(TokenType::COLON); break;
-        case '?': addToken(TokenType::QUESTION); break;
+        case '?':
+            if (match('.')) addToken(TokenType::QUESTION_DOT);
+            else if (match('?')) addToken(TokenType::NIL_COALESCE);
+            else addToken(TokenType::QUESTION);
+            break;
 
         case '+':
             if (match('+')) addToken(TokenType::INCREMENT);

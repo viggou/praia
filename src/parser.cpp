@@ -676,7 +676,7 @@ ExprPtr Parser::pipe() {
 }
 
 ExprPtr Parser::ternary() {
-    auto expr = logicOr();
+    auto expr = nilCoalesce();
     if (match(TokenType::QUESTION)) {
         int ln = previous().line;
         auto thenExpr = expression(); // full expression between ? and :
@@ -688,6 +688,21 @@ ExprPtr Parser::ternary() {
         t->thenExpr = std::move(thenExpr);
         t->elseExpr = std::move(elseExpr);
         return t;
+    }
+    return expr;
+}
+
+ExprPtr Parser::nilCoalesce() {
+    auto expr = logicOr();
+    while (match(TokenType::NIL_COALESCE)) {
+        int ln = previous().line;
+        auto right = logicOr();
+        auto bin = std::make_unique<BinaryExpr>();
+        bin->line = ln;
+        bin->left = std::move(expr);
+        bin->op = TokenType::NIL_COALESCE;
+        bin->right = std::move(right);
+        expr = std::move(bin);
     }
     return expr;
 }
@@ -919,7 +934,23 @@ ExprPtr Parser::call() {
             ie->object = std::move(expr);
             ie->index = std::move(index);
             expr = std::move(ie);
-        } else if (match(TokenType::DOT)) {
+        } else if (check(TokenType::QUESTION) &&
+                   current + 1 < static_cast<int>(tokens.size()) &&
+                   tokens[current + 1].type == TokenType::LBRACKET) {
+            // ?[ — optional index access
+            advance(); // consume '?'
+            advance(); // consume '['
+            int ln = previous().line;
+            auto index = expression();
+            consume(TokenType::RBRACKET, "Expected ']' after index");
+            auto ie = std::make_unique<IndexExpr>();
+            ie->line = ln;
+            ie->object = std::move(expr);
+            ie->index = std::move(index);
+            ie->isOptional = true;
+            expr = std::move(ie);
+        } else if (match(TokenType::DOT) || match(TokenType::QUESTION_DOT)) {
+            bool isOpt = (previous().type == TokenType::QUESTION_DOT);
             int ln = previous().line;
             // Accept identifiers and keywords as field names (e.g. app.use, obj.class)
             if (!isNameToken(peek().type))
@@ -929,6 +960,7 @@ ExprPtr Parser::call() {
             de->line = ln;
             de->object = std::move(expr);
             de->field = field.lexeme;
+            de->isOptional = isOpt;
             expr = std::move(de);
         } else {
             break;

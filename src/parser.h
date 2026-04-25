@@ -43,6 +43,7 @@ private:
     ExprPtr assignment();
     ExprPtr pipe();
     ExprPtr ternary();
+    ExprPtr nilCoalesce();
     ExprPtr logicOr();
     ExprPtr logicAnd();
     ExprPtr bitOr();

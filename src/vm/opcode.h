@@ -57,6 +57,7 @@ enum class OpCode : uint8_t {
     OP_JUMP_BACK,       // [offset:16]
     OP_JUMP_IF_FALSE,   // [offset:16] peek, don't pop
     OP_JUMP_IF_TRUE,    // [offset:16] peek, don't pop
+    OP_JUMP_IF_NOT_NIL, // [offset:16] peek, don't pop
     OP_POP_JUMP_IF_FALSE, // [offset:16] pop then jump
 
     // ── Functions ──
@@ -74,6 +75,7 @@ enum class OpCode : uint8_t {
     OP_STATIC_METHOD,   // [name_idx:16]
     OP_INHERIT,
     OP_GET_PROPERTY,    // [name_idx:16]
+    OP_GET_PROPERTY_OPT,// [name_idx:16] — nil if object is nil
     OP_SET_PROPERTY,    // [name_idx:16]
     OP_GET_THIS,
     OP_GET_SUPER,       // [name_idx:16]
@@ -84,6 +86,7 @@ enum class OpCode : uint8_t {
     OP_BUILD_ARRAY,     // [count:16]
     OP_BUILD_MAP,       // [count:16] (count key-value pairs)
     OP_INDEX_GET,
+    OP_INDEX_GET_OPT,   // nil if object is nil
     OP_INDEX_SET,
     OP_UNPACK_SPREAD,
     OP_BUILD_STRING,    // [count:16]

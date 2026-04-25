@@ -886,6 +886,7 @@ VM::Result VM::execute(int baseFrameCount_) {
         case OpCode::OP_JUMP_BACK: { uint16_t off = READ_U16(); FRAME.ip -= off; break; }
         case OpCode::OP_JUMP_IF_FALSE: { uint16_t off = READ_U16(); if (!peek().isTruthy()) FRAME.ip += off; break; }
         case OpCode::OP_JUMP_IF_TRUE: { uint16_t off = READ_U16(); if (peek().isTruthy()) FRAME.ip += off; break; }
+        case OpCode::OP_JUMP_IF_NOT_NIL: { uint16_t off = READ_U16(); if (!peek().isNil()) FRAME.ip += off; break; }
         case OpCode::OP_POP_JUMP_IF_FALSE: { uint16_t off = READ_U16(); if (!pop().isTruthy()) FRAME.ip += off; break; }
 
         // ── Functions ──
@@ -1260,6 +1261,51 @@ VM::Result VM::execute(int baseFrameCount_) {
             RUNTIME_ERR("Cannot access property '" + name + "' on this type");
         }
 
+        case OpCode::OP_GET_PROPERTY_OPT: {
+            std::string name = READ_STRING();
+            Value obj = pop();
+            if (obj.isNil()) { push(Value()); break; }
+            if (obj.isInstance()) {
+                auto inst = obj.asInstance();
+                auto fit = inst->fields.find(name);
+                if (fit != inst->fields.end()) { push(fit->second); break; }
+                std::shared_ptr<PraiaClass> methodOwner;
+                Value methodVal;
+                {
+                    auto walk = inst->klass;
+                    while (walk) {
+                        auto sit = walk->vmMethods.find(name);
+                        if (sit != walk->vmMethods.end()) {
+                            methodOwner = walk;
+                            methodVal = sit->second;
+                            break;
+                        }
+                        walk = walk->superclass;
+                    }
+                }
+                if (methodOwner) {
+                    if (methodVal.isCallable()) {
+                        auto* vmcc = dynamic_cast<VMClosureCallable*>(methodVal.asCallable().get());
+                        if (vmcc) {
+                            auto bm = std::make_shared<VMBoundMethod>(obj, vmcc->closure, methodOwner);
+                            push(Value(std::static_pointer_cast<Callable>(bm)));
+                            break;
+                        }
+                    }
+                    push(methodVal);
+                    break;
+                }
+            }
+            if (obj.isMap()) {
+                auto& entries = obj.asMap()->entries;
+                auto it = entries.find(name);
+                if (it != entries.end()) { push(it->second); break; }
+            }
+            // Nothing found — return nil (optional chaining)
+            push(Value());
+            break;
+        }
+
         case OpCode::OP_SET_PROPERTY: {
             std::string name = READ_STRING();
             Value val = pop();
@@ -1406,6 +1452,29 @@ VM::Result VM::execute(int baseFrameCount_) {
                 else { RUNTIME_ERR("Can only index into arrays, strings, and maps"); }
             } else {
                 RUNTIME_ERR("Can only index into arrays, strings, and maps");
+            }
+            break;
+        }
+
+        case OpCode::OP_INDEX_GET_OPT: {
+            Value idx = pop();
+            Value obj = pop();
+            if (obj.isNil()) { push(Value()); break; }
+            if (obj.isArray()) {
+                if (!idx.isNumber()) { push(Value()); break; }
+                auto& elems = obj.asArray()->elements;
+                int i = static_cast<int>(idx.asNumber());
+                if (i < 0) i += static_cast<int>(elems.size());
+                if (i < 0 || i >= static_cast<int>(elems.size())) { push(Value()); break; }
+                push(elems[i]);
+            } else if (obj.isMap()) {
+                if (!idx.isString()) { push(Value()); break; }
+                auto& entries = obj.asMap()->entries;
+                auto it = entries.find(idx.asString());
+                if (it == entries.end()) { push(Value()); break; }
+                push(it->second);
+            } else {
+                push(Value()); // unknown type, return nil
             }
             break;
         }
