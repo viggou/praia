@@ -137,69 +137,11 @@ static Value callWithContext(Interpreter& interp,
 // ── Grain (module) loading ───────────────────────────────────
 
 std::string Interpreter::resolveGrainPath(const std::string& path, int line) {
-    // 1. Relative path (starts with ./ or ../)
-    if (path.rfind("./", 0) == 0 || path.rfind("../", 0) == 0) {
-        std::string base = currentFile.empty() ? fs::current_path().string()
-                                                : fs::path(currentFile).parent_path().string();
-        std::string resolved = (fs::path(base) / (path + ".praia")).string();
-        if (fs::exists(resolved)) return fs::canonical(resolved).string();
-        throw RuntimeError("Grain not found: " + path + " (looked in " + resolved + ")", line);
+    try {
+        return ::resolveGrainPath(path, currentFile);
+    } catch (const std::runtime_error& e) {
+        throw RuntimeError(e.what(), line);
     }
-
-    // 2. ext_grains/ (local dependencies installed by sand)
-    if (!currentFile.empty()) {
-        fs::path dir = fs::path(currentFile).parent_path();
-        for (int i = 0; i < 10; i++) {
-            auto r = tryResolveGrain(dir / "ext_grains", path);
-            if (!r.empty()) return r;
-            if (!dir.has_parent_path() || dir == dir.parent_path()) break;
-            dir = dir.parent_path();
-        }
-    }
-    {
-        auto r = tryResolveGrain(fs::current_path() / "ext_grains", path);
-        if (!r.empty()) return r;
-    }
-
-    // 3. grains/ directory (project-level, bundled grains)
-    if (!currentFile.empty()) {
-        fs::path dir = fs::path(currentFile).parent_path();
-        for (int i = 0; i < 10; i++) {
-            auto r = tryResolveGrain(dir / "grains", path);
-            if (!r.empty()) return r;
-            if (!dir.has_parent_path() || dir == dir.parent_path()) break;
-            dir = dir.parent_path();
-        }
-    }
-    {
-        auto r = tryResolveGrain(fs::current_path() / "grains", path);
-        if (!r.empty()) return r;
-    }
-
-    // 4. ~/.praia/ext_grains/ (user-global)
-    {
-        const char* home = std::getenv("HOME");
-        if (home) {
-            auto r = tryResolveGrain(fs::path(home) / ".praia" / "ext_grains", path);
-            if (!r.empty()) return r;
-        }
-    }
-
-    // 5. Bundled stdlib grains + system-global ext_grains
-    if (g_praiaLibDir) {
-        // Installed: LIBDIR/ext_grains/ (system-global, installed by sudo sand --global)
-        auto r = tryResolveGrain(fs::path(g_praiaLibDir) / "ext_grains", path);
-        if (!r.empty()) return r;
-        // Installed: LIBDIR/grains/ (bundled stdlib)
-        r = tryResolveGrain(fs::path(g_praiaLibDir) / "grains", path);
-        if (!r.empty()) return r;
-    } else if (!g_praiaInstallDir.empty()) {
-        // Development layout: <bindir>/grains/
-        auto r = tryResolveGrain(fs::path(g_praiaInstallDir) / "grains", path);
-        if (!r.empty()) return r;
-    }
-
-    throw RuntimeError("Grain not found: " + path, line);
 }
 
 Value Interpreter::loadGrain(const std::string& importPath, int line) {
@@ -287,13 +229,13 @@ bool Interpreter::interpret(const std::vector<StmtPtr>& program) {
         }
         return true;
     } catch (const ThrowSignal& t) {
-        std::cerr << "[line " << t.line << "] Uncaught error: "
+        std::cerr << formatLocation(t.line, t.column) << " Uncaught error: "
                   << t.value.toString() << std::endl;
         std::cerr << formatStackTrace();
         callStack.clear();
         return false;
     } catch (const RuntimeError& e) {
-        std::cerr << "[line " << e.line << "] Runtime error: " << e.what() << std::endl;
+        std::cerr << formatLocation(e.line, e.column) << " Runtime error: " << e.what() << std::endl;
         std::cerr << formatStackTrace();
         callStack.clear();
         return false;
@@ -314,12 +256,12 @@ void Interpreter::interpretRepl(const std::vector<StmtPtr>& program) {
             GcHeap::current().collectIfNeeded();
         }
     } catch (const ThrowSignal& t) {
-        std::cerr << "[line " << t.line << "] Uncaught error: "
+        std::cerr << formatLocation(t.line, t.column) << " Uncaught error: "
                   << t.value.toString() << std::endl;
         std::cerr << formatStackTrace();
         callStack.clear();
     } catch (const RuntimeError& e) {
-        std::cerr << "[line " << e.line << "] Runtime error: " << e.what() << std::endl;
+        std::cerr << formatLocation(e.line, e.column) << " Runtime error: " << e.what() << std::endl;
         std::cerr << formatStackTrace();
         callStack.clear();
     }
@@ -353,7 +295,7 @@ void Interpreter::execute(const Stmt* stmt) {
             Value val = evaluate(s->initializer.get());
             if (s->isArrayPattern) {
                 if (!val.isArray())
-                    throw RuntimeError("Cannot destructure non-array value", s->line);
+                    throw RuntimeError("Cannot destructure non-array value", s->line, s->column);
                 auto& elems = val.asArray()->elements;
                 for (size_t i = 0; i < s->pattern.size(); i++) {
                     auto& p = s->pattern[i];
@@ -369,7 +311,7 @@ void Interpreter::execute(const Stmt* stmt) {
             } else {
                 // Map destructuring
                 if (!val.isMap())
-                    throw RuntimeError("Cannot destructure non-map value", s->line);
+                    throw RuntimeError("Cannot destructure non-map value", s->line, s->column);
                 auto& entries = val.asMap()->entries;
                 std::set<std::string> extracted;
                 for (auto& p : s->pattern) {
@@ -447,7 +389,7 @@ void Interpreter::execute(const Stmt* stmt) {
         Value startVal = evaluate(s->start.get());
         Value endVal   = evaluate(s->end.get());
         if (!startVal.isNumber() || !endVal.isNumber())
-            throw RuntimeError("Range bounds must be numbers", s->line);
+            throw RuntimeError("Range bounds must be numbers", s->line, s->column);
 
         int64_t from = static_cast<int64_t>(startVal.asNumber());
         int64_t to   = static_cast<int64_t>(endVal.asNumber());
@@ -534,7 +476,7 @@ void Interpreter::execute(const Stmt* stmt) {
                         gen->genCV.wait(lock, [&] { return gen->hasValue; });
                     }
                     if (!gen->errorMessage.empty())
-                        throw RuntimeError(gen->errorMessage, s->line);
+                        throw RuntimeError(gen->errorMessage, s->line, s->column);
                     if (gen->done) break;
 
                     auto iterEnv = gcNew<Environment>(env);
@@ -544,7 +486,7 @@ void Interpreter::execute(const Stmt* stmt) {
                 }
             } catch (const BreakSignal&) {}
         } else {
-            throw RuntimeError("for-in requires an array, map, string, or generator", s->line);
+            throw RuntimeError("for-in requires an array, map, string, or generator", s->line, s->column);
         }
 
     } else if (auto* s = dynamic_cast<const FuncStmt*>(stmt)) {
@@ -575,7 +517,7 @@ void Interpreter::execute(const Stmt* stmt) {
             if (s->values[i]) {
                 Value v = evaluate(s->values[i].get());
                 if (!v.isNumber())
-                    throw RuntimeError("Enum value must be a number", s->line);
+                    throw RuntimeError("Enum value must be a number", s->line, s->column);
                 nextVal = v.isInt() ? v.asInt() : static_cast<int64_t>(v.asNumber());
             }
             enumMap->entries[s->members[i]] = Value(nextVal);
@@ -588,10 +530,10 @@ void Interpreter::execute(const Stmt* stmt) {
         if (!s->superclass.empty()) {
             Value superVal = env->get(s->superclass, s->line);
             if (!superVal.isCallable())
-                throw RuntimeError("Superclass must be a class", s->line);
+                throw RuntimeError("Superclass must be a class", s->line, s->column);
             superclass = std::dynamic_pointer_cast<PraiaClass>(superVal.asCallable());
             if (!superclass)
-                throw RuntimeError("'" + s->superclass + "' is not a class", s->line);
+                throw RuntimeError("'" + s->superclass + "' is not a class", s->line, s->column);
         }
 
         auto klass = gcNew<PraiaClass>();
@@ -697,21 +639,21 @@ Value Interpreter::evaluate(const Expr* expr) {
         // Get the instance
         Value thisVal = env->get("this", e->line);
         if (!thisVal.isInstance())
-            throw RuntimeError("'super' used outside of a method", e->line);
+            throw RuntimeError("'super' used outside of a method", e->line, e->column);
         auto instance = thisVal.asInstance();
 
         // Get the superclass from the defining class (not the instance's class)
         Value superVal = env->get("__super__", e->line);
         if (!superVal.isCallable())
-            throw RuntimeError("'super' used in a class with no superclass", e->line);
+            throw RuntimeError("'super' used in a class with no superclass", e->line, e->column);
         auto super = std::dynamic_pointer_cast<PraiaClass>(superVal.asCallable());
         if (!super)
-            throw RuntimeError("Class has no superclass", e->line);
+            throw RuntimeError("Class has no superclass", e->line, e->column);
 
         // Look up the method on the superclass
         auto* methodDecl = super->findMethod(e->method);
         if (!methodDecl)
-            throw RuntimeError("Superclass has no method '" + e->method + "'", e->line);
+            throw RuntimeError("Superclass has no method '" + e->method + "'", e->line, e->column);
 
         // Bind it to the current instance, with the super's class as defining class
         auto bound = std::make_shared<PraiaMethod>();
@@ -749,7 +691,7 @@ Value Interpreter::evaluate(const Expr* expr) {
                 if (found) return result;
             }
             if (!operand.isNumber())
-                throw RuntimeError("Operand of '-' must be a number", e->line);
+                throw RuntimeError("Operand of '-' must be a number", e->line, e->column);
             if (operand.isInt()) return Value(-operand.asInt());
             return Value(-operand.asNumber());
         }
@@ -757,10 +699,10 @@ Value Interpreter::evaluate(const Expr* expr) {
             return Value(!operand.isTruthy());
         if (e->op == TokenType::BIT_NOT) {
             if (!operand.isNumber())
-                throw RuntimeError("Operand of '~' must be a number", e->line);
+                throw RuntimeError("Operand of '~' must be a number", e->line, e->column);
             return Value(~static_cast<int64_t>(operand.asNumber()));
         }
-        throw RuntimeError("Unknown unary operator", e->line);
+        throw RuntimeError("Unknown unary operator", e->line, e->column);
     }
 
     // ── Postfix (i++, i--) ──
@@ -768,11 +710,11 @@ Value Interpreter::evaluate(const Expr* expr) {
     if (auto* e = dynamic_cast<const PostfixExpr*>(expr)) {
         auto* ident = dynamic_cast<const IdentifierExpr*>(e->operand.get());
         if (!ident)
-            throw RuntimeError("Postfix operator requires a variable", e->line);
+            throw RuntimeError("Postfix operator requires a variable", e->line, e->column);
 
         Value cur = env->get(ident->name, e->line);
         if (!cur.isNumber())
-            throw RuntimeError("Postfix operator requires a number", e->line);
+            throw RuntimeError("Postfix operator requires a number", e->line, e->column);
 
         if (cur.isInt()) {
             int64_t old = cur.asInt();
@@ -839,13 +781,13 @@ Value Interpreter::evaluate(const Expr* expr) {
             }
             if (left.isString() || right.isString())
                 return Value(left.toString() + right.toString());
-            throw RuntimeError("Operands of '+' must be numbers, strings, or arrays", e->line);
+            throw RuntimeError("Operands of '+' must be numbers, strings, or arrays", e->line, e->column);
         case TokenType::MINUS:
             if (left.isInt() && right.isInt())
                 return Value(left.asInt() - right.asInt());
             if (left.isNumber() && right.isNumber())
                 return Value(left.asNumber() - right.asNumber());
-            throw RuntimeError("Operands of '-' must be numbers", e->line);
+            throw RuntimeError("Operands of '-' must be numbers", e->line, e->column);
         case TokenType::STAR:
             if (left.isInt() && right.isInt())
                 return Value(left.asInt() * right.asInt());
@@ -853,7 +795,7 @@ Value Interpreter::evaluate(const Expr* expr) {
                 return Value(left.asNumber() * right.asNumber());
             if (left.isString() && right.isInt()) {
                 int64_t n = right.asInt();
-                if (n < 0) throw RuntimeError("String repeat count cannot be negative", e->line);
+                if (n < 0) throw RuntimeError("String repeat count cannot be negative", e->line, e->column);
                 std::string result;
                 result.reserve(left.asString().size() * n);
                 for (int64_t i = 0; i < n; i++) result += left.asString();
@@ -861,49 +803,52 @@ Value Interpreter::evaluate(const Expr* expr) {
             }
             if (left.isInt() && right.isString()) {
                 int64_t n = left.asInt();
-                if (n < 0) throw RuntimeError("String repeat count cannot be negative", e->line);
+                if (n < 0) throw RuntimeError("String repeat count cannot be negative", e->line, e->column);
                 std::string result;
                 result.reserve(right.asString().size() * n);
                 for (int64_t i = 0; i < n; i++) result += right.asString();
                 return Value(std::move(result));
             }
-            throw RuntimeError("Operands of '*' must be numbers, or string * int", e->line);
+            throw RuntimeError("Operands of '*' must be numbers, or string * int", e->line, e->column);
         case TokenType::SLASH:
-            // Division always returns double (like Python 3)
             if (left.isNumber() && right.isNumber()) {
                 if (right.asNumber() == 0)
-                    throw RuntimeError("Division by zero", e->line);
+                    throw RuntimeError("Division by zero", e->line, e->column);
+                if (left.isInt() && right.isInt()) {
+                    int64_t a = left.asInt(), b = right.asInt();
+                    if (a % b == 0) return Value(a / b);
+                }
                 return Value(left.asNumber() / right.asNumber());
             }
-            throw RuntimeError("Operands of '/' must be numbers", e->line);
+            throw RuntimeError("Operands of '/' must be numbers", e->line, e->column);
         case TokenType::PERCENT:
             if (left.isInt() && right.isInt()) {
                 if (right.asInt() == 0)
-                    throw RuntimeError("Modulo by zero", e->line);
+                    throw RuntimeError("Modulo by zero", e->line, e->column);
                 return Value(left.asInt() % right.asInt());
             }
             if (left.isNumber() && right.isNumber()) {
                 if (right.asNumber() == 0)
-                    throw RuntimeError("Modulo by zero", e->line);
+                    throw RuntimeError("Modulo by zero", e->line, e->column);
                 return Value(std::fmod(left.asNumber(), right.asNumber()));
             }
-            throw RuntimeError("Operands of '%' must be numbers", e->line);
+            throw RuntimeError("Operands of '%' must be numbers", e->line, e->column);
         case TokenType::LT:
             if (left.isNumber() && right.isNumber())
                 return Value(left.asNumber() < right.asNumber());
-            throw RuntimeError("Operands of '<' must be numbers", e->line);
+            throw RuntimeError("Operands of '<' must be numbers", e->line, e->column);
         case TokenType::GT:
             if (left.isNumber() && right.isNumber())
                 return Value(left.asNumber() > right.asNumber());
-            throw RuntimeError("Operands of '>' must be numbers", e->line);
+            throw RuntimeError("Operands of '>' must be numbers", e->line, e->column);
         case TokenType::LTE:
             if (left.isNumber() && right.isNumber())
                 return Value(left.asNumber() <= right.asNumber());
-            throw RuntimeError("Operands of '<=' must be numbers", e->line);
+            throw RuntimeError("Operands of '<=' must be numbers", e->line, e->column);
         case TokenType::GTE:
             if (left.isNumber() && right.isNumber())
                 return Value(left.asNumber() >= right.asNumber());
-            throw RuntimeError("Operands of '>=' must be numbers", e->line);
+            throw RuntimeError("Operands of '>=' must be numbers", e->line, e->column);
         case TokenType::EQ:  return Value(left == right);
         case TokenType::NEQ: return Value(left != right);
         case TokenType::IS: {
@@ -918,11 +863,11 @@ Value Interpreter::evaluate(const Expr* expr) {
                 if (tn == "map")      return Value(left.isMap());
                 if (tn == "function") return Value(left.isCallable());
                 if (tn == "instance") return Value(left.isInstance());
-                throw RuntimeError("Unknown type name '" + tn + "'", e->line);
+                throw RuntimeError("Unknown type name '" + tn + "'", e->line, e->column);
             }
             if (right.isCallable()) {
                 auto klass = std::dynamic_pointer_cast<PraiaClass>(right.asCallable());
-                if (!klass) throw RuntimeError("'is' requires a class or type name string", e->line);
+                if (!klass) throw RuntimeError("'is' requires a class or type name string", e->line, e->column);
                 if (!left.isInstance()) return Value(false);
                 auto walk = left.asInstance()->klass;
                 while (walk) {
@@ -931,32 +876,32 @@ Value Interpreter::evaluate(const Expr* expr) {
                 }
                 return Value(false);
             }
-            throw RuntimeError("'is' requires a type name string or class", e->line);
+            throw RuntimeError("'is' requires a type name string or class", e->line, e->column);
         }
 
         case TokenType::BIT_AND:
             if (left.isNumber() && right.isNumber())
                 return Value(static_cast<int64_t>(left.asNumber()) & static_cast<int64_t>(right.asNumber()));
-            throw RuntimeError("Operands of '&' must be numbers", e->line);
+            throw RuntimeError("Operands of '&' must be numbers", e->line, e->column);
         case TokenType::BIT_OR:
             if (left.isNumber() && right.isNumber())
                 return Value(static_cast<int64_t>(left.asNumber()) | static_cast<int64_t>(right.asNumber()));
-            throw RuntimeError("Operands of '|' must be numbers", e->line);
+            throw RuntimeError("Operands of '|' must be numbers", e->line, e->column);
         case TokenType::BIT_XOR:
             if (left.isNumber() && right.isNumber())
                 return Value(static_cast<int64_t>(left.asNumber()) ^ static_cast<int64_t>(right.asNumber()));
-            throw RuntimeError("Operands of '^' must be numbers", e->line);
+            throw RuntimeError("Operands of '^' must be numbers", e->line, e->column);
         case TokenType::SHL:
             if (left.isNumber() && right.isNumber())
                 return Value(static_cast<int64_t>(left.asNumber()) << static_cast<int64_t>(right.asNumber()));
-            throw RuntimeError("Operands of '<<' must be numbers", e->line);
+            throw RuntimeError("Operands of '<<' must be numbers", e->line, e->column);
         case TokenType::SHR:
             if (left.isNumber() && right.isNumber())
                 return Value(static_cast<int64_t>(left.asNumber()) >> static_cast<int64_t>(right.asNumber()));
-            throw RuntimeError("Operands of '>>' must be numbers", e->line);
+            throw RuntimeError("Operands of '>>' must be numbers", e->line, e->column);
 
         default:
-            throw RuntimeError("Unknown binary operator", e->line);
+            throw RuntimeError("Unknown binary operator", e->line, e->column);
         }
     }
 
@@ -965,7 +910,7 @@ Value Interpreter::evaluate(const Expr* expr) {
     if (auto* e = dynamic_cast<const CallExpr*>(expr)) {
         Value callee = evaluate(e->callee.get());
         if (!callee.isCallable())
-            throw RuntimeError("Can only call functions", e->line);
+            throw RuntimeError("Can only call functions", e->line, e->column);
 
         std::vector<Value> args;
         for (const auto& arg : e->args) {
@@ -1023,7 +968,7 @@ Value Interpreter::evaluate(const Expr* expr) {
         if (auto* call = dynamic_cast<const CallExpr*>(e->right.get())) {
             Value callee = evaluate(call->callee.get());
             if (!callee.isCallable())
-                throw RuntimeError("Pipe target must be a function", e->line);
+                throw RuntimeError("Pipe target must be a function", e->line, e->column);
 
             std::vector<Value> args;
             args.push_back(leftVal);
@@ -1046,7 +991,7 @@ Value Interpreter::evaluate(const Expr* expr) {
         // Right side is just a function name: f → f(leftVal)
         Value callee = evaluate(e->right.get());
         if (!callee.isCallable())
-            throw RuntimeError("Pipe target must be a function", e->line);
+            throw RuntimeError("Pipe target must be a function", e->line, e->column);
 
         return callWithContext(*this, callee.asCallable(), {leftVal}, e->line);
     }
@@ -1057,12 +1002,12 @@ Value Interpreter::evaluate(const Expr* expr) {
         // The inner expression should be a function call
         auto* call = dynamic_cast<const CallExpr*>(e->expr.get());
         if (!call)
-            throw RuntimeError("async requires a function call", e->line);
+            throw RuntimeError("async requires a function call", e->line, e->column);
 
         // Evaluate callee and args on the current thread
         Value callee = evaluate(call->callee.get());
         if (!callee.isCallable())
-            throw RuntimeError("Can only call functions", e->line);
+            throw RuntimeError("Can only call functions", e->line, e->column);
 
         std::vector<Value> args;
         for (const auto& arg : call->args)
@@ -1107,7 +1052,7 @@ Value Interpreter::evaluate(const Expr* expr) {
     if (auto* e = dynamic_cast<const AwaitExpr*>(expr)) {
         Value val = evaluate(e->expr.get());
         if (!val.isFuture())
-            throw RuntimeError("Can only await a future", e->line);
+            throw RuntimeError("Can only await a future", e->line, e->column);
 
         try {
             return val.asFuture()->future.get();
@@ -1127,9 +1072,9 @@ Value Interpreter::evaluate(const Expr* expr) {
         // Find the generator object stored in the environment
         Value genVal;
         try { genVal = env->get("__gen__", e->line); }
-        catch (...) { throw RuntimeError("yield outside of generator", e->line); }
+        catch (...) { throw RuntimeError("yield outside of generator", e->line, e->column); }
         if (!genVal.isGenerator())
-            throw RuntimeError("yield outside of generator", e->line);
+            throw RuntimeError("yield outside of generator", e->line, e->column);
         auto gen = genVal.asGenerator();
 
         std::unique_lock<std::mutex> lock(gen->mtx);
@@ -1190,17 +1135,17 @@ Value Interpreter::evaluate(const Expr* expr) {
         Value idx = evaluate(e->index.get());
         if (obj.isArray()) {
             if (!idx.isNumber())
-                throw RuntimeError("Array index must be a number", e->line);
+                throw RuntimeError("Array index must be a number", e->line, e->column);
             auto& elems = obj.asArray()->elements;
             int i = static_cast<int>(idx.asNumber());
             if (i < 0) i += static_cast<int>(elems.size());
             if (i < 0 || i >= static_cast<int>(elems.size()))
-                throw RuntimeError("Array index out of bounds", e->line);
+                throw RuntimeError("Array index out of bounds", e->line, e->column);
             return elems[i];
         }
         if (obj.isString()) {
             if (!idx.isNumber())
-                throw RuntimeError("String index must be a number", e->line);
+                throw RuntimeError("String index must be a number", e->line, e->column);
             auto& str = obj.asString();
             int i = static_cast<int>(idx.asNumber());
 #ifdef HAVE_UTF8PROC
@@ -1208,18 +1153,18 @@ Value Interpreter::evaluate(const Expr* expr) {
             int len = static_cast<int>(gs.size());
             if (i < 0) i += len;
             if (i < 0 || i >= len)
-                throw RuntimeError("String index out of bounds", e->line);
+                throw RuntimeError("String index out of bounds", e->line, e->column);
             return Value(gs[i]);
 #else
             if (i < 0) i += static_cast<int>(str.size());
             if (i < 0 || i >= static_cast<int>(str.size()))
-                throw RuntimeError("String index out of bounds", e->line);
+                throw RuntimeError("String index out of bounds", e->line, e->column);
             return Value(std::string(1, str[i]));
 #endif
         }
         if (obj.isMap()) {
             if (!idx.isString())
-                throw RuntimeError("Map key must be a string", e->line);
+                throw RuntimeError("Map key must be a string", e->line, e->column);
             auto& entries = obj.asMap()->entries;
             auto it = entries.find(idx.asString());
             if (it == entries.end())
@@ -1230,7 +1175,7 @@ Value Interpreter::evaluate(const Expr* expr) {
             auto [found, result] = callDunder(*this, obj.asInstance(), "__index", {idx});
             if (found) return result;
         }
-        throw RuntimeError("Can only index into arrays, strings, and maps", e->line);
+        throw RuntimeError("Can only index into arrays, strings, and maps", e->line, e->column);
     }
 
     // ── Index assignment ──
@@ -1241,18 +1186,18 @@ Value Interpreter::evaluate(const Expr* expr) {
         Value val = evaluate(e->value.get());
         if (obj.isArray()) {
             if (!idx.isNumber())
-                throw RuntimeError("Array index must be a number", e->line);
+                throw RuntimeError("Array index must be a number", e->line, e->column);
             auto& elems = obj.asArray()->elements;
             int i = static_cast<int>(idx.asNumber());
             if (i < 0) i += static_cast<int>(elems.size());
             if (i < 0 || i >= static_cast<int>(elems.size()))
-                throw RuntimeError("Array index out of bounds", e->line);
+                throw RuntimeError("Array index out of bounds", e->line, e->column);
             elems[i] = val;
             return val;
         }
         if (obj.isMap()) {
             if (!idx.isString())
-                throw RuntimeError("Map key must be a string", e->line);
+                throw RuntimeError("Map key must be a string", e->line, e->column);
             obj.asMap()->entries[idx.asString()] = val;
             return val;
         }
@@ -1261,8 +1206,8 @@ Value Interpreter::evaluate(const Expr* expr) {
             if (found) return result;
         }
         if (obj.isString())
-            throw RuntimeError("Strings are immutable — cannot assign to index", e->line);
-        throw RuntimeError("Can only assign to array or map indices", e->line);
+            throw RuntimeError("Strings are immutable — cannot assign to index", e->line, e->column);
+        throw RuntimeError("Can only assign to array or map indices", e->line, e->column);
     }
 
     // ── Dot access ──
@@ -1302,7 +1247,7 @@ Value Interpreter::evaluate(const Expr* expr) {
             if (e->field == "done") {
                 return Value(gen->state == PraiaGenerator::State::COMPLETED);
             }
-            throw RuntimeError("Generator has no property '" + e->field + "'", e->line);
+            throw RuntimeError("Generator has no property '" + e->field + "'", e->line, e->column);
         }
 
         if (obj.isInstance()) {
@@ -1383,11 +1328,11 @@ Value Interpreter::evaluate(const Expr* expr) {
         // Instance/map with no matching field and no universal method match
         if (obj.isInstance()) {
             if (e->isOptional) return Value();
-            throw RuntimeError("Instance has no property '" + e->field + "'", e->line);
+            throw RuntimeError("Instance has no property '" + e->field + "'", e->line, e->column);
         }
         if (obj.isMap()) {
             if (e->isOptional) return Value();
-            throw RuntimeError("Map has no field '" + e->field + "'", e->line);
+            throw RuntimeError("Map has no field '" + e->field + "'", e->line, e->column);
         }
         // Static methods on classes
         if (obj.isCallable()) {
@@ -1424,7 +1369,7 @@ Value Interpreter::evaluate(const Expr* expr) {
         if (obj.isArray())
             return getArrayMethod(obj.asArray(), e->field, e->line, this);
 
-        throw RuntimeError("Cannot access field '" + e->field + "' on this type", e->line);
+        throw RuntimeError("Cannot access field '" + e->field + "' on this type", e->line, e->column);
     }
 
     // ── Dot assignment ──
@@ -1440,7 +1385,7 @@ Value Interpreter::evaluate(const Expr* expr) {
             obj.asMap()->entries[e->field] = val;
             return val;
         }
-        throw RuntimeError("Can only set fields on instances and maps", e->line);
+        throw RuntimeError("Can only set fields on instances and maps", e->line, e->column);
     }
 
     // ── String interpolation ──

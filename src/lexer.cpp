@@ -46,7 +46,7 @@ std::vector<Token> Lexer::tokenize() {
         start = current;
         scanToken();
     }
-    tokens.push_back({TokenType::EOF_TOKEN, "", line});
+    tokens.push_back({TokenType::EOF_TOKEN, "", line, current - lineStart + 1});
     return tokens;
 }
 
@@ -131,6 +131,7 @@ void Lexer::scanToken() {
             break;
         case '\n':
             line++;
+            lineStart = current;
             break;
 
         case '"':
@@ -221,7 +222,7 @@ void Lexer::string(char quote) {
     bool firstInterp = true;
 
     while (peek() != quote && !isAtEnd()) {
-        if (peek() == '\n') line++;
+        if (peek() == '\n') { line++; lineStart = current + 1; }
 
         // String interpolation: %{expr} (works in both quote styles)
         if (peek() == '%' && peekNext() == '{') {
@@ -230,7 +231,7 @@ void Lexer::string(char quote) {
             advance(); // consume {
 
             TokenType partType = firstInterp ? TokenType::INTERP_START : TokenType::INTERP_MID;
-            tokens.push_back({partType, value, line});
+            tokens.push_back({partType, value, line, start - lineStart + 1});
             value.clear();
             firstInterp = false;
 
@@ -246,12 +247,12 @@ void Lexer::string(char quote) {
                 char next = peekNext();
 
                 if (inLineComment) {
-                    if (ch == '\n') { inLineComment = false; line++; }
+                    if (ch == '\n') { inLineComment = false; line++; lineStart = current + 1; }
                     expr += advance();
                     continue;
                 }
                 if (inBlockComment) {
-                    if (ch == '\n') line++;
+                    if (ch == '\n') { line++; lineStart = current + 1; }
                     if (ch == '*' && next == '/') { inBlockComment = false; expr += advance(); }
                     expr += advance();
                     continue;
@@ -259,7 +260,7 @@ void Lexer::string(char quote) {
                 if (stringQuote) {
                     if (ch == '\\') { expr += advance(); if (!isAtEnd()) expr += advance(); continue; }
                     if (ch == stringQuote) stringQuote = 0;
-                    if (ch == '\n') line++;
+                    if (ch == '\n') { line++; lineStart = current + 1; }
                     expr += advance();
                     continue;
                 }
@@ -271,7 +272,7 @@ void Lexer::string(char quote) {
                 if (ch == '{') depth++;
                 if (ch == '}') depth--;
                 if (depth > 0) {
-                    if (ch == '\n') line++;
+                    if (ch == '\n') { line++; lineStart = current + 1; }
                     expr += advance();
                 } else {
                     advance(); // consume closing }
@@ -376,15 +377,15 @@ void Lexer::string(char quote) {
     advance(); // consume closing quote
 
     if (hasInterp) {
-        tokens.push_back({TokenType::INTERP_END, value, line});
+        tokens.push_back({TokenType::INTERP_END, value, line, start - lineStart + 1});
     } else {
-        tokens.push_back({TokenType::STRING, value, line});
+        tokens.push_back({TokenType::STRING, value, line, start - lineStart + 1});
     }
 }
 
 void Lexer::tripleString(char quote) {
     // Skip the first newline after opening triple-quote
-    if (peek() == '\n') { advance(); line++; }
+    if (peek() == '\n') { advance(); line++; lineStart = current; }
 
     std::string value;
     bool hasInterp = false;
@@ -398,14 +399,14 @@ void Lexer::tripleString(char quote) {
             break;
         }
 
-        if (peek() == '\n') line++;
+        if (peek() == '\n') { line++; lineStart = current + 1; }
 
         // String interpolation
         if (peek() == '%' && peekNext() == '{') {
             hasInterp = true;
             advance(); advance();
             TokenType partType = firstInterp ? TokenType::INTERP_START : TokenType::INTERP_MID;
-            tokens.push_back({partType, value, line});
+            tokens.push_back({partType, value, line, start - lineStart + 1});
             value.clear();
             firstInterp = false;
 
@@ -421,12 +422,12 @@ void Lexer::tripleString(char quote) {
                 char next = peekNext();
 
                 if (inLineComment) {
-                    if (ch == '\n') { inLineComment = false; line++; }
+                    if (ch == '\n') { inLineComment = false; line++; lineStart = current + 1; }
                     expr += advance();
                     continue;
                 }
                 if (inBlockComment) {
-                    if (ch == '\n') line++;
+                    if (ch == '\n') { line++; lineStart = current + 1; }
                     if (ch == '*' && next == '/') { inBlockComment = false; expr += advance(); }
                     expr += advance();
                     continue;
@@ -434,7 +435,7 @@ void Lexer::tripleString(char quote) {
                 if (stringQuote) {
                     if (ch == '\\') { expr += advance(); if (!isAtEnd()) expr += advance(); continue; }
                     if (ch == stringQuote) stringQuote = 0;
-                    if (ch == '\n') line++;
+                    if (ch == '\n') { line++; lineStart = current + 1; }
                     expr += advance();
                     continue;
                 }
@@ -446,7 +447,7 @@ void Lexer::tripleString(char quote) {
                 if (ch == '{') depth++;
                 if (ch == '}') depth--;
                 if (depth > 0) {
-                    if (ch == '\n') line++;
+                    if (ch == '\n') { line++; lineStart = current + 1; }
                     expr += advance();
                 } else {
                     advance(); // consume closing }
@@ -534,9 +535,9 @@ void Lexer::tripleString(char quote) {
     }
 
     if (hasInterp) {
-        tokens.push_back({TokenType::INTERP_END, value, line});
+        tokens.push_back({TokenType::INTERP_END, value, line, start - lineStart + 1});
     } else {
-        tokens.push_back({TokenType::STRING, value, line});
+        tokens.push_back({TokenType::STRING, value, line, start - lineStart + 1});
     }
 }
 
@@ -559,7 +560,7 @@ void Lexer::blockComment() {
             advance(); advance();
             depth--;
         } else {
-            if (peek() == '\n') line++;
+            if (peek() == '\n') { line++; lineStart = current + 1; }
             advance();
         }
     }
@@ -572,14 +573,20 @@ void Lexer::blockComment() {
 // --- Helpers ---
 
 void Lexer::addToken(TokenType type) {
-    tokens.push_back({type, source.substr(start, current - start), line});
+    int col = start - lineStart + 1;
+    tokens.push_back({type, source.substr(start, current - start), line, col});
 }
 
 void Lexer::addToken(TokenType type, const std::string& lexeme) {
-    tokens.push_back({type, lexeme, line});
+    int col = start - lineStart + 1;
+    tokens.push_back({type, lexeme, line, col});
 }
 
 void Lexer::error(const std::string& message) {
-    std::cerr << "[line " << line << "] Error: " << message << std::endl;
+    int col = current - lineStart;
+    if (col > 0)
+        std::cerr << "[line " << line << ":col " << col << "] Error: " << message << std::endl;
+    else
+        std::cerr << "[line " << line << "] Error: " << message << std::endl;
     hadError = true;
 }

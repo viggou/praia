@@ -35,37 +35,37 @@ void Compiler::compileExpr(const Expr* expr) {
 
 void Compiler::compileNumberExpr(const NumberExpr* expr) {
     if (expr->isInt)
-        emitConstant(Value(expr->intValue), expr->line);
+        emitConstant(Value(expr->intValue), expr->line, expr->column);
     else
-        emitConstant(Value(expr->floatValue), expr->line);
+        emitConstant(Value(expr->floatValue), expr->line, expr->column);
 }
 
 void Compiler::compileStringExpr(const StringExpr* expr) {
-    emitConstant(Value(expr->value), expr->line);
+    emitConstant(Value(expr->value), expr->line, expr->column);
 }
 
 void Compiler::compileBoolExpr(const BoolExpr* expr) {
-    emit(expr->value ? OpCode::OP_TRUE : OpCode::OP_FALSE, expr->line);
+    emit(expr->value ? OpCode::OP_TRUE : OpCode::OP_FALSE, expr->line, expr->column);
 }
 
 void Compiler::compileNilExpr(const NilExpr* expr) {
-    emit(OpCode::OP_NIL, expr->line);
+    emit(OpCode::OP_NIL, expr->line, expr->column);
 }
 
 void Compiler::compileIdentifierExpr(const IdentifierExpr* expr) {
     int slot = resolveLocal(current, expr->name);
     if (slot != -1) {
-        emit(OpCode::OP_GET_LOCAL, expr->line);
-        emitU16(static_cast<uint16_t>(slot), expr->line);
+        emit(OpCode::OP_GET_LOCAL, expr->line, expr->column);
+        emitU16(static_cast<uint16_t>(slot), expr->line, expr->column);
     } else {
         int upvalue = resolveUpvalue(current, expr->name);
         if (upvalue != -1) {
-            emit(OpCode::OP_GET_UPVALUE, expr->line);
-            emitU16(static_cast<uint16_t>(upvalue), expr->line);
+            emit(OpCode::OP_GET_UPVALUE, expr->line, expr->column);
+            emitU16(static_cast<uint16_t>(upvalue), expr->line, expr->column);
         } else {
             uint16_t nameIdx = identifierConstant(expr->name);
-            emit(OpCode::OP_GET_GLOBAL, expr->line);
-            emitU16(nameIdx, expr->line);
+            emit(OpCode::OP_GET_GLOBAL, expr->line, expr->column);
+            emitU16(nameIdx, expr->line, expr->column);
         }
     }
 }
@@ -75,17 +75,17 @@ void Compiler::compileAssignExpr(const AssignExpr* expr) {
 
     int slot = resolveLocal(current, expr->name);
     if (slot != -1) {
-        emit(OpCode::OP_SET_LOCAL, expr->line);
-        emitU16(static_cast<uint16_t>(slot), expr->line);
+        emit(OpCode::OP_SET_LOCAL, expr->line, expr->column);
+        emitU16(static_cast<uint16_t>(slot), expr->line, expr->column);
     } else {
         int upvalue = resolveUpvalue(current, expr->name);
         if (upvalue != -1) {
-            emit(OpCode::OP_SET_UPVALUE, expr->line);
-            emitU16(static_cast<uint16_t>(upvalue), expr->line);
+            emit(OpCode::OP_SET_UPVALUE, expr->line, expr->column);
+            emitU16(static_cast<uint16_t>(upvalue), expr->line, expr->column);
         } else {
             uint16_t nameIdx = identifierConstant(expr->name);
-            emit(OpCode::OP_SET_GLOBAL, expr->line);
-            emitU16(nameIdx, expr->line);
+            emit(OpCode::OP_SET_GLOBAL, expr->line, expr->column);
+            emitU16(nameIdx, expr->line, expr->column);
         }
     }
 }
@@ -93,9 +93,9 @@ void Compiler::compileAssignExpr(const AssignExpr* expr) {
 void Compiler::compileUnaryExpr(const UnaryExpr* expr) {
     compileExpr(expr->operand.get());
     switch (expr->op) {
-        case TokenType::MINUS: emit(OpCode::OP_NEGATE, expr->line); break;
-        case TokenType::NOT:   emit(OpCode::OP_NOT, expr->line); break;
-        case TokenType::BIT_NOT: emit(OpCode::OP_BIT_NOT, expr->line); break;
+        case TokenType::MINUS: emit(OpCode::OP_NEGATE, expr->line, expr->column); break;
+        case TokenType::NOT:   emit(OpCode::OP_NOT, expr->line, expr->column); break;
+        case TokenType::BIT_NOT: emit(OpCode::OP_BIT_NOT, expr->line, expr->column); break;
         default: error("Unknown unary operator", expr->line);
     }
 }
@@ -106,12 +106,12 @@ void Compiler::compilePostfixExpr(const PostfixExpr* expr) {
 
     int slot = resolveLocal(current, ident->name);
     if (slot != -1) {
-        emit(expr->op == TokenType::INCREMENT ? OpCode::OP_POST_INC_LOCAL : OpCode::OP_POST_DEC_LOCAL, expr->line);
-        emitU16(static_cast<uint16_t>(slot), expr->line);
+        emit(expr->op == TokenType::INCREMENT ? OpCode::OP_POST_INC_LOCAL : OpCode::OP_POST_DEC_LOCAL, expr->line, expr->column);
+        emitU16(static_cast<uint16_t>(slot), expr->line, expr->column);
     } else {
         uint16_t nameIdx = identifierConstant(ident->name);
-        emit(expr->op == TokenType::INCREMENT ? OpCode::OP_POST_INC_GLOBAL : OpCode::OP_POST_DEC_GLOBAL, expr->line);
-        emitU16(nameIdx, expr->line);
+        emit(expr->op == TokenType::INCREMENT ? OpCode::OP_POST_INC_GLOBAL : OpCode::OP_POST_DEC_GLOBAL, expr->line, expr->column);
+        emitU16(nameIdx, expr->line, expr->column);
     }
 }
 
@@ -119,24 +119,24 @@ void Compiler::compileBinaryExpr(const BinaryExpr* expr) {
     // Short-circuit for && and ||
     if (expr->op == TokenType::AND) {
         compileExpr(expr->left.get());
-        int endJump = emitJump(OpCode::OP_JUMP_IF_FALSE, expr->line);
-        emit(OpCode::OP_POP, expr->line);
+        int endJump = emitJump(OpCode::OP_JUMP_IF_FALSE, expr->line, expr->column);
+        emit(OpCode::OP_POP, expr->line, expr->column);
         compileExpr(expr->right.get());
         patchJump(endJump);
         return;
     }
     if (expr->op == TokenType::NIL_COALESCE) {
         compileExpr(expr->left.get());
-        int endJump = emitJump(OpCode::OP_JUMP_IF_NOT_NIL, expr->line);
-        emit(OpCode::OP_POP, expr->line);
+        int endJump = emitJump(OpCode::OP_JUMP_IF_NOT_NIL, expr->line, expr->column);
+        emit(OpCode::OP_POP, expr->line, expr->column);
         compileExpr(expr->right.get());
         patchJump(endJump);
         return;
     }
     if (expr->op == TokenType::OR) {
         compileExpr(expr->left.get());
-        int endJump = emitJump(OpCode::OP_JUMP_IF_TRUE, expr->line);
-        emit(OpCode::OP_POP, expr->line);
+        int endJump = emitJump(OpCode::OP_JUMP_IF_TRUE, expr->line, expr->column);
+        emit(OpCode::OP_POP, expr->line, expr->column);
         compileExpr(expr->right.get());
         patchJump(endJump);
         return;
@@ -146,23 +146,23 @@ void Compiler::compileBinaryExpr(const BinaryExpr* expr) {
     compileExpr(expr->right.get());
 
     switch (expr->op) {
-        case TokenType::PLUS:    emit(OpCode::OP_ADD, expr->line); break;
-        case TokenType::MINUS:   emit(OpCode::OP_SUBTRACT, expr->line); break;
-        case TokenType::STAR:    emit(OpCode::OP_MULTIPLY, expr->line); break;
-        case TokenType::SLASH:   emit(OpCode::OP_DIVIDE, expr->line); break;
-        case TokenType::PERCENT: emit(OpCode::OP_MODULO, expr->line); break;
-        case TokenType::LT:      emit(OpCode::OP_LESS, expr->line); break;
-        case TokenType::GT:      emit(OpCode::OP_GREATER, expr->line); break;
-        case TokenType::LTE:     emit(OpCode::OP_LESS_EQUAL, expr->line); break;
-        case TokenType::GTE:     emit(OpCode::OP_GREATER_EQUAL, expr->line); break;
-        case TokenType::EQ:      emit(OpCode::OP_EQUAL, expr->line); break;
-        case TokenType::NEQ:     emit(OpCode::OP_NOT_EQUAL, expr->line); break;
-        case TokenType::IS:      emit(OpCode::OP_IS, expr->line); break;
-        case TokenType::BIT_AND: emit(OpCode::OP_BIT_AND, expr->line); break;
-        case TokenType::BIT_OR:  emit(OpCode::OP_BIT_OR, expr->line); break;
-        case TokenType::BIT_XOR: emit(OpCode::OP_BIT_XOR, expr->line); break;
-        case TokenType::SHL:     emit(OpCode::OP_SHL, expr->line); break;
-        case TokenType::SHR:     emit(OpCode::OP_SHR, expr->line); break;
+        case TokenType::PLUS:    emit(OpCode::OP_ADD, expr->line, expr->column); break;
+        case TokenType::MINUS:   emit(OpCode::OP_SUBTRACT, expr->line, expr->column); break;
+        case TokenType::STAR:    emit(OpCode::OP_MULTIPLY, expr->line, expr->column); break;
+        case TokenType::SLASH:   emit(OpCode::OP_DIVIDE, expr->line, expr->column); break;
+        case TokenType::PERCENT: emit(OpCode::OP_MODULO, expr->line, expr->column); break;
+        case TokenType::LT:      emit(OpCode::OP_LESS, expr->line, expr->column); break;
+        case TokenType::GT:      emit(OpCode::OP_GREATER, expr->line, expr->column); break;
+        case TokenType::LTE:     emit(OpCode::OP_LESS_EQUAL, expr->line, expr->column); break;
+        case TokenType::GTE:     emit(OpCode::OP_GREATER_EQUAL, expr->line, expr->column); break;
+        case TokenType::EQ:      emit(OpCode::OP_EQUAL, expr->line, expr->column); break;
+        case TokenType::NEQ:     emit(OpCode::OP_NOT_EQUAL, expr->line, expr->column); break;
+        case TokenType::IS:      emit(OpCode::OP_IS, expr->line, expr->column); break;
+        case TokenType::BIT_AND: emit(OpCode::OP_BIT_AND, expr->line, expr->column); break;
+        case TokenType::BIT_OR:  emit(OpCode::OP_BIT_OR, expr->line, expr->column); break;
+        case TokenType::BIT_XOR: emit(OpCode::OP_BIT_XOR, expr->line, expr->column); break;
+        case TokenType::SHL:     emit(OpCode::OP_SHL, expr->line, expr->column); break;
+        case TokenType::SHR:     emit(OpCode::OP_SHR, expr->line, expr->column); break;
         default: error("Unknown binary operator", expr->line);
     }
 }
@@ -179,23 +179,23 @@ void Compiler::compileCallExpr(const CallExpr* expr) {
     if (hasSpread) {
         // Build a flat args array on the stack, then call with it.
         // Start with empty array.
-        emit(OpCode::OP_BUILD_ARRAY, expr->line);
-        emitU16(0, expr->line);
+        emit(OpCode::OP_BUILD_ARRAY, expr->line, expr->column);
+        emitU16(0, expr->line, expr->column);
 
         for (auto& arg : expr->args) {
             if (auto* spread = dynamic_cast<const SpreadExpr*>(arg.get())) {
                 compileExpr(spread->expr.get());
-                emit(OpCode::OP_ADD, expr->line); // array + array = concatenated
+                emit(OpCode::OP_ADD, expr->line, expr->column); // array + array = concatenated
             } else {
                 // Wrap single arg in 1-element array, concatenate
                 compileExpr(arg.get());
-                emit(OpCode::OP_BUILD_ARRAY, expr->line);
-                emitU16(1, expr->line);
-                emit(OpCode::OP_ADD, expr->line);
+                emit(OpCode::OP_BUILD_ARRAY, expr->line, expr->column);
+                emitU16(1, expr->line, expr->column);
+                emit(OpCode::OP_ADD, expr->line, expr->column);
             }
         }
         // Stack: [callee, argsArray]
-        emit(OpCode::OP_CALL_SPREAD, expr->line);
+        emit(OpCode::OP_CALL_SPREAD, expr->line, expr->column);
         return;
     }
 
@@ -212,20 +212,20 @@ void Compiler::compileCallExpr(const CallExpr* expr) {
         for (auto& n : expr->argNames)
             namesArr->elements.push_back(Value(n));
         uint16_t namesIdx = currentChunk().addConstant(Value(namesArr));
-        emit(OpCode::OP_CALL_NAMED, expr->line);
-        emit(static_cast<uint8_t>(expr->args.size()), expr->line);
-        emitU16(namesIdx, expr->line);
+        emit(OpCode::OP_CALL_NAMED, expr->line, expr->column);
+        emit(static_cast<uint8_t>(expr->args.size()), expr->line, expr->column);
+        emitU16(namesIdx, expr->line, expr->column);
     } else {
-        emit(OpCode::OP_CALL, expr->line);
-        emit(static_cast<uint8_t>(expr->args.size()), expr->line);
+        emit(OpCode::OP_CALL, expr->line, expr->column);
+        emit(static_cast<uint8_t>(expr->args.size()), expr->line, expr->column);
     }
 }
 
 void Compiler::compileTernaryExpr(const TernaryExpr* expr) {
     compileExpr(expr->condition.get());
-    int elseJump = emitJump(OpCode::OP_POP_JUMP_IF_FALSE, expr->line);
+    int elseJump = emitJump(OpCode::OP_POP_JUMP_IF_FALSE, expr->line, expr->column);
     compileExpr(expr->thenExpr.get());
-    int endJump = emitJump(OpCode::OP_JUMP, expr->line);
+    int endJump = emitJump(OpCode::OP_JUMP, expr->line, expr->column);
     patchJump(elseJump);
     compileExpr(expr->elseExpr.get());
     patchJump(endJump);
@@ -252,18 +252,18 @@ void Compiler::compilePipeExpr(const PipeExpr* expr) {
             for (auto& n : call->argNames)
                 namesArr->elements.push_back(Value(n));
             uint16_t namesIdx = currentChunk().addConstant(Value(namesArr));
-            emit(OpCode::OP_CALL_NAMED, expr->line);
-            emit(static_cast<uint8_t>(totalArgs), expr->line);
-            emitU16(namesIdx, expr->line);
+            emit(OpCode::OP_CALL_NAMED, expr->line, expr->column);
+            emit(static_cast<uint8_t>(totalArgs), expr->line, expr->column);
+            emitU16(namesIdx, expr->line, expr->column);
         } else {
-            emit(OpCode::OP_CALL, expr->line);
-            emit(static_cast<uint8_t>(totalArgs), expr->line);
+            emit(OpCode::OP_CALL, expr->line, expr->column);
+            emit(static_cast<uint8_t>(totalArgs), expr->line, expr->column);
         }
     } else {
         compileExpr(expr->right.get());
         compileExpr(expr->left.get());
-        emit(OpCode::OP_CALL, expr->line);
-        emit(1, expr->line);
+        emit(OpCode::OP_CALL, expr->line, expr->column);
+        emit(1, expr->line, expr->column);
     }
 }
 
@@ -298,15 +298,15 @@ void Compiler::compileLambdaExpr(const LambdaExpr* expr) {
     for (size_t i = 0; i < expr->defaults.size(); i++) {
         if (expr->defaults[i]) {
             int slot = static_cast<int>(i) + 1;
-            emit(OpCode::OP_GET_LOCAL, expr->line);
-            emitU16(static_cast<uint16_t>(slot), expr->line);
-            emit(OpCode::OP_NIL, expr->line);
-            emit(OpCode::OP_EQUAL, expr->line);
-            int skipJump = emitJump(OpCode::OP_POP_JUMP_IF_FALSE, expr->line);
+            emit(OpCode::OP_GET_LOCAL, expr->line, expr->column);
+            emitU16(static_cast<uint16_t>(slot), expr->line, expr->column);
+            emit(OpCode::OP_NIL, expr->line, expr->column);
+            emit(OpCode::OP_EQUAL, expr->line, expr->column);
+            int skipJump = emitJump(OpCode::OP_POP_JUMP_IF_FALSE, expr->line, expr->column);
             compileExpr(expr->defaults[i].get());
-            emit(OpCode::OP_SET_LOCAL, expr->line);
-            emitU16(static_cast<uint16_t>(slot), expr->line);
-            emit(OpCode::OP_POP, expr->line);
+            emit(OpCode::OP_SET_LOCAL, expr->line, expr->column);
+            emitU16(static_cast<uint16_t>(slot), expr->line, expr->column);
+            emit(OpCode::OP_POP, expr->line, expr->column);
             patchJump(skipJump);
         }
     }
@@ -315,8 +315,8 @@ void Compiler::compileLambdaExpr(const LambdaExpr* expr) {
         compileStmt(s.get());
     }
 
-    emit(OpCode::OP_NIL, expr->line);
-    emit(OpCode::OP_RETURN, expr->line);
+    emit(OpCode::OP_NIL, expr->line, expr->column);
+    emit(OpCode::OP_RETURN, expr->line, expr->column);
 
     current = lamState.enclosing;
     fn->upvalueCount = static_cast<int>(lamState.upvalues.size());
@@ -327,12 +327,12 @@ void Compiler::compileLambdaExpr(const LambdaExpr* expr) {
     uint16_t fnIdx = currentChunk().addConstant(
         Value(std::static_pointer_cast<Callable>(wrapper)));
 
-    emit(OpCode::OP_CLOSURE, expr->line);
-    emitU16(fnIdx, expr->line);
+    emit(OpCode::OP_CLOSURE, expr->line, expr->column);
+    emitU16(fnIdx, expr->line, expr->column);
 
     for (auto& uv : lamState.upvalues) {
-        emit(uv.isLocal ? 1 : 0, expr->line);
-        emitU16(uv.index, expr->line);
+        emit(uv.isLocal ? 1 : 0, expr->line, expr->column);
+        emitU16(uv.index, expr->line, expr->column);
     }
 }
 void Compiler::compileArrayLiteralExpr(const ArrayLiteralExpr* expr) {
@@ -344,30 +344,30 @@ void Compiler::compileArrayLiteralExpr(const ArrayLiteralExpr* expr) {
     if (!hasSpreads) {
         // Simple case: no spreads, just push elements and build
         for (auto& elem : expr->elements) compileExpr(elem.get());
-        emit(OpCode::OP_BUILD_ARRAY, expr->line);
-        emitU16(static_cast<uint16_t>(expr->elements.size()), expr->line);
+        emit(OpCode::OP_BUILD_ARRAY, expr->line, expr->column);
+        emitU16(static_cast<uint16_t>(expr->elements.size()), expr->line, expr->column);
         return;
     }
 
     // With spreads: build segments and concat with OP_ADD
     // Strategy: accumulate non-spread elements into arrays, concat spreads
     // Start with an empty array
-    emit(OpCode::OP_BUILD_ARRAY, expr->line);
-    emitU16(0, expr->line);
+    emit(OpCode::OP_BUILD_ARRAY, expr->line, expr->column);
+    emitU16(0, expr->line, expr->column);
 
     int pending = 0;
     for (auto& elem : expr->elements) {
         if (auto* spread = dynamic_cast<const SpreadExpr*>(elem.get())) {
             // Flush pending non-spread elements as an array, concat
             if (pending > 0) {
-                emit(OpCode::OP_BUILD_ARRAY, expr->line);
-                emitU16(static_cast<uint16_t>(pending), expr->line);
-                emit(OpCode::OP_ADD, expr->line); // concat with accumulator
+                emit(OpCode::OP_BUILD_ARRAY, expr->line, expr->column);
+                emitU16(static_cast<uint16_t>(pending), expr->line, expr->column);
+                emit(OpCode::OP_ADD, expr->line, expr->column); // concat with accumulator
                 pending = 0;
             }
             // Concat the spread array
             compileExpr(spread->expr.get());
-            emit(OpCode::OP_ADD, expr->line);
+            emit(OpCode::OP_ADD, expr->line, expr->column);
         } else {
             compileExpr(elem.get());
             pending++;
@@ -375,9 +375,9 @@ void Compiler::compileArrayLiteralExpr(const ArrayLiteralExpr* expr) {
     }
     // Flush remaining
     if (pending > 0) {
-        emit(OpCode::OP_BUILD_ARRAY, expr->line);
-        emitU16(static_cast<uint16_t>(pending), expr->line);
-        emit(OpCode::OP_ADD, expr->line);
+        emit(OpCode::OP_BUILD_ARRAY, expr->line, expr->column);
+        emitU16(static_cast<uint16_t>(pending), expr->line, expr->column);
+        emit(OpCode::OP_ADD, expr->line, expr->column);
     }
 }
 
@@ -391,70 +391,70 @@ void Compiler::compileMapLiteralExpr(const MapLiteralExpr* expr) {
 
     if (!hasSpreads) {
         for (size_t i = 0; i < expr->keys.size(); i++) {
-            emitConstant(Value(expr->keys[i]), expr->line);
+            emitConstant(Value(expr->keys[i]), expr->line, expr->column);
             compileExpr(expr->values[i].get());
         }
-        emit(OpCode::OP_BUILD_MAP, expr->line);
-        emitU16(static_cast<uint16_t>(expr->keys.size()), expr->line);
+        emit(OpCode::OP_BUILD_MAP, expr->line, expr->column);
+        emitU16(static_cast<uint16_t>(expr->keys.size()), expr->line, expr->column);
         return;
     }
 
     // With spreads: build segments and merge with OP_ADD (map + map)
     // Start with empty map
-    emit(OpCode::OP_BUILD_MAP, expr->line);
-    emitU16(0, expr->line);
+    emit(OpCode::OP_BUILD_MAP, expr->line, expr->column);
+    emitU16(0, expr->line, expr->column);
 
     int pending = 0;
     for (size_t i = 0; i < expr->keys.size(); i++) {
         if (expr->keys[i].empty() && dynamic_cast<const SpreadExpr*>(expr->values[i].get())) {
             // Flush pending key-value pairs as a map, merge
             if (pending > 0) {
-                emit(OpCode::OP_BUILD_MAP, expr->line);
-                emitU16(static_cast<uint16_t>(pending), expr->line);
-                emit(OpCode::OP_ADD, expr->line);
+                emit(OpCode::OP_BUILD_MAP, expr->line, expr->column);
+                emitU16(static_cast<uint16_t>(pending), expr->line, expr->column);
+                emit(OpCode::OP_ADD, expr->line, expr->column);
                 pending = 0;
             }
             // Merge spread map
             compileExpr(dynamic_cast<const SpreadExpr*>(expr->values[i].get())->expr.get());
-            emit(OpCode::OP_ADD, expr->line);
+            emit(OpCode::OP_ADD, expr->line, expr->column);
         } else {
-            emitConstant(Value(expr->keys[i]), expr->line);
+            emitConstant(Value(expr->keys[i]), expr->line, expr->column);
             compileExpr(expr->values[i].get());
             pending++;
         }
     }
     if (pending > 0) {
-        emit(OpCode::OP_BUILD_MAP, expr->line);
-        emitU16(static_cast<uint16_t>(pending), expr->line);
-        emit(OpCode::OP_ADD, expr->line);
+        emit(OpCode::OP_BUILD_MAP, expr->line, expr->column);
+        emitU16(static_cast<uint16_t>(pending), expr->line, expr->column);
+        emit(OpCode::OP_ADD, expr->line, expr->column);
     }
 }
 
 void Compiler::compileIndexExpr(const IndexExpr* expr) {
     compileExpr(expr->object.get());
     compileExpr(expr->index.get());
-    emit(expr->isOptional ? OpCode::OP_INDEX_GET_OPT : OpCode::OP_INDEX_GET, expr->line);
+    emit(expr->isOptional ? OpCode::OP_INDEX_GET_OPT : OpCode::OP_INDEX_GET, expr->line, expr->column);
 }
 
 void Compiler::compileIndexAssignExpr(const IndexAssignExpr* expr) {
     compileExpr(expr->object.get());
     compileExpr(expr->index.get());
     compileExpr(expr->value.get());
-    emit(OpCode::OP_INDEX_SET, expr->line);
+    emit(OpCode::OP_INDEX_SET, expr->line, expr->column);
 }
 void Compiler::compileDotExpr(const DotExpr* expr) {
     compileExpr(expr->object.get());
     uint16_t nameIdx = identifierConstant(expr->field);
-    emit(expr->isOptional ? OpCode::OP_GET_PROPERTY_OPT : OpCode::OP_GET_PROPERTY, expr->line);
-    emitU16(nameIdx, expr->line);
+    emit(expr->isOptional ? OpCode::OP_GET_PROPERTY_OPT : OpCode::OP_GET_PROPERTY, expr->line, expr->column);
+    emitU16(nameIdx, expr->line, expr->column);
 }
 
 void Compiler::compileDotAssignExpr(const DotAssignExpr* expr) {
     compileExpr(expr->object.get());
     compileExpr(expr->value.get());
     uint16_t nameIdx = identifierConstant(expr->field);
-    emit(OpCode::OP_SET_PROPERTY, expr->line);
-    emitU16(nameIdx, expr->line);
+    emit(OpCode::OP_SET_PROPERTY, expr->line, expr->column);
+    emitU16(nameIdx, expr->line, expr->column);
 }
 void Compiler::compileInterpolatedStringExpr(const InterpolatedStringExpr* expr) {
     // Each part is either a StringExpr or an expression — compile them all
@@ -462,20 +462,20 @@ void Compiler::compileInterpolatedStringExpr(const InterpolatedStringExpr* expr)
     for (auto& part : expr->parts) {
         compileExpr(part.get());
     }
-    emit(OpCode::OP_BUILD_STRING, expr->line);
-    emitU16(static_cast<uint16_t>(expr->parts.size()), expr->line);
+    emit(OpCode::OP_BUILD_STRING, expr->line, expr->column);
+    emitU16(static_cast<uint16_t>(expr->parts.size()), expr->line, expr->column);
 }
 void Compiler::compileThisExpr(const ThisExpr* expr) {
     // "this" is always local slot 0 in a method
     int slot = resolveLocal(current, "this");
     if (slot != -1) {
-        emit(OpCode::OP_GET_LOCAL, expr->line);
-        emitU16(static_cast<uint16_t>(slot), expr->line);
+        emit(OpCode::OP_GET_LOCAL, expr->line, expr->column);
+        emitU16(static_cast<uint16_t>(slot), expr->line, expr->column);
     } else {
         int uv = resolveUpvalue(current, "this");
         if (uv != -1) {
-            emit(OpCode::OP_GET_UPVALUE, expr->line);
-            emitU16(static_cast<uint16_t>(uv), expr->line);
+            emit(OpCode::OP_GET_UPVALUE, expr->line, expr->column);
+            emitU16(static_cast<uint16_t>(uv), expr->line, expr->column);
         } else {
             error("'this' used outside of a method", expr->line);
         }
@@ -486,20 +486,20 @@ void Compiler::compileSuperExpr(const SuperExpr* expr) {
     // Push "this" for method binding
     int slot = resolveLocal(current, "this");
     if (slot != -1) {
-        emit(OpCode::OP_GET_LOCAL, expr->line);
-        emitU16(static_cast<uint16_t>(slot), expr->line);
+        emit(OpCode::OP_GET_LOCAL, expr->line, expr->column);
+        emitU16(static_cast<uint16_t>(slot), expr->line, expr->column);
     } else {
         int uv = resolveUpvalue(current, "this");
         if (uv != -1) {
-            emit(OpCode::OP_GET_UPVALUE, expr->line);
-            emitU16(static_cast<uint16_t>(uv), expr->line);
+            emit(OpCode::OP_GET_UPVALUE, expr->line, expr->column);
+            emitU16(static_cast<uint16_t>(uv), expr->line, expr->column);
         } else {
             error("'super' used outside of a method", expr->line);
         }
     }
     uint16_t nameIdx = identifierConstant(expr->method);
-    emit(OpCode::OP_GET_SUPER, expr->line);
-    emitU16(nameIdx, expr->line);
+    emit(OpCode::OP_GET_SUPER, expr->line, expr->column);
+    emitU16(nameIdx, expr->line, expr->column);
 }
 void Compiler::compileAsyncExpr(const AsyncExpr* expr) {
     // async funcCall(args) — compile the call normally, but use OP_ASYNC instead of OP_CALL
@@ -518,18 +518,18 @@ void Compiler::compileAsyncExpr(const AsyncExpr* expr) {
         for (auto& n : call->argNames)
             namesArr->elements.push_back(Value(n));
         uint16_t namesIdx = currentChunk().addConstant(Value(namesArr));
-        emit(OpCode::OP_ASYNC_NAMED, expr->line);
-        emit(static_cast<uint8_t>(call->args.size()), expr->line);
-        emitU16(namesIdx, expr->line);
+        emit(OpCode::OP_ASYNC_NAMED, expr->line, expr->column);
+        emit(static_cast<uint8_t>(call->args.size()), expr->line, expr->column);
+        emitU16(namesIdx, expr->line, expr->column);
     } else {
-        emit(OpCode::OP_ASYNC, expr->line);
-        emit(static_cast<uint8_t>(call->args.size()), expr->line);
+        emit(OpCode::OP_ASYNC, expr->line, expr->column);
+        emit(static_cast<uint8_t>(call->args.size()), expr->line, expr->column);
     }
 }
 
 void Compiler::compileAwaitExpr(const AwaitExpr* expr) {
     compileExpr(expr->expr.get());
-    emit(OpCode::OP_AWAIT, expr->line);
+    emit(OpCode::OP_AWAIT, expr->line, expr->column);
 }
 
 void Compiler::compileYieldExpr(const YieldExpr* expr) {
@@ -540,7 +540,7 @@ void Compiler::compileYieldExpr(const YieldExpr* expr) {
     if (expr->value) {
         compileExpr(expr->value.get());
     } else {
-        emit(OpCode::OP_NIL, expr->line);
+        emit(OpCode::OP_NIL, expr->line, expr->column);
     }
-    emit(OpCode::OP_YIELD, expr->line);
+    emit(OpCode::OP_YIELD, expr->line, expr->column);
 }

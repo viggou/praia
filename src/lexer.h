@@ -34,5 +34,6 @@ private:
     int start = 0;
     int current = 0;
     int line = 1;
+    int lineStart = 0; // index of first char on current line (for column calc)
     bool hadError = false;
 };

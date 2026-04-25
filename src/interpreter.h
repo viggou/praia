@@ -26,6 +26,7 @@ struct ContinueSignal {};
 struct ThrowSignal {
     Value value;
     int line;
+    int column = 0;
 };
 
 // A user-defined Praia function
@@ -154,6 +155,7 @@ struct ExportSignal {
 struct CallFrame {
     std::string name;
     int line;
+    int column = 0;
 };
 
 class CallFrameGuard {

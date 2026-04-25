@@ -145,4 +145,19 @@ testing.test("finally runs on return from catch", lam{ in
     testing.assertEqual(log, ["catch", "finally"], nil)
 })
 
+testing.test("error messages include column info", lam{ in
+    // Runtime error — division by zero at a known column
+    let r1 = sys.exec("./praia -c \"let x = 10 / 0\"")
+    testing.assert(r1.stderr.contains(":col "), "runtime error should include column")
+    testing.assert(r1.stderr.contains("[line 1:col 12]"), "division by zero at col 12")
+
+    // Parse error — unexpected token at a known column
+    let r2 = sys.exec("./praia -c \"let x = (1 + )\"")
+    testing.assert(r2.stderr.contains(":col "), "parse error should include column")
+
+    // Multiline — error on second line
+    let r3 = sys.exec("./praia -c \"let a = 1\nlet b = a / 0\"")
+    testing.assert(r3.stderr.contains("[line 2:col"), "line 2 error should have column")
+})
+
 testing.done()

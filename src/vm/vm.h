@@ -176,7 +176,7 @@ public:
     bool callClosure(ObjClosure* closure, int argCount, int line);
 private:
 
-    void runtimeError(const std::string& msg, int line);
+    void runtimeError(const std::string& msg, int line, int column = 0);
     bool tryHandleError(Value error);  // returns true if caught, false if uncaught
     std::string formatStackTrace() const;
 
