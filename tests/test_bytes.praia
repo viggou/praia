@@ -21,13 +21,13 @@ testing.test("bytes.hex", lam{ in
     testing.assertEqual(bytes.hex("ABC"), "414243", nil)
     testing.assertEqual(bytes.hex(""), "", nil)
     testing.assertEqual(bytes.hex(fromCharCode(0)), "00", nil)
-    testing.assertEqual(bytes.hex(fromCharCode(255)), "ff", nil)
+    testing.assertEqual(bytes.hex(fromCharCode(255)), "c3bf", "U+00FF encodes as 2 UTF-8 bytes")
 })
 
 testing.test("bytes.fromHex", lam{ in
     testing.assertEqual(bytes.fromHex("414243"), "ABC", nil)
     testing.assertEqual(bytes.fromHex(""), "", nil)
-    testing.assertEqual(bytes.fromHex("00ff"), fromCharCode(0) + fromCharCode(255), nil)
+    testing.assertEqual(bytes.fromHex("00c3bf"), fromCharCode(0) + fromCharCode(255), "U+00FF = C3 BF in UTF-8")
 })
 
 testing.test("bytes.fromHex rejects odd length", lam{ in

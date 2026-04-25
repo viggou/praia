@@ -5,6 +5,7 @@
 #include "../interpreter.h"
 #include "../lexer.h"
 #include "../parser.h"
+#include "../unicode.h"
 #include <algorithm>
 #include <cmath>
 #include <filesystem>
@@ -1337,9 +1338,17 @@ VM::Result VM::execute(int baseFrameCount_) {
                 if (!idx.isNumber()) { RUNTIME_ERR("String index must be a number"); }
                 auto& str = obj.asString();
                 int i = static_cast<int>(idx.asNumber());
+#ifdef HAVE_UTF8PROC
+                auto gs = utf8_graphemes(str);
+                int slen = static_cast<int>(gs.size());
+                if (i < 0) i += slen;
+                if (i < 0 || i >= slen) { RUNTIME_ERR("String index out of bounds"); }
+                push(Value(gs[i]));
+#else
                 if (i < 0) i += static_cast<int>(str.size());
                 if (i < 0 || i >= static_cast<int>(str.size())) { RUNTIME_ERR("String index out of bounds"); }
                 push(Value(std::string(1, str[i])));
+#endif
             } else if (obj.isMap()) {
                 if (!idx.isString()) { RUNTIME_ERR("Map key must be a string"); }
                 auto& entries = obj.asMap()->entries;

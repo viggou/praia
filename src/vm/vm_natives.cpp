@@ -2,6 +2,7 @@
 #include "../gc_heap.h"
 #include "../interpreter.h"
 #include "../environment.h"
+#include "../unicode.h"
 #include <algorithm>
 #include <set>
 
@@ -135,7 +136,11 @@ void vmRegisterNatives(VM& vm) {
             if (args[0].isArray())
                 return Value(static_cast<int64_t>(args[0].asArray()->elements.size()));
             if (args[0].isString())
+#ifdef HAVE_UTF8PROC
+                return Value(static_cast<int64_t>(utf8_grapheme_count(args[0].asString())));
+#else
                 return Value(static_cast<int64_t>(args[0].asString().size()));
+#endif
             if (args[0].isMap())
                 return Value(static_cast<int64_t>(args[0].asMap()->entries.size()));
             throw RuntimeError("len() requires an array, string, or map", 0);
@@ -257,8 +262,13 @@ void vmRegisterNatives(VM& vm) {
             }
             if (v.isString()) {
                 auto arr = gcNew<PraiaArray>();
+#ifdef HAVE_UTF8PROC
+                for (auto& g : utf8_graphemes(v.asString()))
+                    arr->elements.push_back(Value(std::move(g)));
+#else
                 for (char c : v.asString())
                     arr->elements.push_back(Value(std::string(1, c)));
+#endif
                 return Value(arr);
             }
             return Value(); // nil for non-iterables

@@ -1,4 +1,5 @@
 #include "lexer.h"
+#include "unicode.h"
 #include <iostream>
 #include <unordered_map>
 
@@ -317,6 +318,37 @@ void Lexer::string(char quote) {
                     advance(); advance();
                     break;
                 }
+                case 'u': {
+                    // \u{HHHH} — Unicode escape (1-6 hex digits)
+                    if (isAtEnd() || peek() != '{') {
+                        error("Expected '{' after \\u"); break;
+                    }
+                    advance(); // consume '{'
+                    auto hexVal = [](char c) -> int {
+                        if (c >= '0' && c <= '9') return c - '0';
+                        if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+                        if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+                        return -1;
+                    };
+                    int32_t cp = 0;
+                    int digits = 0;
+                    bool bad = false;
+                    while (!isAtEnd() && peek() != '}') {
+                        int d = hexVal(peek());
+                        if (d < 0) { error("Invalid hex digit in \\u{} escape"); bad = true; break; }
+                        cp = (cp << 4) | d;
+                        digits++;
+                        if (digits > 6) { error("Too many digits in \\u{} escape"); bad = true; break; }
+                        advance();
+                    }
+                    if (bad) break;
+                    if (isAtEnd() || peek() != '}') { error("Unterminated \\u{} escape"); break; }
+                    advance(); // consume '}'
+                    if (digits == 0) { error("Empty \\u{} escape"); break; }
+                    if (cp > 0x10FFFF) { error("Unicode codepoint out of range"); break; }
+                    value += utf8_encode(cp);
+                    break;
+                }
                 default:
                     error(std::string("Unknown escape sequence '\\") + escaped + "'");
                     value += escaped;
@@ -453,6 +485,36 @@ void Lexer::tripleString(char quote) {
                     if (hi < 0 || lo < 0) { error("Invalid \\x escape"); break; }
                     value += static_cast<char>((hi << 4) | lo);
                     advance(); advance();
+                    break;
+                }
+                case 'u': {
+                    if (isAtEnd() || peek() != '{') {
+                        error("Expected '{' after \\u"); break;
+                    }
+                    advance();
+                    auto hexVal = [](char c) -> int {
+                        if (c >= '0' && c <= '9') return c - '0';
+                        if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+                        if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+                        return -1;
+                    };
+                    int32_t cp = 0;
+                    int digits = 0;
+                    bool bad = false;
+                    while (!isAtEnd() && peek() != '}') {
+                        int d = hexVal(peek());
+                        if (d < 0) { error("Invalid hex digit in \\u{} escape"); bad = true; break; }
+                        cp = (cp << 4) | d;
+                        digits++;
+                        if (digits > 6) { error("Too many digits in \\u{} escape"); bad = true; break; }
+                        advance();
+                    }
+                    if (bad) break;
+                    if (isAtEnd() || peek() != '}') { error("Unterminated \\u{} escape"); break; }
+                    advance();
+                    if (digits == 0) { error("Empty \\u{} escape"); break; }
+                    if (cp > 0x10FFFF) { error("Unicode codepoint out of range"); break; }
+                    value += utf8_encode(cp);
                     break;
                 }
                 default: value += escaped; break;
