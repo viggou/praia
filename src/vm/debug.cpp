@@ -150,6 +150,7 @@ int disassembleInstruction(const Chunk& chunk, int offset) {
         case OpCode::OP_JUMP_BACK:      return jumpInstruction("OP_JUMP_BACK", -1, chunk, offset);
         case OpCode::OP_JUMP_IF_FALSE:  return jumpInstruction("OP_JUMP_IF_FALSE", 1, chunk, offset);
         case OpCode::OP_JUMP_IF_TRUE:   return jumpInstruction("OP_JUMP_IF_TRUE", 1, chunk, offset);
+        case OpCode::OP_JUMP_IF_NOT_NIL:return jumpInstruction("OP_JUMP_IF_NOT_NIL", 1, chunk, offset);
         case OpCode::OP_POP_JUMP_IF_FALSE: return jumpInstruction("OP_POP_JUMP_IF_FALSE", 1, chunk, offset);
 
         // Functions
@@ -187,6 +188,7 @@ int disassembleInstruction(const Chunk& chunk, int offset) {
         case OpCode::OP_STATIC_METHOD:  return constantInstruction("OP_STATIC_METHOD", chunk, offset);
         case OpCode::OP_INHERIT:        return simpleInstruction("OP_INHERIT", offset);
         case OpCode::OP_GET_PROPERTY:   return constantInstruction("OP_GET_PROPERTY", chunk, offset);
+        case OpCode::OP_GET_PROPERTY_OPT: return constantInstruction("OP_GET_PROPERTY_OPT", chunk, offset);
         case OpCode::OP_SET_PROPERTY:   return constantInstruction("OP_SET_PROPERTY", chunk, offset);
         case OpCode::OP_GET_THIS:       return simpleInstruction("OP_GET_THIS", offset);
         case OpCode::OP_GET_SUPER:      return constantInstruction("OP_GET_SUPER", chunk, offset);
@@ -197,6 +199,7 @@ int disassembleInstruction(const Chunk& chunk, int offset) {
         case OpCode::OP_BUILD_ARRAY:    return u16Instruction("OP_BUILD_ARRAY", chunk, offset);
         case OpCode::OP_BUILD_MAP:      return u16Instruction("OP_BUILD_MAP", chunk, offset);
         case OpCode::OP_INDEX_GET:      return simpleInstruction("OP_INDEX_GET", offset);
+        case OpCode::OP_INDEX_GET_OPT:  return simpleInstruction("OP_INDEX_GET_OPT", offset);
         case OpCode::OP_INDEX_SET:      return simpleInstruction("OP_INDEX_SET", offset);
         case OpCode::OP_UNPACK_SPREAD:  return simpleInstruction("OP_UNPACK_SPREAD", offset);
         case OpCode::OP_BUILD_STRING:   return u16Instruction("OP_BUILD_STRING", chunk, offset);

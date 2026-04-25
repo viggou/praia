@@ -125,6 +125,14 @@ void Compiler::compileBinaryExpr(const BinaryExpr* expr) {
         patchJump(endJump);
         return;
     }
+    if (expr->op == TokenType::NIL_COALESCE) {
+        compileExpr(expr->left.get());
+        int endJump = emitJump(OpCode::OP_JUMP_IF_NOT_NIL, expr->line);
+        emit(OpCode::OP_POP, expr->line);
+        compileExpr(expr->right.get());
+        patchJump(endJump);
+        return;
+    }
     if (expr->op == TokenType::OR) {
         compileExpr(expr->left.get());
         int endJump = emitJump(OpCode::OP_JUMP_IF_TRUE, expr->line);
@@ -395,7 +403,7 @@ void Compiler::compileMapLiteralExpr(const MapLiteralExpr* expr) {
 void Compiler::compileIndexExpr(const IndexExpr* expr) {
     compileExpr(expr->object.get());
     compileExpr(expr->index.get());
-    emit(OpCode::OP_INDEX_GET, expr->line);
+    emit(expr->isOptional ? OpCode::OP_INDEX_GET_OPT : OpCode::OP_INDEX_GET, expr->line);
 }
 
 void Compiler::compileIndexAssignExpr(const IndexAssignExpr* expr) {
@@ -407,7 +415,7 @@ void Compiler::compileIndexAssignExpr(const IndexAssignExpr* expr) {
 void Compiler::compileDotExpr(const DotExpr* expr) {
     compileExpr(expr->object.get());
     uint16_t nameIdx = identifierConstant(expr->field);
-    emit(OpCode::OP_GET_PROPERTY, expr->line);
+    emit(expr->isOptional ? OpCode::OP_GET_PROPERTY_OPT : OpCode::OP_GET_PROPERTY, expr->line);
     emitU16(nameIdx, expr->line);
 }
 

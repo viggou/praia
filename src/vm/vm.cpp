@@ -886,6 +886,7 @@ VM::Result VM::execute(int baseFrameCount_) {
         case OpCode::OP_JUMP_BACK: { uint16_t off = READ_U16(); FRAME.ip -= off; break; }
         case OpCode::OP_JUMP_IF_FALSE: { uint16_t off = READ_U16(); if (!peek().isTruthy()) FRAME.ip += off; break; }
         case OpCode::OP_JUMP_IF_TRUE: { uint16_t off = READ_U16(); if (peek().isTruthy()) FRAME.ip += off; break; }
+        case OpCode::OP_JUMP_IF_NOT_NIL: { uint16_t off = READ_U16(); if (!peek().isNil()) FRAME.ip += off; break; }
         case OpCode::OP_POP_JUMP_IF_FALSE: { uint16_t off = READ_U16(); if (!pop().isTruthy()) FRAME.ip += off; break; }
 
         // ── Functions ──
@@ -1099,9 +1100,13 @@ VM::Result VM::execute(int baseFrameCount_) {
             break;
         }
 
+        case OpCode::OP_GET_PROPERTY_OPT:
         case OpCode::OP_GET_PROPERTY: {
+            bool _propOpt = (static_cast<OpCode>(instruction) == OpCode::OP_GET_PROPERTY_OPT);
             std::string name = READ_STRING();
             Value obj = pop();
+
+            if (_propOpt && obj.isNil()) { push(Value()); break; }
 
             if (obj.isGenerator()) {
                 auto gen = obj.asGenerator();
@@ -1212,9 +1217,11 @@ VM::Result VM::execute(int baseFrameCount_) {
 
             // Instance/map with no matching field and no universal method match
             if (obj.isInstance()) {
+                if (_propOpt) { push(Value()); break; }
                 RUNTIME_ERR("Instance has no property '" + name + "'");
             }
             if (obj.isMap()) {
+                if (_propOpt) { push(Value()); break; }
                 RUNTIME_ERR("Map has no field '" + name + "'");
             }
 
@@ -1257,6 +1264,7 @@ VM::Result VM::execute(int baseFrameCount_) {
                 }
             }
 
+            if (_propOpt) { push(Value()); break; }
             RUNTIME_ERR("Cannot access property '" + name + "' on this type");
         }
 
@@ -1369,9 +1377,12 @@ VM::Result VM::execute(int baseFrameCount_) {
             break;
         }
 
+        case OpCode::OP_INDEX_GET_OPT:
         case OpCode::OP_INDEX_GET: {
+            bool _idxOpt = (static_cast<OpCode>(instruction) == OpCode::OP_INDEX_GET_OPT);
             Value idx = pop();
             Value obj = pop();
+            if (_idxOpt && obj.isNil()) { push(Value()); break; }
             if (obj.isArray()) {
                 if (!idx.isNumber()) { RUNTIME_ERR("Array index must be a number"); }
                 auto& elems = obj.asArray()->elements;
@@ -1409,6 +1420,7 @@ VM::Result VM::execute(int baseFrameCount_) {
             }
             break;
         }
+
 
         case OpCode::OP_INDEX_SET: {
             Value val = pop();

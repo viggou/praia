@@ -253,6 +253,43 @@ let label = x > 5 ? "big" : "small"
 let grade = score >= 90 ? "A" : score >= 80 ? "B" : "C"   // nests right-to-left
 ```
 
+### Optional Chaining
+
+`?.` accesses a property only if the object is non-nil. Returns `nil` if the object is `nil` or the field doesn't exist.
+
+```
+let user = {address: {city: "Lisbon"}}
+print(user?.address?.city)    // "Lisbon"
+print(user?.phone?.number)    // nil (no error)
+
+let x = nil
+print(x?.name)                // nil
+```
+
+`?[` does the same for index access:
+
+```
+let arr = nil
+print(arr?[0])                // nil
+```
+
+### Nil Coalescing
+
+`??` returns the left side if it's non-nil, otherwise evaluates and returns the right side. The right side is only evaluated if needed (short-circuit).
+
+```
+let name = nil ?? "anonymous"      // "anonymous"
+let port = config?.port ?? 8080    // 8080 if port is nil
+let x = 0 ?? 42                   // 0 (not nil, so left wins)
+let y = false ?? true              // false (not nil)
+```
+
+Chains naturally with `?.`:
+
+```
+let city = user?.address?.city ?? "unknown"
+```
+
 ### Compound Assignment
 
 ```

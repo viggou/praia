@@ -95,6 +95,7 @@ struct ArrayLiteralExpr : Expr {
 struct IndexExpr : Expr {
     ExprPtr object;
     ExprPtr index;
+    bool isOptional = false;
 };
 
 struct IndexAssignExpr : Expr {
@@ -111,6 +112,7 @@ struct MapLiteralExpr : Expr {
 struct DotExpr : Expr {
     ExprPtr object;
     std::string field;
+    bool isOptional = false;
 };
 
 struct DotAssignExpr : Expr {

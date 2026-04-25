@@ -776,6 +776,10 @@ Value Interpreter::evaluate(const Expr* expr) {
     // ── Binary ──
 
     if (auto* e = dynamic_cast<const BinaryExpr*>(expr)) {
+        if (e->op == TokenType::NIL_COALESCE) {
+            Value left = evaluate(e->left.get());
+            return left.isNil() ? evaluate(e->right.get()) : left;
+        }
         if (e->op == TokenType::OR) {
             Value left = evaluate(e->left.get());
             return left.isTruthy() ? left : evaluate(e->right.get());
@@ -1117,6 +1121,7 @@ Value Interpreter::evaluate(const Expr* expr) {
 
     if (auto* e = dynamic_cast<const IndexExpr*>(expr)) {
         Value obj = evaluate(e->object.get());
+        if (e->isOptional && obj.isNil()) return Value();
         Value idx = evaluate(e->index.get());
         if (obj.isArray()) {
             if (!idx.isNumber())
@@ -1199,6 +1204,7 @@ Value Interpreter::evaluate(const Expr* expr) {
 
     if (auto* e = dynamic_cast<const DotExpr*>(expr)) {
         Value obj = evaluate(e->object.get());
+        if (e->isOptional && obj.isNil()) return Value();
 
         if (obj.isGenerator()) {
             auto gen = obj.asGenerator();
@@ -1303,9 +1309,11 @@ Value Interpreter::evaluate(const Expr* expr) {
 
         // Instance/map with no matching field and no universal method match
         if (obj.isInstance()) {
+            if (e->isOptional) return Value();
             throw RuntimeError("Instance has no property '" + e->field + "'", e->line);
         }
         if (obj.isMap()) {
+            if (e->isOptional) return Value();
             throw RuntimeError("Map has no field '" + e->field + "'", e->line);
         }
         // Static methods on classes
