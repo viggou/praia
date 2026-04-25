@@ -1,6 +1,6 @@
 # Praia
 
-Praia is a dynamically typed, interpreted programming language written in C++ from scratch (lexer, parser, interpreter). It has a pipe operator for chaining data transformations and comes with HTTP, JSON, YAML, regex, generators, and async built in.
+Praia is a dynamically typed, interpreted programming language written in C++ from scratch (lexer, parser, interpreter). It has a pipe operator for chaining data transformations and comes with HTTP, JSON, YAML, regex, generators, and async built in. Praia also ships with a package manager called [sand](https://github.com/praia-lang/sand). For a list of available grains (modules), see [GRAINS.md](GRAINS.md)
 
 ## Example
 
