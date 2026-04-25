@@ -623,19 +623,32 @@ void Interpreter::execute(const Stmt* stmt) {
 
     } else if (auto* s = dynamic_cast<const TryCatchStmt*>(stmt)) {
         size_t savedStackSize = callStack.size();
+        std::exception_ptr pendingException;
         try {
             execute(s->tryBody.get());
         } catch (const ThrowSignal& ts) {
             callStack.resize(savedStackSize);
             auto catchEnv = gcNew<Environment>(env);
             catchEnv->define(s->errorVar, ts.value);
-            executeBlock(static_cast<const BlockStmt*>(s->catchBody.get()), catchEnv);
+            try {
+                executeBlock(static_cast<const BlockStmt*>(s->catchBody.get()), catchEnv);
+            } catch (...) {
+                pendingException = std::current_exception();
+            }
         } catch (const RuntimeError& re) {
             callStack.resize(savedStackSize);
             auto catchEnv = gcNew<Environment>(env);
             catchEnv->define(s->errorVar, Value(std::string(re.what())));
-            executeBlock(static_cast<const BlockStmt*>(s->catchBody.get()), catchEnv);
+            try {
+                executeBlock(static_cast<const BlockStmt*>(s->catchBody.get()), catchEnv);
+            } catch (...) {
+                pendingException = std::current_exception();
+            }
+        } catch (...) {
+            pendingException = std::current_exception();
         }
+        if (s->finallyBody) execute(s->finallyBody.get());
+        if (pendingException) std::rethrow_exception(pendingException);
 
     } else if (auto* s = dynamic_cast<const EnsureStmt*>(stmt)) {
         Value cond = evaluate(s->condition.get());

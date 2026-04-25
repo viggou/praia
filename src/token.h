@@ -35,6 +35,7 @@ enum class TokenType {
     TRY,
     CATCH,
     THROW,
+    FINALLY,
     ENSURE,
     ASYNC,
     AWAIT,
@@ -134,6 +135,7 @@ inline std::string tokenTypeToString(TokenType type) {
         case TokenType::CATCH:       return "CATCH";
         case TokenType::THROW:       return "THROW";
         case TokenType::IS:          return "IS";
+        case TokenType::FINALLY:     return "FINALLY";
         case TokenType::ENSURE:      return "ENSURE";
         case TokenType::ASYNC:       return "ASYNC";
         case TokenType::AWAIT:       return "AWAIT";

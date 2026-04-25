@@ -495,11 +495,18 @@ StmtPtr Parser::tryCatchStatement() {
     consume(TokenType::LBRACE, "Expected '{' after catch");
     auto catchBody = block();
 
+    StmtPtr finallyBody;
+    if (match(TokenType::FINALLY)) {
+        consume(TokenType::LBRACE, "Expected '{' after 'finally'");
+        finallyBody = block();
+    }
+
     auto stmt = std::make_unique<TryCatchStmt>();
     stmt->line = ln;
     stmt->tryBody = std::move(tryBody);
     stmt->errorVar = errVar.lexeme;
     stmt->catchBody = std::move(catchBody);
+    stmt->finallyBody = std::move(finallyBody);
     return stmt;
 }
 
@@ -1313,7 +1320,7 @@ bool Parser::isNameToken(TokenType t) const {
            t == TokenType::IF || t == TokenType::ELSE || t == TokenType::ELIF || t == TokenType::MATCH || t == TokenType::STATIC ||
            t == TokenType::WHILE || t == TokenType::FOR || t == TokenType::IN || t == TokenType::IS ||
            t == TokenType::RETURN || t == TokenType::BREAK || t == TokenType::CONTINUE ||
-           t == TokenType::TRY || t == TokenType::CATCH || t == TokenType::THROW ||
+           t == TokenType::TRY || t == TokenType::CATCH || t == TokenType::THROW || t == TokenType::FINALLY ||
            t == TokenType::ENSURE || t == TokenType::USE || t == TokenType::EXPORT ||
            t == TokenType::EXTENDS || t == TokenType::THIS || t == TokenType::SUPER ||
            t == TokenType::LAM || t == TokenType::ASYNC || t == TokenType::AWAIT || t == TokenType::YIELD ||

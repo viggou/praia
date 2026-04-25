@@ -266,11 +266,12 @@ struct ThrowStmt : Stmt {
     ExprPtr value;
 };
 
-// try { body } catch (varName) { handler }
+// try { body } catch (varName) { handler } finally { cleanup }
 struct TryCatchStmt : Stmt {
     StmtPtr tryBody;
     std::string errorVar;
     StmtPtr catchBody;
+    StmtPtr finallyBody; // nullptr if no finally
 };
 
 // ensure (condition) else { body }

@@ -60,4 +60,89 @@ testing.test("assertThrows catches runtime errors too", lam{ in
     testing.assertThrows(lam{ in [1, 2][10] }, nil)
 })
 
+testing.test("finally runs after try", lam{ in
+    let log = []
+    try {
+        push(log, "try")
+    } catch (e) {
+        push(log, "catch")
+    } finally {
+        push(log, "finally")
+    }
+    testing.assertEqual(log, ["try", "finally"], nil)
+})
+
+testing.test("finally runs after catch", lam{ in
+    let log = []
+    try {
+        throw "err"
+    } catch (e) {
+        push(log, "catch")
+    } finally {
+        push(log, "finally")
+    }
+    testing.assertEqual(log, ["catch", "finally"], nil)
+})
+
+testing.test("finally runs even when catch rethrows", lam{ in
+    let log = []
+    try {
+        try {
+            throw "err"
+        } catch (e) {
+            push(log, "inner-catch")
+            throw e
+        } finally {
+            push(log, "inner-finally")
+        }
+    } catch (e) {
+        push(log, "outer-catch")
+    }
+    testing.assertEqual(log, ["inner-catch", "inner-finally", "outer-catch"], nil)
+})
+
+testing.test("finally without error", lam{ in
+    let cleaned = false
+    try {
+        let x = 42
+    } catch (e) {
+        // not reached
+    } finally {
+        cleaned = true
+    }
+    testing.assert(cleaned, nil)
+})
+
+testing.test("finally runs on return from try", lam{ in
+    let log = []
+    func test() {
+        try {
+            push(log, "try")
+            return 42
+        } catch (e) {
+            push(log, "catch")
+        } finally {
+            push(log, "finally")
+        }
+    }
+    testing.assertEqual(test(), 42, nil)
+    testing.assertEqual(log, ["try", "finally"], nil)
+})
+
+testing.test("finally runs on return from catch", lam{ in
+    let log = []
+    func test() {
+        try {
+            throw "err"
+        } catch (e) {
+            push(log, "catch")
+            return 99
+        } finally {
+            push(log, "finally")
+        }
+    }
+    testing.assertEqual(test(), 99, nil)
+    testing.assertEqual(log, ["catch", "finally"], nil)
+})
+
 testing.done()
