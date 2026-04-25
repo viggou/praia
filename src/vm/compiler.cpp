@@ -846,31 +846,63 @@ void Compiler::compileThrowStmt(const ThrowStmt* stmt) {
 }
 
 void Compiler::compileTryCatchStmt(const TryCatchStmt* stmt) {
-    int tryBegin = emitJump(OpCode::OP_TRY_BEGIN, stmt->line);
+    if (stmt->finallyBody) {
+        // Outer try to guarantee finally runs even if catch throws
+        int outerTry = emitJump(OpCode::OP_TRY_BEGIN, stmt->line);
+        current->tryDepth++;
 
-    current->tryDepth++;
+        // Inner try/catch
+        {
+            int tryBegin = emitJump(OpCode::OP_TRY_BEGIN, stmt->line);
+            current->tryDepth++;
+            compileStmt(stmt->tryBody.get());
+            current->tryDepth--;
+            emit(OpCode::OP_TRY_END, stmt->line);
+            int endJump = emitJump(OpCode::OP_JUMP, stmt->line);
 
-    // Try body — return/break/continue inside will emit OP_TRY_END using tryDepth
-    compileStmt(stmt->tryBody.get());
+            patchJump(tryBegin);
+            beginScope();
+            addLocal(stmt->errorVar);
+            compileStmt(stmt->catchBody.get());
+            endScope(stmt->line);
 
-    current->tryDepth--;
+            patchJump(endJump);
+        }
 
-    // Normal fallthrough: pop the handler
-    emit(OpCode::OP_TRY_END, stmt->line);
-    int endJump = emitJump(OpCode::OP_JUMP, stmt->line);
+        current->tryDepth--;
+        emit(OpCode::OP_TRY_END, stmt->line);
 
-    // Patch TRY_BEGIN to jump here on exception
-    patchJump(tryBegin);
+        // Finally after normal completion
+        compileStmt(stmt->finallyBody.get());
+        int skipJump = emitJump(OpCode::OP_JUMP, stmt->line);
 
-    // Catch: error value is on top of stack
-    beginScope();
-    addLocal(stmt->errorVar); // the error value becomes a local
+        // Outer catch: run finally then rethrow
+        patchJump(outerTry);
+        beginScope();
+        addLocal("__err__");
+        compileStmt(stmt->finallyBody.get());
+        emit(OpCode::OP_GET_LOCAL, stmt->line);
+        emitU16(static_cast<uint16_t>(resolveLocal(current, "__err__")), stmt->line);
+        emit(OpCode::OP_THROW, stmt->line);
+        endScope(stmt->line);
 
-    compileStmt(stmt->catchBody.get());
+        patchJump(skipJump);
+    } else {
+        int tryBegin = emitJump(OpCode::OP_TRY_BEGIN, stmt->line);
+        current->tryDepth++;
+        compileStmt(stmt->tryBody.get());
+        current->tryDepth--;
+        emit(OpCode::OP_TRY_END, stmt->line);
+        int endJump = emitJump(OpCode::OP_JUMP, stmt->line);
 
-    endScope(stmt->line);
+        patchJump(tryBegin);
+        beginScope();
+        addLocal(stmt->errorVar);
+        compileStmt(stmt->catchBody.get());
+        endScope(stmt->line);
 
-    patchJump(endJump);
+        patchJump(endJump);
+    }
 }
 
 void Compiler::compileEnsureStmt(const EnsureStmt* stmt) {

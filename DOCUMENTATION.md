@@ -660,6 +660,21 @@ try {
 }
 ```
 
+### finally
+
+Add a `finally` block for cleanup that always runs — whether the try succeeds, the catch runs, or an exception is re-thrown.
+
+```
+let file = sys.read("data.txt")
+try {
+    process(file)
+} catch (err) {
+    print("error:", err)
+} finally {
+    cleanup()    // always runs
+}
+```
+
 ### throw
 
 Throw any value as an error. If not caught by a `try/catch`, the program terminates.
