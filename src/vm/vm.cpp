@@ -1071,6 +1071,18 @@ VM::Result VM::execute(int baseFrameCount_) {
             break;
         }
 
+        case OpCode::OP_STATIC_METHOD: {
+            std::string name = READ_STRING();
+            Value method = pop();
+            Value& klass = peek();
+
+            auto klassPtr = std::dynamic_pointer_cast<PraiaClass>(klass.asCallable());
+            if (!klassPtr) { RUNTIME_ERR("OP_STATIC_METHOD: not a class"); }
+
+            klassPtr->vmStaticMethods[name] = method;
+            break;
+        }
+
         case OpCode::OP_INHERIT: {
             Value subclass = pop();
             Value superclass = peek(); // leave superclass on stack? no, pop both
@@ -1226,6 +1238,23 @@ VM::Result VM::execute(int baseFrameCount_) {
                     return Result::RUNTIME_ERROR;
                 }
                 break;
+            }
+
+            // Static methods on classes
+            if (obj.isCallable()) {
+                auto klass = std::dynamic_pointer_cast<PraiaClass>(obj.asCallable());
+                if (klass) {
+                    auto walk = klass;
+                    while (walk) {
+                        auto it = walk->vmStaticMethods.find(name);
+                        if (it != walk->vmStaticMethods.end()) {
+                            push(it->second); // push closure directly (no this binding)
+                            break;
+                        }
+                        walk = walk->superclass;
+                    }
+                    if (walk) break;
+                }
             }
 
             RUNTIME_ERR("Cannot access property '" + name + "' on this type");

@@ -116,8 +116,10 @@ struct PraiaMethod : Callable {
 struct PraiaClass : Callable, std::enable_shared_from_this<PraiaClass> {
     std::string className;
     std::shared_ptr<PraiaClass> superclass;
-    std::unordered_map<std::string, const ClassMethod*> methods;  // tree-walker: name -> AST node
-    std::unordered_map<std::string, Value> vmMethods;             // VM: name -> closure Value
+    std::unordered_map<std::string, const ClassMethod*> methods;        // tree-walker: instance methods
+    std::unordered_map<std::string, const ClassMethod*> staticMethods; // tree-walker: static methods
+    std::unordered_map<std::string, Value> vmMethods;                  // VM: instance methods
+    std::unordered_map<std::string, Value> vmStaticMethods;            // VM: static methods
     std::shared_ptr<Environment> closure;
 
     Value call(Interpreter& interp, const std::vector<Value>& args) override;

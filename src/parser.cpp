@@ -208,6 +208,7 @@ StmtPtr Parser::classStatement() {
     while (!check(TokenType::RBRACE) && !isAtEnd()) {
         ClassMethod method;
         method.line = peek().line;
+        method.isStatic = match(TokenType::STATIC);
         consume(TokenType::FUNC, "Expected 'func' before method name");
         method.name = consume(TokenType::IDENTIFIER, "Expected method name").lexeme;
         consume(TokenType::LPAREN, "Expected '(' after method name");
@@ -1265,7 +1266,7 @@ Parser::ParseError Parser::error(const Token& token, const std::string& message)
 bool Parser::isNameToken(TokenType t) const {
     return t == TokenType::IDENTIFIER ||
            t == TokenType::LET || t == TokenType::FUNC || t == TokenType::CLASS || t == TokenType::ENUM ||
-           t == TokenType::IF || t == TokenType::ELSE || t == TokenType::ELIF || t == TokenType::MATCH ||
+           t == TokenType::IF || t == TokenType::ELSE || t == TokenType::ELIF || t == TokenType::MATCH || t == TokenType::STATIC ||
            t == TokenType::WHILE || t == TokenType::FOR || t == TokenType::IN ||
            t == TokenType::RETURN || t == TokenType::BREAK || t == TokenType::CONTINUE ||
            t == TokenType::TRY || t == TokenType::CATCH || t == TokenType::THROW ||

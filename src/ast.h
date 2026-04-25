@@ -240,6 +240,7 @@ struct ClassMethod {
     std::vector<StmtPtr> body;
     int line = 0;
     bool isGenerator = false;
+    bool isStatic = false;
 };
 
 struct ClassStmt : Stmt {

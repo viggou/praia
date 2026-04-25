@@ -71,6 +71,7 @@ enum class OpCode : uint8_t {
     // ── Classes ──
     OP_CLASS,           // [name_idx:16]
     OP_METHOD,          // [name_idx:16]
+    OP_STATIC_METHOD,   // [name_idx:16]
     OP_INHERIT,
     OP_GET_PROPERTY,    // [name_idx:16]
     OP_SET_PROPERTY,    // [name_idx:16]

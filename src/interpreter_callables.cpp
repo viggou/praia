@@ -42,7 +42,7 @@ Value PraiaClass::call(Interpreter& interp, const std::vector<Value>& args) {
 
 Value PraiaMethod::call(Interpreter& interp, const std::vector<Value>& args) {
     auto methodEnv = gcNew<Environment>(closure);
-    methodEnv->define("this", Value(instance));
+    methodEnv->define("this", instance ? Value(instance) : Value());
 
     // Store the defining class so super resolves correctly in multi-level inheritance
     if (definingClass && definingClass->superclass) {

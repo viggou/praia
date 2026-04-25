@@ -1,0 +1,111 @@
+use "testing"
+
+testing.test("basic static method", lam{ in
+    class Utils {
+        static func double(n) { return n * 2 }
+    }
+    testing.assertEqual(Utils.double(21), 42, nil)
+})
+
+testing.test("static method works without this", lam{ in
+    class Foo {
+        static func greet(name) { return "hi " + name }
+    }
+    testing.assertEqual(Foo.greet("Ada"), "hi Ada", nil)
+})
+
+testing.test("static and instance methods coexist", lam{ in
+    class Counter {
+        func init(n) { this.n = n }
+        func value() { return this.n }
+        static func zero() { return Counter(0) }
+    }
+    let c = Counter.zero()
+    testing.assertEqual(c.value(), 0, nil)
+})
+
+testing.test("static method with multiple params", lam{ in
+    class Math {
+        static func clamp(x, lo, hi) {
+            if (x < lo) { return lo }
+            if (x > hi) { return hi }
+            return x
+        }
+    }
+    testing.assertEqual(Math.clamp(5, 0, 10), 5, nil)
+    testing.assertEqual(Math.clamp(-1, 0, 10), 0, nil)
+    testing.assertEqual(Math.clamp(99, 0, 10), 10, nil)
+})
+
+testing.test("static method inheritance", lam{ in
+    class Animal {
+        static func type() { return "animal" }
+    }
+    class Dog extends Animal {}
+    testing.assertEqual(Dog.type(), "animal", nil)
+})
+
+testing.test("child overrides static", lam{ in
+    class Base {
+        static func name() { return "Base" }
+    }
+    class Child extends Base {
+        static func name() { return "Child" }
+    }
+    testing.assertEqual(Base.name(), "Base", nil)
+    testing.assertEqual(Child.name(), "Child", nil)
+})
+
+testing.test("static with default params", lam{ in
+    class Config {
+        static func create(host = "localhost", port = 8080) {
+            return {host: host, port: port}
+        }
+    }
+    let c = Config.create()
+    testing.assertEqual(c.host, "localhost", nil)
+    testing.assertEqual(c.port, 8080, nil)
+    let c2 = Config.create("0.0.0.0", 3000)
+    testing.assertEqual(c2.port, 3000, nil)
+})
+
+testing.test("static with rest params", lam{ in
+    class Logger {
+        static func format(...parts) {
+            return parts.join(" ")
+        }
+    }
+    testing.assertEqual(Logger.format("a", "b", "c"), "a b c", nil)
+})
+
+testing.test("static as factory method", lam{ in
+    class Point {
+        func init(x, y) {
+            this.x = x
+            this.y = y
+        }
+        static func origin() { return Point(0, 0) }
+        static func fromArray(arr) { return Point(arr[0], arr[1]) }
+    }
+    let p = Point.origin()
+    testing.assertEqual(p.x, 0, nil)
+    let p2 = Point.fromArray([3, 4])
+    testing.assertEqual(p2.x, 3, nil)
+    testing.assertEqual(p2.y, 4, nil)
+})
+
+testing.test("instance cannot access static method", lam{ in
+    class Foo {
+        static func bar() { return 42 }
+    }
+    let f = Foo()
+    let ok = false
+    try {
+        f.bar()
+    } catch (e) {
+        ok = true
+    }
+    testing.assert(ok, "static method not accessible on instance")
+})
+
+testing.done()

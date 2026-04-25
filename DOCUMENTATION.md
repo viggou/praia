@@ -1294,6 +1294,33 @@ The existing `toString()` method convention continues to work — `str()` checks
 
 Classes without operator overloads use default behavior (reference equality for `==`, errors for arithmetic).
 
+### Static methods
+
+Define class-level methods with `static func`. Static methods are called on the class, not on instances, and don't receive `this`.
+
+```
+class Point {
+    func init(x, y) { this.x = x; this.y = y }
+    static func origin() { return Point(0, 0) }
+    static func fromArray(arr) { return Point(arr[0], arr[1]) }
+}
+
+let p = Point.origin()          // factory method
+let q = Point.fromArray([3, 4]) // another factory
+```
+
+Static methods are inherited by subclasses and can be overridden:
+
+```
+class Animal {
+    static func type() { return "animal" }
+}
+class Dog extends Animal {
+    static func type() { return "dog" }
+}
+print(Dog.type())    // "dog"
+```
+
 ---
 
 ## Built-in Functions

@@ -780,7 +780,7 @@ void Compiler::compileClassStmt(const ClassStmt* stmt) {
         }
 
         // Add method to class
-        emit(OpCode::OP_METHOD, method.line);
+        emit(method.isStatic ? OpCode::OP_STATIC_METHOD : OpCode::OP_METHOD, method.line);
         emitU16(identifierConstant(method.name), method.line);
     }
 
