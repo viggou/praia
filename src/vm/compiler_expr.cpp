@@ -168,7 +168,37 @@ void Compiler::compileBinaryExpr(const BinaryExpr* expr) {
 }
 
 void Compiler::compileCallExpr(const CallExpr* expr) {
+    // Check for spread args
+    bool hasSpread = false;
+    for (auto& arg : expr->args) {
+        if (dynamic_cast<const SpreadExpr*>(arg.get())) { hasSpread = true; break; }
+    }
+
     compileExpr(expr->callee.get());
+
+    if (hasSpread) {
+        // Build a flat args array on the stack, then call with it.
+        // Start with empty array.
+        emit(OpCode::OP_BUILD_ARRAY, expr->line);
+        emitU16(0, expr->line);
+
+        for (auto& arg : expr->args) {
+            if (auto* spread = dynamic_cast<const SpreadExpr*>(arg.get())) {
+                compileExpr(spread->expr.get());
+                emit(OpCode::OP_ADD, expr->line); // array + array = concatenated
+            } else {
+                // Wrap single arg in 1-element array, concatenate
+                compileExpr(arg.get());
+                emit(OpCode::OP_BUILD_ARRAY, expr->line);
+                emitU16(1, expr->line);
+                emit(OpCode::OP_ADD, expr->line);
+            }
+        }
+        // Stack: [callee, argsArray]
+        emit(OpCode::OP_CALL_SPREAD, expr->line);
+        return;
+    }
+
     for (auto& arg : expr->args) {
         compileExpr(arg.get());
     }
@@ -178,7 +208,6 @@ void Compiler::compileCallExpr(const CallExpr* expr) {
     for (auto& n : expr->argNames) { if (!n.empty()) { hasNamed = true; break; } }
 
     if (hasNamed) {
-        // Build names array as a constant
         auto namesArr = gcNew<PraiaArray>();
         for (auto& n : expr->argNames)
             namesArr->elements.push_back(Value(n));

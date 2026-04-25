@@ -939,8 +939,17 @@ Value Interpreter::evaluate(const Expr* expr) {
             throw RuntimeError("Can only call functions", e->line);
 
         std::vector<Value> args;
-        for (const auto& arg : e->args)
-            args.push_back(evaluate(arg.get()));
+        for (const auto& arg : e->args) {
+            if (auto* spread = dynamic_cast<const SpreadExpr*>(arg.get())) {
+                Value val = evaluate(spread->expr.get());
+                if (!val.isArray())
+                    throw RuntimeError("Spread argument must be an array", spread->line);
+                for (auto& item : val.asArray()->elements)
+                    args.push_back(item);
+            } else {
+                args.push_back(evaluate(arg.get()));
+            }
+        }
 
         // Reorder named arguments if present
         bool hasNamed = false;
@@ -1280,13 +1289,21 @@ Value Interpreter::evaluate(const Expr* expr) {
                 bound->params = methodDecl->params;
                 bound->decl = methodDecl;
                 bound->instance = inst;
-                // Find which class in the hierarchy defines this method
                 auto walk = inst->klass;
                 while (walk && !walk->methods.count(e->field))
                     walk = walk->superclass;
                 bound->definingClass = walk ? walk : inst->klass;
                 bound->closure = bound->definingClass->closure;
-                return Value(std::static_pointer_cast<Callable>(bound));
+                Value result = Value(std::static_pointer_cast<Callable>(bound));
+                // Apply decorators if present
+                if (!methodDecl->decorators.empty()) {
+                    for (int i = static_cast<int>(methodDecl->decorators.size()) - 1; i >= 0; i--) {
+                        Value deco = evaluate(methodDecl->decorators[i].get());
+                        result = callWithContext(*this, deco.asCallable(),
+                                                {result}, methodDecl->line);
+                    }
+                }
+                return result;
             }
             // Fall through to universal methods below
         }
@@ -1357,9 +1374,16 @@ Value Interpreter::evaluate(const Expr* expr) {
                         method->params = decl->params;
                         method->decl = decl;
                         method->closure = walk->closure;
-                        method->instance = nullptr; // no `this` for static
+                        method->instance = nullptr;
                         method->definingClass = walk;
-                        return Value(std::static_pointer_cast<Callable>(method));
+                        Value result = Value(std::static_pointer_cast<Callable>(method));
+                        if (!decl->decorators.empty()) {
+                            for (int i = static_cast<int>(decl->decorators.size()) - 1; i >= 0; i--) {
+                                Value deco = evaluate(decl->decorators[i].get());
+                                result = callWithContext(*this, deco.asCallable(), {result}, decl->line);
+                            }
+                        }
+                        return result;
                     }
                     walk = walk->superclass;
                 }

@@ -208,6 +208,9 @@ StmtPtr Parser::classStatement() {
     while (!check(TokenType::RBRACE) && !isAtEnd()) {
         ClassMethod method;
         method.line = peek().line;
+        while (match(TokenType::AT)) {
+            method.decorators.push_back(call());
+        }
         method.isStatic = match(TokenType::STATIC);
         consume(TokenType::FUNC, "Expected 'func' before method name");
         method.name = consume(TokenType::IDENTIFIER, "Expected method name").lexeme;
@@ -896,8 +899,17 @@ ExprPtr Parser::call() {
             bool seenNamed = false;
             if (!check(TokenType::RPAREN)) {
                 do {
+                    // Spread argument: ...expr
+                    if (match(TokenType::SPREAD)) {
+                        if (seenNamed)
+                            throw error(previous(), "Spread argument after named argument");
+                        argNames.push_back(""); // positional
+                        auto spread = std::make_unique<SpreadExpr>();
+                        spread->line = previous().line;
+                        spread->expr = expression();
+                        args.push_back(std::move(spread));
                     // Named argument: identifier followed by COLON
-                    if (check(TokenType::IDENTIFIER) &&
+                    } else if (check(TokenType::IDENTIFIER) &&
                         current + 1 < static_cast<int>(tokens.size()) &&
                         tokens[current + 1].type == TokenType::COLON) {
                         seenNamed = true;

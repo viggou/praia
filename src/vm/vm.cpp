@@ -701,6 +701,7 @@ VM::Result VM::execute(int baseFrameCount_) {
         case OpCode::OP_FALSE: push(Value(false)); break;
         case OpCode::OP_POP: pop(); break;
         case OpCode::OP_DUP: push(peek()); break;
+        case OpCode::OP_SWAP: { Value a = pop(); Value b = pop(); push(a); push(b); break; }
         case OpCode::OP_POPN: {
             uint8_t n = READ_BYTE();
             if (n > stackTop) n = static_cast<uint8_t>(stackTop);
@@ -929,6 +930,19 @@ VM::Result VM::execute(int baseFrameCount_) {
             break;
         }
 
+        case OpCode::OP_CALL_SPREAD: {
+            // Stack: [callee, argsArray]
+            Value argsArray = pop();
+            if (!argsArray.isArray()) { RUNTIME_ERR("Spread call requires array of arguments"); }
+            auto& elems = argsArray.asArray()->elements;
+            // Push each element as an argument
+            for (auto& elem : elems) push(elem);
+            int argc = static_cast<int>(elems.size());
+            Value callee = peek(argc);
+            if (!callValue(callee, argc, CURRENT_LINE())) return Result::RUNTIME_ERROR;
+            break;
+        }
+
         case OpCode::OP_CALL_NAMED: {
             uint8_t argc = READ_BYTE();
             uint16_t namesIdx = READ_U16();
@@ -1104,6 +1118,16 @@ VM::Result VM::execute(int baseFrameCount_) {
             break;
         }
 
+        case OpCode::OP_METHOD_DECORATOR: {
+            std::string name = READ_STRING();
+            Value decorator = pop();
+            Value& klass = peek();
+            auto klassPtr = std::dynamic_pointer_cast<PraiaClass>(klass.asCallable());
+            if (!klassPtr) { RUNTIME_ERR("OP_METHOD_DECORATOR: not a class"); }
+            klassPtr->methodDecorators[name].push_back(decorator);
+            break;
+        }
+
         case OpCode::OP_STATIC_METHOD: {
             std::string name = READ_STRING();
             Value method = pop();
@@ -1187,7 +1211,19 @@ VM::Result VM::execute(int baseFrameCount_) {
                         auto* vmcc = dynamic_cast<VMClosureCallable*>(methodVal.asCallable().get());
                         if (vmcc) {
                             auto bm = std::make_shared<VMBoundMethod>(obj, vmcc->closure, methodOwner);
-                            push(Value(std::static_pointer_cast<Callable>(bm)));
+                            Value bound = Value(std::static_pointer_cast<Callable>(bm));
+                            // Apply decorators if present
+                            auto dit = methodOwner->methodDecorators.find(name);
+                            if (dit != methodOwner->methodDecorators.end()) {
+                                // Push decorator calls onto the stack for the VM to execute:
+                                // We build: deco_n(... deco_1(bound) ...)
+                                // by pushing a chain of calls.
+                                // Use callWithVM from vm_natives.cpp.
+                                for (auto& deco : dit->second) {
+                                    bound = callWithVM(*this, deco.asCallable(), {bound});
+                                }
+                            }
+                            push(bound);
                             break;
                         }
                     }

@@ -118,6 +118,7 @@ struct PraiaClass : Callable, std::enable_shared_from_this<PraiaClass> {
     std::shared_ptr<PraiaClass> superclass;
     std::unordered_map<std::string, const ClassMethod*> methods;        // tree-walker: instance methods
     std::unordered_map<std::string, const ClassMethod*> staticMethods; // tree-walker: static methods
+    std::unordered_map<std::string, std::vector<Value>> methodDecorators; // decorator callables per method
     std::unordered_map<std::string, Value> vmMethods;                  // VM: instance methods
     std::unordered_map<std::string, Value> vmStaticMethods;            // VM: static methods
     std::shared_ptr<Environment> closure;
