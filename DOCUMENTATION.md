@@ -3867,7 +3867,8 @@ These operations work on raw UTF-8 bytes, which is correct and intentional:
 - `.contains()`, `.startsWith()`, `.endsWith()` — byte-sequence matching (safe for UTF-8)
 - `.replace()` — byte-sequence replacement (safe for UTF-8)
 - `.strip()`, `.trimStart()`, `.trimEnd()` — ASCII whitespace is single-byte
-- `.test()`, `.match()`, `.matchAll()`, `.replacePattern()` — regex operates on bytes; match `index` is a byte offset
+- `.test()`, `.replacePattern()` — regex pattern matching operates on bytes internally
+- `.match()`, `.matchAll()` — regex matching on bytes, but returned `index` is a grapheme index (consistent with `slice` and `indexOf`)
 - `.repeat()`, `.join()` — concatenate whole strings
 - `bytes.len(str)` — byte length
 

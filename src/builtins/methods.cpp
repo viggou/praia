@@ -207,7 +207,12 @@ Value getStringMethod(const std::string& str,
                     if (!std::regex_search(str, m, re)) return Value();
                     auto result = gcNew<PraiaMap>();
                     result->entries["match"] = Value(m[0].str());
+#ifdef HAVE_UTF8PROC
+                    result->entries["index"] = Value(static_cast<int64_t>(
+                        utf8_byte_to_grapheme_index(str, static_cast<size_t>(m.position(0)))));
+#else
                     result->entries["index"] = Value(static_cast<int64_t>(m.position(0)));
+#endif
                     auto groups = gcNew<PraiaArray>();
                     for (size_t i = 1; i < m.size(); i++)
                         groups->elements.push_back(Value(m[i].str()));
@@ -232,7 +237,12 @@ Value getStringMethod(const std::string& str,
                     for (auto it = begin; it != end; ++it) {
                         auto entry = gcNew<PraiaMap>();
                         entry->entries["match"] = Value((*it)[0].str());
+#ifdef HAVE_UTF8PROC
+                        entry->entries["index"] = Value(static_cast<int64_t>(
+                            utf8_byte_to_grapheme_index(str, static_cast<size_t>(it->position(0)))));
+#else
                         entry->entries["index"] = Value(static_cast<int64_t>(it->position(0)));
+#endif
                         auto groups = gcNew<PraiaArray>();
                         for (size_t i = 1; i < it->size(); i++)
                             groups->elements.push_back(Value((*it)[i].str()));
