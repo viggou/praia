@@ -3249,19 +3249,72 @@ fromCharCode(0x1F600)       // "😀"
 
 ## Crypto
 
-The `crypto` namespace provides cryptographic hash functions.
+The `crypto` namespace provides hashing, HMAC, encryption, password hashing, and secure random bytes.
+
+### Hashing
 
 | Function | Description |
 |----------|-------------|
 | `crypto.md5(string)` | MD5 hash (32-char hex string) |
+| `crypto.sha1(string)` | SHA-1 hash (40-char hex string) |
 | `crypto.sha256(string)` | SHA-256 hash (64-char hex string) |
+| `crypto.sha512(string)` | SHA-512 hash (128-char hex string) |
 
 ```
 crypto.md5("hello")     // "5d41402abc4b2a76b9719d911017c592"
+crypto.sha1("hello")    // "aaf4c61ddcc5e8a2dabede0f3b482cd9aea9434d"
 crypto.sha256("hello")  // "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
 ```
 
-These are essential for implementing authentication protocols (PostgreSQL, MySQL, etc.) in grains.
+### HMAC
+
+`crypto.hmac(key, message, algorithm)` computes a keyed hash. Supported algorithms: `"sha256"`, `"sha1"`, `"sha512"`, `"md5"`.
+
+```
+crypto.hmac("secret-key", "message", "sha256")
+// "4b393abced1c497f8048860ba1ede46a23f1ff5209b18e9c428bddfbb690aad8"
+```
+
+### Random bytes
+
+`crypto.randomBytes(count)` returns cryptographically secure random bytes as a raw string. Use `bytes.hex()` to convert to hex.
+
+```
+let key = crypto.randomBytes(32)     // 32 random bytes (256-bit key)
+let iv = crypto.randomBytes(16)      // 16 random bytes (128-bit IV)
+let token = bytes.hex(crypto.randomBytes(16))  // hex string token
+```
+
+### AES encryption (requires OpenSSL)
+
+AES-256-CBC symmetric encryption. Key must be 32 bytes, IV must be 16 bytes.
+
+```
+let key = crypto.randomBytes(32)
+let iv = crypto.randomBytes(16)
+
+let encrypted = crypto.encrypt("secret data", key, iv)
+let decrypted = crypto.decrypt(encrypted, key, iv)
+print(decrypted)   // "secret data"
+```
+
+### Password hashing (requires OpenSSL)
+
+PBKDF2-SHA256 for secure password storage. Generates a random salt automatically.
+
+```
+// Hash a password
+let result = crypto.hashPassword("mypassword")
+print(result.hash)        // hex hash
+print(result.salt)        // hex salt
+print(result.iterations)  // 100000
+
+// Verify a password
+crypto.verifyPassword("mypassword", result.hash, result.salt)  // true
+crypto.verifyPassword("wrong", result.hash, result.salt)        // false
+```
+
+Custom iterations: `crypto.hashPassword("pass", nil, 200000)`
 
 ---
 

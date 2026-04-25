@@ -1,0 +1,114 @@
+use "testing"
+
+// ── Hashing ──
+
+testing.test("md5", lam{ in
+    testing.assertEqual(crypto.md5("hello"), "5d41402abc4b2a76b9719d911017c592", nil)
+    testing.assertEqual(crypto.md5(""), "d41d8cd98f00b204e9800998ecf8427e", nil)
+})
+
+testing.test("sha1", lam{ in
+    testing.assertEqual(crypto.sha1("hello"), "aaf4c61ddcc5e8a2dabede0f3b482cd9aea9434d", nil)
+    testing.assertEqual(crypto.sha1(""), "da39a3ee5e6b4b0d3255bfef95601890afd80709", nil)
+})
+
+testing.test("sha256", lam{ in
+    testing.assertEqual(crypto.sha256("hello"), "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824", nil)
+    testing.assertEqual(crypto.sha256(""), "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", nil)
+})
+
+testing.test("sha512", lam{ in
+    let hash = crypto.sha512("hello")
+    testing.assertEqual(len(hash), 128, "sha512 produces 128 hex chars")
+    testing.assert(hash.startsWith("9b71d224bd62f378"), "sha512 starts correctly")
+})
+
+// ── HMAC ──
+
+testing.test("hmac sha256", lam{ in
+    testing.assertEqual(
+        crypto.hmac("key", "message", "sha256"),
+        "6e9ef29b75fffc5b7abae527d58fdadb2fe42e7219011976917343065f58ed4a",
+        nil
+    )
+})
+
+testing.test("hmac sha1", lam{ in
+    let result = crypto.hmac("key", "message", "sha1")
+    testing.assertEqual(len(result), 40, "hmac-sha1 produces 40 hex chars")
+})
+
+testing.test("hmac sha512", lam{ in
+    let result = crypto.hmac("key", "message", "sha512")
+    testing.assertEqual(len(result), 128, "hmac-sha512 produces 128 hex chars")
+})
+
+// ── Random bytes ──
+
+testing.test("randomBytes length", lam{ in
+    let r = crypto.randomBytes(16)
+    testing.assertEqual(bytes.len(r), 16, nil)
+    let r2 = crypto.randomBytes(32)
+    testing.assertEqual(bytes.len(r2), 32, nil)
+})
+
+testing.test("randomBytes are random", lam{ in
+    let a = crypto.randomBytes(16)
+    let b = crypto.randomBytes(16)
+    testing.assert(a != b, "two random byte strings should differ")
+})
+
+testing.test("randomBytes zero", lam{ in
+    let r = crypto.randomBytes(0)
+    testing.assertEqual(bytes.len(r), 0, nil)
+})
+
+// ── AES encrypt/decrypt ──
+
+testing.test("aes encrypt decrypt roundtrip", lam{ in
+    let key = crypto.randomBytes(32)
+    let iv = crypto.randomBytes(16)
+    let plaintext = "hello world"
+    let ciphertext = crypto.encrypt(plaintext, key, iv)
+    let decrypted = crypto.decrypt(ciphertext, key, iv)
+    testing.assertEqual(decrypted, plaintext, nil)
+})
+
+testing.test("aes different key fails", lam{ in
+    let key1 = crypto.randomBytes(32)
+    let key2 = crypto.randomBytes(32)
+    let iv = crypto.randomBytes(16)
+    let ciphertext = crypto.encrypt("secret", key1, iv)
+    let ok = false
+    try {
+        crypto.decrypt(ciphertext, key2, iv)
+    } catch (e) {
+        ok = true
+    }
+    testing.assert(ok, "wrong key should fail")
+})
+
+testing.test("aes empty string", lam{ in
+    let key = crypto.randomBytes(32)
+    let iv = crypto.randomBytes(16)
+    let enc = crypto.encrypt("", key, iv)
+    testing.assertEqual(crypto.decrypt(enc, key, iv), "", nil)
+})
+
+// ── Password hashing ──
+
+testing.test("hashPassword and verifyPassword", lam{ in
+    let result = crypto.hashPassword("mypassword")
+    testing.assert(result.hash != nil, "has hash")
+    testing.assert(result.salt != nil, "has salt")
+    testing.assert(crypto.verifyPassword("mypassword", result.hash, result.salt), "correct password")
+    testing.assert(!crypto.verifyPassword("wrong", result.hash, result.salt), "wrong password")
+})
+
+testing.test("hashPassword custom iterations", lam{ in
+    let result = crypto.hashPassword("test", nil, 1000)
+    testing.assertEqual(result.iterations, 1000, nil)
+    testing.assert(crypto.verifyPassword("test", result.hash, result.salt, 1000), nil)
+})
+
+testing.done()
