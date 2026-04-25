@@ -28,6 +28,7 @@ enum class TokenType {
     WHILE,
     FOR,
     IN,
+    IS,
     RETURN,
     BREAK,
     CONTINUE,
@@ -132,6 +133,7 @@ inline std::string tokenTypeToString(TokenType type) {
         case TokenType::TRY:         return "TRY";
         case TokenType::CATCH:       return "CATCH";
         case TokenType::THROW:       return "THROW";
+        case TokenType::IS:          return "IS";
         case TokenType::ENSURE:      return "ENSURE";
         case TokenType::ASYNC:       return "ASYNC";
         case TokenType::AWAIT:       return "AWAIT";

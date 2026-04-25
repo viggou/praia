@@ -246,6 +246,27 @@ true || "other"     // true
 !nil                // true
 ```
 
+### Type checking (`is`)
+
+The `is` operator checks types and class hierarchy. Use a string for primitive types, or a class for instanceof checks.
+
+```
+42 is "int"             // true
+"hello" is "string"     // true
+nil is "nil"            // true
+[1, 2] is "array"       // true
+
+class Animal {}
+class Dog extends Animal {}
+let d = Dog()
+d is Dog                // true
+d is Animal             // true (walks inheritance chain)
+```
+
+Supported type names: `"nil"`, `"bool"`, `"int"`, `"float"`, `"string"`, `"array"`, `"map"`, `"function"`, `"instance"`.
+
+Negate with `!`: `!(x is "string")`.
+
 ### Ternary
 
 ```

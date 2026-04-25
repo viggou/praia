@@ -91,7 +91,7 @@ contexts:
       scope: storage.type.enum.praia
     - match: \b(extends)\b
       scope: storage.modifier.praia
-    - match: \b(if|elif|else|match|while|for|in|break|continue|static)\b
+    - match: \b(if|elif|else|match|while|for|in|is|break|continue|static)\b
       scope: keyword.control.praia
     - match: \b(return|yield)\b
       scope: keyword.control.flow.praia

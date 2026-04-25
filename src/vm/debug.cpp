@@ -126,6 +126,7 @@ int disassembleInstruction(const Chunk& chunk, int offset) {
         // Comparison
         case OpCode::OP_EQUAL:          return simpleInstruction("OP_EQUAL", offset);
         case OpCode::OP_NOT_EQUAL:      return simpleInstruction("OP_NOT_EQUAL", offset);
+        case OpCode::OP_IS:             return simpleInstruction("OP_IS", offset);
         case OpCode::OP_LESS:           return simpleInstruction("OP_LESS", offset);
         case OpCode::OP_GREATER:        return simpleInstruction("OP_GREATER", offset);
         case OpCode::OP_LESS_EQUAL:     return simpleInstruction("OP_LESS_EQUAL", offset);

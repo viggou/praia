@@ -115,7 +115,7 @@
         },
         {
           "name": "keyword.control.praia",
-          "match": "\\b(if|elif|else|match|static|while|for|in|break|continue)\\b"
+          "match": "\\b(if|elif|else|match|static|while|for|in|is|break|continue)\\b"
         },
         {
           "name": "keyword.control.flow.praia",

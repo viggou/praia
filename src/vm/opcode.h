@@ -33,6 +33,7 @@ enum class OpCode : uint8_t {
     // ── Comparison ──
     OP_EQUAL,
     OP_NOT_EQUAL,
+    OP_IS,
     OP_LESS,
     OP_GREATER,
     OP_LESS_EQUAL,

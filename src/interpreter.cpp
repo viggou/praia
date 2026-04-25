@@ -877,6 +877,33 @@ Value Interpreter::evaluate(const Expr* expr) {
             throw RuntimeError("Operands of '>=' must be numbers", e->line);
         case TokenType::EQ:  return Value(left == right);
         case TokenType::NEQ: return Value(left != right);
+        case TokenType::IS: {
+            if (right.isString()) {
+                auto& tn = right.asString();
+                if (tn == "nil")      return Value(left.isNil());
+                if (tn == "bool")     return Value(left.isBool());
+                if (tn == "int")      return Value(left.isInt());
+                if (tn == "float")    return Value(left.isDouble());
+                if (tn == "string")   return Value(left.isString());
+                if (tn == "array")    return Value(left.isArray());
+                if (tn == "map")      return Value(left.isMap());
+                if (tn == "function") return Value(left.isCallable());
+                if (tn == "instance") return Value(left.isInstance());
+                throw RuntimeError("Unknown type name '" + tn + "'", e->line);
+            }
+            if (right.isCallable()) {
+                auto klass = std::dynamic_pointer_cast<PraiaClass>(right.asCallable());
+                if (!klass) throw RuntimeError("'is' requires a class or type name string", e->line);
+                if (!left.isInstance()) return Value(false);
+                auto walk = left.asInstance()->klass;
+                while (walk) {
+                    if (walk == klass) return Value(true);
+                    walk = walk->superclass;
+                }
+                return Value(false);
+            }
+            throw RuntimeError("'is' requires a type name string or class", e->line);
+        }
 
         case TokenType::BIT_AND:
             if (left.isNumber() && right.isNumber())

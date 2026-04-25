@@ -1,0 +1,124 @@
+use "testing"
+
+// ── Primitive type checks ──
+
+testing.test("is nil", lam{ in
+    testing.assert(nil is "nil", nil)
+    testing.assert(!(0 is "nil"), nil)
+    testing.assert(!("" is "nil"), nil)
+})
+
+testing.test("is bool", lam{ in
+    testing.assert(true is "bool", nil)
+    testing.assert(false is "bool", nil)
+    testing.assert(!(1 is "bool"), nil)
+})
+
+testing.test("is int", lam{ in
+    testing.assert(42 is "int", nil)
+    testing.assert(0 is "int", nil)
+    testing.assert(!(3.14 is "int"), nil)
+    testing.assert(!("42" is "int"), nil)
+})
+
+testing.test("is float", lam{ in
+    testing.assert(3.14 is "float", nil)
+    testing.assert(!(42 is "float"), nil)
+})
+
+testing.test("is string", lam{ in
+    testing.assert("hello" is "string", nil)
+    testing.assert("" is "string", nil)
+    testing.assert(!(42 is "string"), nil)
+})
+
+testing.test("is array", lam{ in
+    testing.assert([1, 2] is "array", nil)
+    testing.assert([] is "array", nil)
+    testing.assert(!("[]" is "array"), nil)
+})
+
+testing.test("is map", lam{ in
+    testing.assert({a: 1} is "map", nil)
+    testing.assert(!([1] is "map"), nil)
+})
+
+testing.test("is function", lam{ in
+    func f() {}
+    testing.assert(f is "function", nil)
+    let lam1 = lam{ in 1 }
+    testing.assert(lam1 is "function", nil)
+    testing.assert(!(42 is "function"), nil)
+})
+
+// ── Class instanceof ──
+
+testing.test("is class", lam{ in
+    class Foo {
+        func init() {}
+    }
+    let f = Foo()
+    testing.assert(f is Foo, nil)
+    testing.assert(!(42 is Foo), nil)
+    testing.assert(!("hello" is Foo), nil)
+})
+
+testing.test("is with inheritance", lam{ in
+    class Animal {
+        func init(name) { this.name = name }
+    }
+    class Dog extends Animal {
+        func init(name) { super.init(name) }
+    }
+    let d = Dog("Rex")
+    testing.assert(d is Dog, nil)
+    testing.assert(d is Animal, "Dog is also an Animal")
+    let a = Animal("Cat")
+    testing.assert(a is Animal, nil)
+    testing.assert(!(a is Dog), "Animal is not a Dog")
+})
+
+testing.test("is with deep inheritance", lam{ in
+    class A {}
+    class B extends A {}
+    class C extends B {}
+    let c = C()
+    testing.assert(c is C, nil)
+    testing.assert(c is B, nil)
+    testing.assert(c is A, nil)
+})
+
+// ── Negation ──
+
+testing.test("negation with !", lam{ in
+    testing.assert(!(42 is "string"), nil)
+    testing.assert(!("hi" is "int"), nil)
+})
+
+// ── In conditionals ──
+
+testing.test("is in if condition", lam{ in
+    let x = 42
+    let result = ""
+    if (x is "int") {
+        result = "integer"
+    } elif (x is "string") {
+        result = "string"
+    }
+    testing.assertEqual(result, "integer", nil)
+})
+
+testing.test("is with match", lam{ in
+    func describe(x) {
+        if (x is "int") { return "integer" }
+        if (x is "string") { return "text" }
+        if (x is "array") { return "list" }
+        return "other"
+    }
+    testing.assertEqual(describe(42), "integer", nil)
+    testing.assertEqual(describe("hi"), "text", nil)
+    testing.assertEqual(describe([1]), "list", nil)
+    testing.assertEqual(describe(nil), "other", nil)
+})
+
+testing.done()

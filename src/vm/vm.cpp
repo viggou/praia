@@ -828,6 +828,38 @@ VM::Result VM::execute(int baseFrameCount_) {
         // ── Comparison ──
         case OpCode::OP_EQUAL:         { Value b=pop(),a=pop(); if(a.isInstance()){auto[ok,r]=vmCallDunder(*this,a,"__eq",{b});if(ok){push(r);break;}} push(Value(a==b)); break; }
         case OpCode::OP_NOT_EQUAL:     { Value b=pop(),a=pop(); if(a.isInstance()){auto[ok,r]=vmCallDunder(*this,a,"__eq",{b});if(ok){push(Value(!r.isTruthy()));break;}} push(Value(a!=b)); break; }
+        case OpCode::OP_IS: {
+            Value right = pop();
+            Value left = pop();
+            if (right.isString()) {
+                auto& tn = right.asString();
+                bool result = false;
+                if      (tn == "nil")      result = left.isNil();
+                else if (tn == "bool")     result = left.isBool();
+                else if (tn == "int")      result = left.isInt();
+                else if (tn == "float")    result = left.isDouble();
+                else if (tn == "string")   result = left.isString();
+                else if (tn == "array")    result = left.isArray();
+                else if (tn == "map")      result = left.isMap();
+                else if (tn == "function") result = left.isCallable();
+                else if (tn == "instance") result = left.isInstance();
+                else { RUNTIME_ERR("Unknown type name '" + tn + "'"); }
+                push(Value(result));
+            } else if (right.isCallable()) {
+                auto klass = std::dynamic_pointer_cast<PraiaClass>(right.asCallable());
+                if (!klass) { RUNTIME_ERR("'is' requires a class or type name string"); }
+                if (!left.isInstance()) { push(Value(false)); break; }
+                auto walk = left.asInstance()->klass;
+                while (walk) {
+                    if (walk == klass) { push(Value(true)); break; }
+                    walk = walk->superclass;
+                }
+                if (!walk) push(Value(false));
+            } else {
+                RUNTIME_ERR("'is' requires a type name string or class");
+            }
+            break;
+        }
         case OpCode::OP_LESS:          { Value b=pop(),a=pop(); if(a.isInstance()){auto[ok,r]=vmCallDunder(*this,a,"__lt",{b});if(ok){push(r);break;}} if(!a.isNumber()||!b.isNumber()){RUNTIME_ERR("Operands of '<' must be numbers");} push(Value(a.asNumber()<b.asNumber())); break; }
         case OpCode::OP_GREATER:       { Value b=pop(),a=pop(); if(a.isInstance()){auto[ok,r]=vmCallDunder(*this,a,"__gt",{b});if(ok){push(r);break;}} if(!a.isNumber()||!b.isNumber()){RUNTIME_ERR("Operands of '>' must be numbers");} push(Value(a.asNumber()>b.asNumber())); break; }
         case OpCode::OP_LESS_EQUAL:    { Value b=pop(),a=pop(); if(a.isInstance()){auto[ok,r]=vmCallDunder(*this,a,"__gt",{b});if(ok){push(Value(!r.isTruthy()));break;}} if(!a.isNumber()||!b.isNumber()){RUNTIME_ERR("Operands of '<=' must be numbers");} push(Value(a.asNumber()<=b.asNumber())); break; }

@@ -784,7 +784,7 @@ ExprPtr Parser::bitAnd() {
 
 ExprPtr Parser::equality() {
     auto left = comparison();
-    while (match(TokenType::EQ) || match(TokenType::NEQ)) {
+    while (match(TokenType::EQ) || match(TokenType::NEQ) || match(TokenType::IS)) {
         Token op = previous();
         auto right = comparison();
         auto expr = std::make_unique<BinaryExpr>();
@@ -1299,7 +1299,7 @@ bool Parser::isNameToken(TokenType t) const {
     return t == TokenType::IDENTIFIER ||
            t == TokenType::LET || t == TokenType::FUNC || t == TokenType::CLASS || t == TokenType::ENUM ||
            t == TokenType::IF || t == TokenType::ELSE || t == TokenType::ELIF || t == TokenType::MATCH || t == TokenType::STATIC ||
-           t == TokenType::WHILE || t == TokenType::FOR || t == TokenType::IN ||
+           t == TokenType::WHILE || t == TokenType::FOR || t == TokenType::IN || t == TokenType::IS ||
            t == TokenType::RETURN || t == TokenType::BREAK || t == TokenType::CONTINUE ||
            t == TokenType::TRY || t == TokenType::CATCH || t == TokenType::THROW ||
            t == TokenType::ENSURE || t == TokenType::USE || t == TokenType::EXPORT ||

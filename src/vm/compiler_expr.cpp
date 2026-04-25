@@ -157,6 +157,7 @@ void Compiler::compileBinaryExpr(const BinaryExpr* expr) {
         case TokenType::GTE:     emit(OpCode::OP_GREATER_EQUAL, expr->line); break;
         case TokenType::EQ:      emit(OpCode::OP_EQUAL, expr->line); break;
         case TokenType::NEQ:     emit(OpCode::OP_NOT_EQUAL, expr->line); break;
+        case TokenType::IS:      emit(OpCode::OP_IS, expr->line); break;
         case TokenType::BIT_AND: emit(OpCode::OP_BIT_AND, expr->line); break;
         case TokenType::BIT_OR:  emit(OpCode::OP_BIT_OR, expr->line); break;
         case TokenType::BIT_XOR: emit(OpCode::OP_BIT_XOR, expr->line); break;

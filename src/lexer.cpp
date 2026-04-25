@@ -14,6 +14,7 @@ static const std::unordered_map<std::string, TokenType> keywords = {
     {"while",  TokenType::WHILE},
     {"for",    TokenType::FOR},
     {"in",     TokenType::IN},
+    {"is",     TokenType::IS},
     {"return",   TokenType::RETURN},
     {"break",    TokenType::BREAK},
     {"continue", TokenType::CONTINUE},
