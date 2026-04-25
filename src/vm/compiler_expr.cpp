@@ -236,6 +236,7 @@ void Compiler::compileLambdaExpr(const LambdaExpr* expr) {
     fn->name = "<lambda>";
     fn->arity = static_cast<int>(expr->params.size());
     fn->paramNames = expr->params;
+    fn->restParam = expr->restParam;
     fn->isGenerator = expr->isGenerator;
 
     CompilerState lamState;
@@ -249,6 +250,10 @@ void Compiler::compileLambdaExpr(const LambdaExpr* expr) {
 
     for (auto& param : expr->params) {
         addLocal(param);
+    }
+
+    if (!expr->restParam.empty()) {
+        addLocal(expr->restParam);
     }
 
     // Default parameter evaluation

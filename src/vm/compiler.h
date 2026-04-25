@@ -13,6 +13,7 @@ struct CompiledFunction {
     int upvalueCount = 0;
     Chunk chunk;
     std::vector<std::string> paramNames; // for named argument support
+    std::string restParam;               // empty = no rest param
     bool isGenerator = false;
 };
 

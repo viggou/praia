@@ -154,9 +154,14 @@ StmtPtr Parser::funcStatement() {
 
     std::vector<std::string> params;
     std::vector<ExprPtr> defaults;
+    std::string restParam;
     bool seenDefault = false;
     if (!check(TokenType::RPAREN)) {
         do {
+            if (match(TokenType::SPREAD)) {
+                restParam = consume(TokenType::IDENTIFIER, "Expected parameter name after '...'").lexeme;
+                break; // rest param must be last
+            }
             params.push_back(
                 consume(TokenType::IDENTIFIER, "Expected parameter name").lexeme);
             if (match(TokenType::ASSIGN)) {
@@ -177,6 +182,7 @@ StmtPtr Parser::funcStatement() {
     stmt->name = name.lexeme;
     stmt->params = std::move(params);
     stmt->defaults = std::move(defaults);
+    stmt->restParam = std::move(restParam);
     int savedYieldCount = yieldCount;
     yieldCount = 0;
     functionDepth++;
@@ -209,6 +215,10 @@ StmtPtr Parser::classStatement() {
         bool seenMethodDefault = false;
         if (!check(TokenType::RPAREN)) {
             do {
+                if (match(TokenType::SPREAD)) {
+                    method.restParam = consume(TokenType::IDENTIFIER, "Expected parameter name after '...'").lexeme;
+                    break;
+                }
                 method.params.push_back(
                     consume(TokenType::IDENTIFIER, "Expected parameter name").lexeme);
                 if (match(TokenType::ASSIGN)) {
@@ -1083,9 +1093,14 @@ ExprPtr Parser::primary() {
         // Parse optional params before 'in'
         std::vector<std::string> params;
         std::vector<ExprPtr> defaults;
+        std::string restParam;
         bool seenLamDefault = false;
         if (!check(TokenType::IN)) {
             do {
+                if (match(TokenType::SPREAD)) {
+                    restParam = consume(TokenType::IDENTIFIER, "Expected parameter name after '...'").lexeme;
+                    break;
+                }
                 params.push_back(
                     consume(TokenType::IDENTIFIER, "Expected parameter name").lexeme);
                 if (match(TokenType::ASSIGN)) {
@@ -1105,6 +1120,7 @@ ExprPtr Parser::primary() {
         lam->line = ln;
         lam->params = std::move(params);
         lam->defaults = std::move(defaults);
+        lam->restParam = std::move(restParam);
         int savedYieldCount = yieldCount;
         yieldCount = 0;
         functionDepth++;

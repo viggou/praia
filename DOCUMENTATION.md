@@ -774,6 +774,37 @@ class Server {
 }
 ```
 
+### Rest parameters
+
+Use `...name` as the last parameter to collect all remaining arguments into an array:
+
+```
+func log(level, ...messages) {
+    print("[" + level + "]", messages.join(" "))
+}
+
+log("INFO", "server", "started", "on", "8080")
+// [INFO] server started on 8080
+```
+
+Rest parameters work in functions, lambdas, and class methods:
+
+```
+let sum = lam{ ...nums in
+    let total = 0
+    for (n in nums) { total = total + n }
+    return total
+}
+print(sum(1, 2, 3, 4))    // 10
+
+class Logger {
+    func init(prefix) { this.prefix = prefix }
+    func log(...args) { print(this.prefix, args.join(" ")) }
+}
+```
+
+If no extra arguments are passed, the rest parameter is an empty array.
+
 ### Named arguments
 
 Arguments can be passed by name using `name: value` syntax. Positional arguments must come first; once a named argument appears, all remaining arguments must be named.

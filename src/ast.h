@@ -73,6 +73,7 @@ struct InterpolatedStringExpr : Expr {
 struct LambdaExpr : Expr {
     std::vector<std::string> params;
     std::vector<ExprPtr> defaults; // parallel to params, nullptr if no default
+    std::string restParam;         // empty = no rest param
     std::vector<StmtPtr> body;
     bool isGenerator = false;
 };
@@ -222,6 +223,7 @@ struct FuncStmt : Stmt {
     std::string name;
     std::vector<std::string> params;
     std::vector<ExprPtr> defaults; // parallel to params, nullptr if no default
+    std::string restParam;         // empty = no rest param
     StmtPtr body;
     bool isGenerator = false;
 };
@@ -234,6 +236,7 @@ struct ClassMethod {
     std::string name;
     std::vector<std::string> params;
     std::vector<ExprPtr> defaults; // parallel to params, nullptr if no default
+    std::string restParam;         // empty = no rest param
     std::vector<StmtPtr> body;
     int line = 0;
     bool isGenerator = false;

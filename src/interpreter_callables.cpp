@@ -12,7 +12,8 @@ const ClassMethod* PraiaClass::findMethod(const std::string& name) const {
 
 int PraiaClass::arity() const {
     auto* init = findMethod("init");
-    return init ? static_cast<int>(init->params.size()) : 0;
+    if (!init) return 0;
+    return init->restParam.empty() ? static_cast<int>(init->params.size()) : -1;
 }
 
 Value PraiaClass::call(Interpreter& interp, const std::vector<Value>& args) {
@@ -62,6 +63,12 @@ Value PraiaMethod::call(Interpreter& interp, const std::vector<Value>& args) {
             methodEnv->define(params[i], Value());
         }
     }
+    if (decl && !decl->restParam.empty()) {
+        auto rest = gcNew<PraiaArray>();
+        for (size_t i = params.size(); i < args.size(); i++)
+            rest->elements.push_back(args[i]);
+        methodEnv->define(decl->restParam, Value(rest));
+    }
     try {
         for (const auto& stmt : decl->body)
             interp.execute(stmt.get());
@@ -94,6 +101,12 @@ Value PraiaLambda::call(Interpreter& interp, const std::vector<Value>& args) {
             lambdaEnv->define(params[i], Value());
         }
     }
+    if (!restParam.empty()) {
+        auto rest = gcNew<PraiaArray>();
+        for (size_t i = params.size(); i < args.size(); i++)
+            rest->elements.push_back(args[i]);
+        lambdaEnv->define(restParam, Value(rest));
+    }
 
     try {
         for (const auto& stmt : expr->body)
@@ -112,9 +125,6 @@ Value PraiaLambda::call(Interpreter& interp, const std::vector<Value>& args) {
 Value PraiaFunction::call(Interpreter& interp, const std::vector<Value>& args) {
     auto funcEnv = gcNew<Environment>(closure);
 
-    // Switch to function env before evaluating defaults so that:
-    // 1. Defaults resolve in the definition scope (closure), not the caller scope
-    // 2. Earlier params are visible to later defaults (e.g. f(a=1, b=a+1))
     auto prevEnv = interp.env;
     interp.env = funcEnv;
     for (size_t i = 0; i < params.size(); i++) {
@@ -127,6 +137,12 @@ Value PraiaFunction::call(Interpreter& interp, const std::vector<Value>& args) {
         } else {
             funcEnv->define(params[i], Value());
         }
+    }
+    if (!restParam.empty()) {
+        auto rest = gcNew<PraiaArray>();
+        for (size_t i = params.size(); i < args.size(); i++)
+            rest->elements.push_back(args[i]);
+        funcEnv->define(restParam, Value(rest));
     }
 
     try {
@@ -242,6 +258,12 @@ Value PraiaGeneratorFunction::call(Interpreter& interp, const std::vector<Value>
             funcEnv->define(params[i], Value());
         }
     }
+    if (!restParam.empty()) {
+        auto rest = gcNew<PraiaArray>();
+        for (size_t i = params.size(); i < args.size(); i++)
+            rest->elements.push_back(args[i]);
+        funcEnv->define(restParam, Value(rest));
+    }
     interp.env = prevEnv;
 
     funcEnv->define("__gen__", Value(gen));
@@ -264,6 +286,12 @@ Value PraiaGeneratorLambda::call(Interpreter& interp, const std::vector<Value>& 
         } else {
             funcEnv->define(params[i], Value());
         }
+    }
+    if (!restParam.empty()) {
+        auto rest = gcNew<PraiaArray>();
+        for (size_t i = params.size(); i < args.size(); i++)
+            rest->elements.push_back(args[i]);
+        funcEnv->define(restParam, Value(rest));
     }
     interp.env = prevEnv;
 
