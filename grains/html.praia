@@ -1,0 +1,79 @@
+// HTML utilities — escaping, unescaping, stripping, and basic element builder
+//
+// Usage:
+//   use "html"
+//   html.escape("<script>alert('xss')</script>")
+//   // "&lt;script&gt;alert(&#39;xss&#39;)&lt;/script&gt;"
+//
+//   html.stripTags("<p>Hello <b>world</b></p>")
+//   // "Hello world"
+//
+//   html.element("a", {href: "/about", class: "link"}, "About")
+//   // '<a href="/about" class="link">About</a>'
+
+func escape(s) {
+    return s.replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace("\"", "&quot;")
+        .replace("'", "&#39;")
+}
+
+func unescape(s) {
+    return s.replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'")
+        .replace("&#x27;", "'")
+        .replace("&#x2F;", "/")
+}
+
+func stripTags(s) {
+    return s.replacePattern("<[^>]*>", "")
+}
+
+// Build an HTML element string
+func element(tag, attrs, content) {
+    let result = "<" + tag
+    if (attrs) {
+        let ks = keys(attrs)
+        for (k in ks) {
+            result = result + " " + k + "=\"" + escape(str(attrs[k])) + "\""
+        }
+    }
+
+    // Self-closing tags
+    let voidTags = ["area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr"]
+    if (!content && voidTags.contains(tag)) {
+        return result + " />"
+    }
+
+    result = result + ">"
+    if (content) {
+        result = result + str(content)
+    }
+    return result + "</" + tag + ">"
+}
+
+// Convenience builders
+func a(href, text, attrs) {
+    let allAttrs = {href: href}
+    if (attrs) {
+        let ks = keys(attrs)
+        for (k in ks) { allAttrs[k] = attrs[k] }
+    }
+    return element("a", allAttrs, text)
+}
+
+func img(src, alt, attrs) {
+    let allAttrs = {src: src, alt: alt}
+    if (!alt) { allAttrs.alt = "" }
+    if (attrs) {
+        let ks = keys(attrs)
+        for (k in ks) { allAttrs[k] = attrs[k] }
+    }
+    return element("img", allAttrs, nil)
+}
+
+export { escape, unescape, stripTags, element, a, img }

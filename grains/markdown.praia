@@ -1,0 +1,309 @@
+// Markdown to HTML renderer
+//
+// Supports: headings, paragraphs, bold, italic, code, code blocks,
+// links, images, blockquotes, unordered/ordered lists, horizontal rules
+//
+// Usage:
+//   use "markdown"
+//   let html = markdown.render("# Hello\n\nThis is **bold**.")
+//   // "<h1>Hello</h1>\n<p>This is <strong>bold</strong>.</p>"
+
+use "html" as htmlUtil
+
+func render(text) {
+    let lines = text.split("\n")
+    let result = ""
+    let i = 0
+
+    while (i < len(lines)) {
+        let line = lines[i]
+        let trimmed = line.strip()
+
+        // Empty line — paragraph break
+        if (len(trimmed) == 0) {
+            i = i + 1
+            continue
+        }
+
+        // Fenced code block
+        if (trimmed.startsWith("```")) {
+            let lang = trimmed.slice(3, len(trimmed)).strip()
+            let codeLines = []
+            i = i + 1
+            while (i < len(lines) && !lines[i].strip().startsWith("```")) {
+                codeLines.push(lines[i])
+                i = i + 1
+            }
+            i = i + 1  // skip closing ```
+            let raw = codeLines.join("\n")
+            let code = ""
+            if (lang == "praia") {
+                code = _highlightPraia(raw)
+            } else {
+                code = htmlUtil.escape(raw)
+            }
+            if (len(lang) > 0) {
+                result = result + "<pre><code class=\"language-" + lang + "\">" + code + "</code></pre>\n"
+            } else {
+                result = result + "<pre><code>" + code + "</code></pre>\n"
+            }
+            continue
+        }
+
+        // Horizontal rule
+        if (trimmed.test("^(\\*\\*\\*|---|___)\\s*$")) {
+            result = result + "<hr>\n"
+            i = i + 1
+            continue
+        }
+
+        // Heading
+        if (trimmed.startsWith("#")) {
+            let level = 0
+            while (level < len(trimmed) && trimmed[level] == "#") {
+                level = level + 1
+            }
+            if (level <= 6 && level < len(trimmed) && trimmed[level] == " ") {
+                let content = _inline(trimmed.slice(level + 1, len(trimmed)).strip())
+                result = result + "<h" + str(level) + ">" + content + "</h" + str(level) + ">\n"
+                i = i + 1
+                continue
+            }
+        }
+
+        // Blockquote
+        if (trimmed.startsWith("> ") || trimmed == ">") {
+            let quoteLines = []
+            while (i < len(lines)) {
+                let ql = lines[i].strip()
+                if (ql.startsWith("> ")) {
+                    quoteLines.push(ql.slice(2, len(ql)))
+                } elif (ql == ">") {
+                    quoteLines.push("")
+                } else {
+                    break
+                }
+                i = i + 1
+            }
+            let inner = render(quoteLines.join("\n"))
+            result = result + "<blockquote>\n" + inner + "</blockquote>\n"
+            continue
+        }
+
+        // Unordered list
+        if (trimmed.startsWith("- ") || trimmed.startsWith("* ")) {
+            let items = []
+            while (i < len(lines)) {
+                let ll = lines[i].strip()
+                if (ll.startsWith("- ") || ll.startsWith("* ")) {
+                    items.push(_inline(ll.slice(2, len(ll))))
+                } elif (len(ll) == 0) {
+                    break
+                } else {
+                    // Continuation of previous item
+                    if (len(items) > 0) {
+                        items[len(items) - 1] = items[len(items) - 1] + " " + _inline(ll)
+                    }
+                }
+                i = i + 1
+            }
+            result = result + "<ul>\n"
+            for (item in items) {
+                result = result + "<li>" + item + "</li>\n"
+            }
+            result = result + "</ul>\n"
+            continue
+        }
+
+        // Ordered list
+        if (trimmed.test("^[0-9]+\\. ")) {
+            let items = []
+            while (i < len(lines)) {
+                let ll = lines[i].strip()
+                if (ll.test("^[0-9]+\\. ")) {
+                    let dotIdx = ll.indexOf(". ")
+                    items.push(_inline(ll.slice(dotIdx + 2, len(ll))))
+                } elif (len(ll) == 0) {
+                    break
+                } else {
+                    if (len(items) > 0) {
+                        items[len(items) - 1] = items[len(items) - 1] + " " + _inline(ll)
+                    }
+                }
+                i = i + 1
+            }
+            result = result + "<ol>\n"
+            for (item in items) {
+                result = result + "<li>" + item + "</li>\n"
+            }
+            result = result + "</ol>\n"
+            continue
+        }
+
+        // Paragraph — collect consecutive non-blank lines
+        let paraLines = []
+        while (i < len(lines)) {
+            let pl = lines[i].strip()
+            if (len(pl) == 0) { break }
+            if (pl.startsWith("#") || pl.startsWith("```") || pl.startsWith("> ") ||
+                pl.startsWith("- ") || pl.startsWith("* ") || pl.test("^[0-9]+\\. ") ||
+                pl.test("^(\\*\\*\\*|---|___)\\s*$")) {
+                break
+            }
+            paraLines.push(pl)
+            i = i + 1
+        }
+        if (len(paraLines) > 0) {
+            result = result + "<p>" + _inline(paraLines.join(" ")) + "</p>\n"
+        }
+    }
+
+    return result
+}
+
+// Process inline formatting
+func _inline(text) {
+    let s = text
+
+    // Images ![alt](url)
+    s = s.replacePattern("!\\[([^\\]]*)\\]\\(([^)]+)\\)", "<img src=\"$2\" alt=\"$1\">")
+
+    // Links [text](url)
+    s = s.replacePattern("\\[([^\\]]*)\\]\\(([^)]+)\\)", "<a href=\"$2\">$1</a>")
+
+    // Inline code `code`
+    s = s.replacePattern("`([^`]+)`", "<code>$1</code>")
+
+    // Bold **text** or __text__
+    s = s.replacePattern("\\*\\*([^*]+)\\*\\*", "<strong>$1</strong>")
+    s = s.replacePattern("__([^_]+)__", "<strong>$1</strong>")
+
+    // Italic *text* or _text_
+    s = s.replacePattern("\\*([^*]+)\\*", "<em>$1</em>")
+    s = s.replacePattern("_([^_]+)_", "<em>$1</em>")
+
+    // Line break (two trailing spaces or \)
+    s = s.replace("  \n", "<br>")
+
+    return s
+}
+
+// Render a markdown file to HTML
+func renderFile(path) {
+    return render(sys.read(path))
+}
+
+// ── Praia syntax highlighting ──
+
+func _highlightPraia(code) {
+    let result = ""
+    let i = 0
+    let n = len(code)
+
+    let kw = ["let", "func", "class", "enum", "extends", "if", "elif", "else",
+              "while", "for", "in", "break", "continue", "return", "yield",
+              "try", "catch", "throw", "ensure", "async", "await",
+              "use", "export", "as", "lam", "this", "super"]
+    let consts = ["true", "false", "nil"]
+    let builtins = ["print", "len", "push", "pop", "type", "str", "num",
+                    "fromCharCode", "sort", "filter", "map", "each", "keys",
+                    "values", "loadNative", "Lock", "Channel"]
+    let nss = ["sys", "http", "json", "yaml", "net", "bytes", "crypto",
+               "random", "time", "math", "base64", "path", "url", "futures", "sqlite"]
+
+    while (i < n) {
+        let ch = code[i]
+
+        // Line comment
+        if (ch == "/" && i + 1 < n && code[i + 1] == "/") {
+            let start = i
+            while (i < n && code[i] != "\n") { i = i + 1 }
+            result = result + "<span class=\"hl-comment\">" + htmlUtil.escape(code.slice(start, i)) + "</span>"
+            continue
+        }
+
+        // Block comment
+        if (ch == "/" && i + 1 < n && code[i + 1] == "*") {
+            let start = i
+            i = i + 2
+            while (i + 1 < n && !(code[i] == "*" && code[i + 1] == "/")) { i = i + 1 }
+            if (i + 1 < n) { i = i + 2 } else { i = n }
+            result = result + "<span class=\"hl-comment\">" + htmlUtil.escape(code.slice(start, i)) + "</span>"
+            continue
+        }
+
+        // String
+        if (ch == "\"" || ch == "'") {
+            let quote = ch
+            let start = i
+            i = i + 1
+            while (i < n && code[i] != quote) {
+                if (code[i] == "\\") { i = i + 1 }
+                i = i + 1
+            }
+            if (i < n) { i = i + 1 }
+            result = result + "<span class=\"hl-string\">" + htmlUtil.escape(code.slice(start, i)) + "</span>"
+            continue
+        }
+
+        // Number
+        if (ch.test("[0-9]")) {
+            let start = i
+            while (i < n && code[i].test("[0-9.]")) { i = i + 1 }
+            result = result + "<span class=\"hl-number\">" + code.slice(start, i) + "</span>"
+            continue
+        }
+
+        // Decorator
+        if (ch == "@") {
+            result = result + "<span class=\"hl-decorator\">@</span>"
+            i = i + 1
+            continue
+        }
+
+        // Identifier or keyword
+        if (ch.test("[a-zA-Z_]")) {
+            let start = i
+            while (i < n && code[i].test("[a-zA-Z0-9_]")) { i = i + 1 }
+            let word = code.slice(start, i)
+            if (kw.contains(word)) {
+                result = result + "<span class=\"hl-keyword\">" + word + "</span>"
+            } elif (consts.contains(word)) {
+                result = result + "<span class=\"hl-constant\">" + word + "</span>"
+            } elif (builtins.contains(word)) {
+                result = result + "<span class=\"hl-builtin\">" + word + "</span>"
+            } elif (nss.contains(word)) {
+                result = result + "<span class=\"hl-namespace\">" + word + "</span>"
+            } else {
+                result = result + htmlUtil.escape(word)
+            }
+            continue
+        }
+
+        // Pipe operator
+        if (ch == "|" && i + 1 < n && code[i + 1] == ">") {
+            result = result + "<span class=\"hl-operator\">|&gt;</span>"
+            i = i + 2
+            continue
+        }
+
+        // Everything else
+        result = result + htmlUtil.escape(ch)
+        i = i + 1
+    }
+
+    return result
+}
+
+// CSS for syntax highlighting (include in your HTML <style>)
+let highlightCSS = ".hl-keyword { color: #c678dd; font-weight: bold; }
+.hl-constant { color: #d19a66; }
+.hl-string { color: #98c379; }
+.hl-number { color: #d19a66; }
+.hl-comment { color: #5c6370; font-style: italic; }
+.hl-builtin { color: #61afef; }
+.hl-namespace { color: #e5c07b; }
+.hl-decorator { color: #c678dd; }
+.hl-operator { color: #56b6c2; }"
+
+export { render, renderFile, highlightCSS }

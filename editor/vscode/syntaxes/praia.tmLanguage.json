@@ -11,6 +11,7 @@
     { "include": "#builtins" },
     { "include": "#namespaces" },
     { "include": "#operators" },
+    { "include": "#decorators" },
     { "include": "#classes" },
     { "include": "#functions" },
     { "include": "#punctuation" }
@@ -105,6 +106,10 @@
           "match": "\\b(class)\\b"
         },
         {
+          "name": "storage.type.enum.praia",
+          "match": "\\b(enum)\\b"
+        },
+        {
           "name": "storage.modifier.praia",
           "match": "\\b(extends)\\b"
         },
@@ -114,7 +119,7 @@
         },
         {
           "name": "keyword.control.flow.praia",
-          "match": "\\b(return)\\b"
+          "match": "\\b(return|yield)\\b"
         },
         {
           "name": "keyword.control.exception.praia",
@@ -126,7 +131,7 @@
         },
         {
           "name": "keyword.control.import.praia",
-          "match": "\\b(use|export)\\b"
+          "match": "\\b(use|export|as)\\b"
         },
         {
           "name": "storage.type.function.lambda.praia",
@@ -154,7 +159,7 @@
       "patterns": [
         {
           "name": "support.function.praia",
-          "match": "\\b(print|len|push|pop|type|str|num|fromCharCode|sort|filter|map|each|keys|values|Lock)\\b"
+          "match": "\\b(print|len|push|pop|type|str|num|fromCharCode|sort|filter|map|each|keys|values|loadNative)\\b"
         }
       ]
     },
@@ -162,7 +167,11 @@
       "patterns": [
         {
           "name": "support.class.praia",
-          "match": "\\b(sys|http|json|yaml|net|bytes|crypto|random|time|math|sqlite)\\b"
+          "match": "\\b(sys|http|json|yaml|net|bytes|crypto|random|time|math|base64|path|url|futures|sqlite)\\b"
+        },
+        {
+          "name": "support.class.praia",
+          "match": "\\b(Lock|Channel)\\b"
         }
       ]
     },
@@ -207,6 +216,21 @@
         {
           "name": "keyword.operator.range.praia",
           "match": "\\.\\."
+        },
+        {
+          "name": "keyword.operator.spread.praia",
+          "match": "\\.\\.\\."
+        }
+      ]
+    },
+    "decorators": {
+      "patterns": [
+        {
+          "name": "meta.decorator.praia",
+          "match": "@",
+          "captures": {
+            "0": { "name": "punctuation.definition.annotation.praia" }
+          }
         }
       ]
     },

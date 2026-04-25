@@ -1,0 +1,259 @@
+// TOML parser and stringifier
+//
+// Usage:
+//   use "toml"
+//   let config = toml.parse(sys.read("config.toml"))
+//   print(config.database.host)
+//
+//   let str = toml.stringify(config)
+
+func parse(text) {
+    let result = {}
+    let currentTable = result
+    let currentPath = []
+
+    let lines = text.split("\n")
+    for (line in lines) {
+        let trimmed = line.strip()
+
+        // Skip empty lines and comments
+        if (len(trimmed) == 0) { continue }
+        if (trimmed[0] == "#") { continue }
+
+        // Table header [section] or [section.subsection]
+        if (trimmed[0] == "[" && !trimmed.startsWith("[[")) {
+            let header = trimmed.slice(1, len(trimmed) - 1).strip()
+            let parts = header.split(".")
+            currentTable = result
+            currentPath = parts
+            for (part in parts) {
+                let p = part.strip()
+                if (!keys(currentTable).contains(p)) {
+                    currentTable[p] = {}
+                }
+                currentTable = currentTable[p]
+            }
+            continue
+        }
+
+        // Array of tables [[section]]
+        if (trimmed.startsWith("[[") && trimmed.endsWith("]]")) {
+            let header = trimmed.slice(2, len(trimmed) - 2).strip()
+            let parts = header.split(".")
+
+            // Navigate to parent
+            let parent = result
+            for (i in 0..len(parts) - 1) {
+                let p = parts[i].strip()
+                if (!keys(parent).contains(p)) {
+                    parent[p] = {}
+                }
+                parent = parent[p]
+            }
+
+            let lastKey = parts[len(parts) - 1].strip()
+            if (!keys(parent).contains(lastKey)) {
+                parent[lastKey] = []
+            }
+            let newTable = {}
+            parent[lastKey].push(newTable)
+            currentTable = newTable
+            continue
+        }
+
+        // Key = value
+        let eqIdx = trimmed.indexOf("=")
+        if (eqIdx < 0) { continue }
+
+        let key = trimmed.slice(0, eqIdx).strip()
+        let val = trimmed.slice(eqIdx + 1, len(trimmed)).strip()
+
+        // Strip inline comments (outside of strings)
+        if (!val.startsWith("\"") && !val.startsWith("'")) {
+            let hashIdx = val.indexOf(" #")
+            if (hashIdx >= 0) {
+                val = val.slice(0, hashIdx).strip()
+            }
+        }
+
+        currentTable[key] = _parseValue(val)
+    }
+
+    return result
+}
+
+func _parseValue(val) {
+    // Boolean
+    if (val == "true") { return true }
+    if (val == "false") { return false }
+
+    // String (basic: "..." or literal: '...')
+    if (val.startsWith("\"") && val.endsWith("\"") && len(val) >= 2) {
+        let inner = val.slice(1, len(val) - 1)
+        // Handle escape sequences
+        inner = inner.replace("\\n", "\n")
+        inner = inner.replace("\\t", "\t")
+        inner = inner.replace("\\\\", "\\")
+        inner = inner.replace("\\\"", "\"")
+        return inner
+    }
+    if (val.startsWith("'") && val.endsWith("'") && len(val) >= 2) {
+        return val.slice(1, len(val) - 1)
+    }
+
+    // Array [1, 2, 3]
+    if (val.startsWith("[") && val.endsWith("]")) {
+        return _parseArray(val)
+    }
+
+    // Inline table {key = val, ...}
+    if (val.startsWith("{") && val.endsWith("}")) {
+        return _parseInlineTable(val)
+    }
+
+    // Integer
+    if (val.test("^-?[0-9_]+$")) {
+        return num(val.replace("_", ""))
+    }
+
+    // Float
+    if (val.test("^-?[0-9_]*\\.[0-9_]+$") || val.test("^-?[0-9_]+[eE][+-]?[0-9]+$")) {
+        return num(val.replace("_", ""))
+    }
+
+    // Datetime (return as string for now)
+    return val
+}
+
+func _parseArray(val) {
+    let inner = val.slice(1, len(val) - 1).strip()
+    if (len(inner) == 0) { return [] }
+
+    let result = []
+    let items = _splitCommas(inner)
+    for (item in items) {
+        let trimmed = item.strip()
+        if (len(trimmed) > 0) {
+            result.push(_parseValue(trimmed))
+        }
+    }
+    return result
+}
+
+func _parseInlineTable(val) {
+    let inner = val.slice(1, len(val) - 1).strip()
+    if (len(inner) == 0) { return {} }
+
+    let result = {}
+    let items = _splitCommas(inner)
+    for (item in items) {
+        let trimmed = item.strip()
+        let eqIdx = trimmed.indexOf("=")
+        if (eqIdx >= 0) {
+            let k = trimmed.slice(0, eqIdx).strip()
+            let v = trimmed.slice(eqIdx + 1, len(trimmed)).strip()
+            result[k] = _parseValue(v)
+        }
+    }
+    return result
+}
+
+// Split by commas, respecting strings and nested brackets
+func _splitCommas(s) {
+    let parts = []
+    let current = ""
+    let depth = 0
+    let inStr = false
+    let strChar = ""
+
+    for (i in 0..len(s)) {
+        let ch = s[i]
+        if (inStr) {
+            current = current + ch
+            if (ch == strChar) { inStr = false }
+        } elif (ch == "\"" || ch == "'") {
+            inStr = true
+            strChar = ch
+            current = current + ch
+        } elif (ch == "[" || ch == "{") {
+            depth = depth + 1
+            current = current + ch
+        } elif (ch == "]" || ch == "}") {
+            depth = depth - 1
+            current = current + ch
+        } elif (ch == "," && depth == 0) {
+            parts.push(current)
+            current = ""
+        } else {
+            current = current + ch
+        }
+    }
+    if (len(current.strip()) > 0) { parts.push(current) }
+    return parts
+}
+
+func stringify(data) {
+    return _stringifyTable(data, "")
+}
+
+func _stringifyTable(data, prefix) {
+    let result = ""
+    let ks = keys(data)
+
+    // Simple values first
+    for (k in ks) {
+        let v = data[k]
+        if (type(v) != "map" && type(v) != "array") {
+            result = result + k + " = " + _formatValue(v) + "\n"
+        } elif (type(v) == "array" && (len(v) == 0 || type(v[0]) != "map")) {
+            result = result + k + " = " + _formatArray(v) + "\n"
+        }
+    }
+
+    // Tables
+    for (k in ks) {
+        let v = data[k]
+        if (type(v) == "map") {
+            let path = k
+            if (len(prefix) > 0) { path = prefix + "." + k }
+            if (len(result) > 0) { result = result + "\n" }
+            result = result + "[" + path + "]\n"
+            result = result + _stringifyTable(v, path)
+        }
+    }
+
+    // Array of tables
+    for (k in ks) {
+        let v = data[k]
+        if (type(v) == "array" && len(v) > 0 && type(v[0]) == "map") {
+            let path = k
+            if (len(prefix) > 0) { path = prefix + "." + k }
+            for (item in v) {
+                if (len(result) > 0) { result = result + "\n" }
+                result = result + "[[" + path + "]]\n"
+                result = result + _stringifyTable(item, path)
+            }
+        }
+    }
+
+    return result
+}
+
+func _formatValue(v) {
+    if (type(v) == "string") { return "\"" + v.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n") + "\"" }
+    if (type(v) == "bool") {
+        if (v) { return "true" }
+        return "false"
+    }
+    return str(v)
+}
+
+func _formatArray(arr) {
+    let items = []
+    for (item in arr) {
+        items.push(_formatValue(item))
+    }
+    return "[" + items.join(", ") + "]"
+}
+
+export { parse, stringify }

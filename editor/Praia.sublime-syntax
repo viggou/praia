@@ -15,6 +15,7 @@ contexts:
     - include: builtins
     - include: namespaces
     - include: operators
+    - include: decorators
     - include: functions
     - include: classes
     - include: punctuation
@@ -86,24 +87,24 @@ contexts:
       scope: storage.type.function.praia
     - match: \b(class)\b
       scope: storage.type.class.praia
+    - match: \b(enum)\b
+      scope: storage.type.enum.praia
     - match: \b(extends)\b
       scope: storage.modifier.praia
     - match: \b(if|elif|else|while|for|in|break|continue)\b
       scope: keyword.control.praia
-    - match: \b(return)\b
+    - match: \b(return|yield)\b
       scope: keyword.control.flow.praia
     - match: \b(try|catch|throw|ensure)\b
       scope: keyword.control.exception.praia
     - match: \b(async|await)\b
       scope: keyword.control.async.praia
-    - match: \b(use|export)\b
+    - match: \b(use|export|as)\b
       scope: keyword.control.import.praia
     - match: \b(lam)\b
       scope: storage.type.function.lambda.praia
     - match: \b(this|super)\b
       scope: variable.language.praia
-    - match: \b(in)\b
-      scope: keyword.operator.praia
 
   constants:
     - match: \b(true|false)\b
@@ -112,11 +113,13 @@ contexts:
       scope: constant.language.null.praia
 
   builtins:
-    - match: \b(print|len|push|pop|type|str|num|fromCharCode|sort|filter|map|each|keys|values)\b
+    - match: \b(print|len|push|pop|type|str|num|fromCharCode|sort|filter|map|each|keys|values|loadNative)\b
       scope: support.function.praia
 
   namespaces:
-    - match: \b(sys|http|json|yaml|net|bytes|crypto|random|time|math|sqlite)\b
+    - match: \b(sys|http|json|yaml|net|bytes|crypto|random|time|math|base64|path|url|futures|sqlite)\b
+      scope: support.class.praia
+    - match: \b(Lock|Channel)\b
       scope: support.class.praia
 
   operators:
@@ -140,6 +143,17 @@ contexts:
       scope: keyword.operator.assignment.praia
     - match: '\.\.'
       scope: keyword.operator.range.praia
+    - match: '\.\.\.'
+      scope: keyword.operator.spread.praia
+
+  decorators:
+    - match: '@'
+      scope: punctuation.definition.annotation.praia
+      push:
+        - meta_scope: meta.decorator.praia
+        - match: (?=\s|$|\()
+          pop: true
+        - include: main
 
   functions:
     - match: \b(init)\s*(?=\()

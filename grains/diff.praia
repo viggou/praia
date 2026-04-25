@@ -1,0 +1,135 @@
+// Text diffing — Myers diff algorithm (O(ND))
+//
+// Usage:
+//   use "diff"
+//   let changes = diff.lines("old text", "new text")
+//   diff.format(changes)  // colored unified diff string
+
+func lines(a, b) {
+    let aLines = a.split("\n")
+    let bLines = b.split("\n")
+    return _diff(aLines, bLines)
+}
+
+// Returns array of {op: "equal"|"add"|"remove", value: string}
+func _diff(a, b) {
+    let n = len(a)
+    let m = len(b)
+
+    // Shortcut: identical
+    if (n == 0 && m == 0) { return [] }
+    if (n == 0) {
+        let result = []
+        for (line in b) { result.push({op: "add", value: line}) }
+        return result
+    }
+    if (m == 0) {
+        let result = []
+        for (line in a) { result.push({op: "remove", value: line}) }
+        return result
+    }
+
+    // LCS-based diff using dynamic programming
+    // Build LCS length table
+    let prev = []
+    for (j in 0..m + 1) { prev.push(0) }
+
+    for (i in 1..n + 1) {
+        let curr = [0]
+        for (j in 1..m + 1) {
+            if (a[i - 1] == b[j - 1]) {
+                curr.push(prev[j - 1] + 1)
+            } elif (prev[j] >= curr[j - 1]) {
+                curr.push(prev[j])
+            } else {
+                curr.push(curr[j - 1])
+            }
+        }
+        prev = curr
+    }
+
+    // We need the full table to backtrack, so rebuild it
+    let table = []
+    let row0 = []
+    for (j in 0..m + 1) { row0.push(0) }
+    table.push(row0)
+
+    for (i in 1..n + 1) {
+        let row = [0]
+        for (j in 1..m + 1) {
+            if (a[i - 1] == b[j - 1]) {
+                row.push(table[i - 1][j - 1] + 1)
+            } elif (table[i - 1][j] >= row[j - 1]) {
+                row.push(table[i - 1][j])
+            } else {
+                row.push(row[j - 1])
+            }
+        }
+        table.push(row)
+    }
+
+    // Backtrack to produce diff
+    let result = []
+    let i = n
+    let j = m
+    while (i > 0 || j > 0) {
+        if (i > 0 && j > 0 && a[i - 1] == b[j - 1]) {
+            result.unshift({op: "equal", value: a[i - 1]})
+            i = i - 1
+            j = j - 1
+        } elif (j > 0 && (i == 0 || table[i][j - 1] >= table[i - 1][j])) {
+            result.unshift({op: "add", value: b[j - 1]})
+            j = j - 1
+        } else {
+            result.unshift({op: "remove", value: a[i - 1]})
+            i = i - 1
+        }
+    }
+
+    return result
+}
+
+// Format diff as a unified-diff-style string
+func format(changes) {
+    let result = ""
+    for (change in changes) {
+        if (change.op == "add") {
+            result = result + "+ " + change.value + "\n"
+        } elif (change.op == "remove") {
+            result = result + "- " + change.value + "\n"
+        } else {
+            result = result + "  " + change.value + "\n"
+        }
+    }
+    return result
+}
+
+// Format with ANSI colors
+func formatColor(changes) {
+    let result = ""
+    for (change in changes) {
+        if (change.op == "add") {
+            result = result + "\x1b[32m+ " + change.value + "\x1b[0m\n"
+        } elif (change.op == "remove") {
+            result = result + "\x1b[31m- " + change.value + "\x1b[0m\n"
+        } else {
+            result = result + "  " + change.value + "\n"
+        }
+    }
+    return result
+}
+
+// Summary stats
+func stats(changes) {
+    let added = 0
+    let removed = 0
+    let equal = 0
+    for (change in changes) {
+        if (change.op == "add") { added = added + 1 }
+        elif (change.op == "remove") { removed = removed + 1 }
+        else { equal = equal + 1 }
+    }
+    return {added: added, removed: removed, equal: equal}
+}
+
+export { lines, format, formatColor, stats }
