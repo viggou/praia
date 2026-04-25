@@ -184,6 +184,7 @@ int disassembleInstruction(const Chunk& chunk, int offset) {
         // Classes
         case OpCode::OP_CLASS:          return constantInstruction("OP_CLASS", chunk, offset);
         case OpCode::OP_METHOD:         return constantInstruction("OP_METHOD", chunk, offset);
+        case OpCode::OP_STATIC_METHOD:  return constantInstruction("OP_STATIC_METHOD", chunk, offset);
         case OpCode::OP_INHERIT:        return simpleInstruction("OP_INHERIT", offset);
         case OpCode::OP_GET_PROPERTY:   return constantInstruction("OP_GET_PROPERTY", chunk, offset);
         case OpCode::OP_SET_PROPERTY:   return constantInstruction("OP_SET_PROPERTY", chunk, offset);

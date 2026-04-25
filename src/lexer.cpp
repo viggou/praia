@@ -10,6 +10,7 @@ static const std::unordered_map<std::string, TokenType> keywords = {
     {"else",   TokenType::ELSE},
     {"elif",   TokenType::ELIF},
     {"match",  TokenType::MATCH},
+    {"static", TokenType::STATIC},
     {"while",  TokenType::WHILE},
     {"for",    TokenType::FOR},
     {"in",     TokenType::IN},

@@ -598,8 +598,12 @@ void Interpreter::execute(const Stmt* stmt) {
         klass->className = s->name;
         klass->superclass = superclass;
         klass->closure = env;
-        for (auto& m : s->methods)
-            klass->methods[m.name] = &m;
+        for (auto& m : s->methods) {
+            if (m.isStatic)
+                klass->staticMethods[m.name] = &m;
+            else
+                klass->methods[m.name] = &m;
+        }
         env->define(s->name, Value(std::static_pointer_cast<Callable>(klass)));
 
     } else if (auto* s = dynamic_cast<const ReturnStmt*>(stmt)) {
@@ -1304,6 +1308,29 @@ Value Interpreter::evaluate(const Expr* expr) {
         if (obj.isMap()) {
             throw RuntimeError("Map has no field '" + e->field + "'", e->line);
         }
+        // Static methods on classes
+        if (obj.isCallable()) {
+            auto klass = std::dynamic_pointer_cast<PraiaClass>(obj.asCallable());
+            if (klass) {
+                auto walk = klass;
+                while (walk) {
+                    auto it = walk->staticMethods.find(e->field);
+                    if (it != walk->staticMethods.end()) {
+                        auto* decl = it->second;
+                        auto method = std::make_shared<PraiaMethod>();
+                        method->methodName = decl->name;
+                        method->params = decl->params;
+                        method->decl = decl;
+                        method->closure = walk->closure;
+                        method->instance = nullptr; // no `this` for static
+                        method->definingClass = walk;
+                        return Value(std::static_pointer_cast<Callable>(method));
+                    }
+                    walk = walk->superclass;
+                }
+            }
+        }
+
         if (obj.isString())
             return getStringMethod(obj.asString(), e->field, e->line);
         if (obj.isArray())
