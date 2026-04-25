@@ -52,6 +52,7 @@ private:
         int tryDepth = 0;      // number of active try handlers in this function
         bool isGenerator = false;
         std::vector<LoopContext> loops;
+        std::vector<const Stmt*> finallyStack; // enclosing finally bodies for return/break/continue
     };
 
     CompilerState* current = nullptr;

@@ -113,4 +113,36 @@ testing.test("finally without error", lam{ in
     testing.assert(cleaned, nil)
 })
 
+testing.test("finally runs on return from try", lam{ in
+    let log = []
+    func test() {
+        try {
+            push(log, "try")
+            return 42
+        } catch (e) {
+            push(log, "catch")
+        } finally {
+            push(log, "finally")
+        }
+    }
+    testing.assertEqual(test(), 42, nil)
+    testing.assertEqual(log, ["try", "finally"], nil)
+})
+
+testing.test("finally runs on return from catch", lam{ in
+    let log = []
+    func test() {
+        try {
+            throw "err"
+        } catch (e) {
+            push(log, "catch")
+            return 99
+        } finally {
+            push(log, "finally")
+        }
+    }
+    testing.assertEqual(test(), 99, nil)
+    testing.assertEqual(log, ["catch", "finally"], nil)
+})
+
 testing.done()

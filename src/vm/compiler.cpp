@@ -607,6 +607,10 @@ void Compiler::compileReturnStmt(const ReturnStmt* stmt) {
     for (int i = 0; i < current->tryDepth; i++) {
         emit(OpCode::OP_TRY_END, stmt->line);
     }
+    // Run any enclosing finally blocks (outermost last)
+    for (auto* finallyBody : current->finallyStack) {
+        compileStmt(finallyBody);
+    }
     emit(OpCode::OP_RETURN, stmt->line);
 }
 
@@ -847,6 +851,9 @@ void Compiler::compileThrowStmt(const ThrowStmt* stmt) {
 
 void Compiler::compileTryCatchStmt(const TryCatchStmt* stmt) {
     if (stmt->finallyBody) {
+        // Track this finally block so return/break/continue can emit it
+        current->finallyStack.push_back(stmt->finallyBody.get());
+
         // Outer try to guarantee finally runs even if catch throws
         int outerTry = emitJump(OpCode::OP_TRY_BEGIN, stmt->line);
         current->tryDepth++;
@@ -871,6 +878,8 @@ void Compiler::compileTryCatchStmt(const TryCatchStmt* stmt) {
 
         current->tryDepth--;
         emit(OpCode::OP_TRY_END, stmt->line);
+
+        current->finallyStack.pop_back();
 
         // Finally after normal completion
         compileStmt(stmt->finallyBody.get());
