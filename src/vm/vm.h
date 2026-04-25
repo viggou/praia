@@ -101,6 +101,7 @@ public:
     // Setup
     void defineNative(const std::string& name, Value value);
     void setCurrentFile(const std::string& path) { currentFile = path; }
+    const std::string& getCurrentFile() const { return currentFile; }
     void setArgs(const std::vector<std::string>& args);
 
     // Thread-local current VM — used by native functions to find the active VM

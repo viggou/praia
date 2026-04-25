@@ -1,4 +1,4 @@
-#include "../../src/praia_plugin.h"
+#include "praia_plugin.h"
 #include <cmath>
 
 extern "C" void praia_register(PraiaMap* module) {

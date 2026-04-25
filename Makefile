@@ -94,6 +94,15 @@ install:
 	$(MAKE) BUILD_DIR=/tmp/praia-install-build CXXFLAGS='$(CXXFLAGS) -DPRAIA_LIBDIR="\"$(LIBDIR)\""'
 	install -d $(DESTDIR)$(BINDIR)
 	install -m 755 $(TARGET) $(DESTDIR)$(BINDIR)/$(TARGET)
+	install -d $(DESTDIR)$(LIBDIR)/include
+	cp $(SRC_DIR)/praia_plugin.h $(DESTDIR)$(LIBDIR)/include/
+	cp $(SRC_DIR)/value.h $(DESTDIR)$(LIBDIR)/include/
+	cp $(SRC_DIR)/builtins.h $(DESTDIR)$(LIBDIR)/include/
+	cp $(SRC_DIR)/interpreter.h $(DESTDIR)$(LIBDIR)/include/
+	cp $(SRC_DIR)/gc_heap.h $(DESTDIR)$(LIBDIR)/include/
+	cp $(SRC_DIR)/environment.h $(DESTDIR)$(LIBDIR)/include/
+	cp $(SRC_DIR)/ast.h $(DESTDIR)$(LIBDIR)/include/
+	cp $(SRC_DIR)/token.h $(DESTDIR)$(LIBDIR)/include/
 	install -d $(DESTDIR)$(LIBDIR)/grains
 	cp -R grains/* $(DESTDIR)$(LIBDIR)/grains/
 	install -d $(DESTDIR)$(LIBDIR)/sand
@@ -128,7 +137,11 @@ test-input: $(TARGET)
 
 # ── Plugin build helper ──
 # Usage: make plugin SRC=examples/plugins/mathext.cpp OUT=examples/plugins/mathext.dylib
+PLUGIN_LDFLAGS =
+ifeq ($(UNAME_S),Darwin)
+  PLUGIN_LDFLAGS = -undefined dynamic_lookup
+endif
 plugin:
-	$(CXX) -std=c++17 -shared -fPIC -I$(SRC_DIR) -o $(OUT) $(SRC)
+	$(CXX) -std=c++17 -shared -fPIC -I$(SRC_DIR) $(PLUGIN_LDFLAGS) -o $(OUT) $(SRC)
 
 .PHONY: all clean install uninstall test test-input plugin

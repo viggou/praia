@@ -602,6 +602,17 @@ int main(int argc, char* argv[]) {
         return 0;
     }
 
+    // `praia --include-path` — print the header directory for native plugins
+    if (argc >= 2 && std::string(argv[1]) == "--include-path") {
+#ifdef PRAIA_LIBDIR
+        std::cout << PRAIA_LIBDIR << "/include" << std::endl;
+#else
+        // Development mode: headers are in src/ relative to the binary
+        std::cout << fs::canonical(fs::path(argv[0]).parent_path() / "src").string() << std::endl;
+#endif
+        return 0;
+    }
+
     // `praia -h` / `praia --help`
     if (argc >= 2 && (std::string(argv[1]) == "--help" || std::string(argv[1]) == "-h")) {
         std::cout << "Praia " << PRAIA_VERSION << "\n\n"
@@ -618,7 +629,8 @@ int main(int argc, char* argv[]) {
                   << "  -c <code>        Evaluate a string as code\n"
                   << "  --tree           Use tree-walker interpreter instead of VM\n"
                   << "  --tokens         Print lexer tokens and exit\n"
-                  << "  --ast            Print parse tree and exit\n";
+                  << "  --ast            Print parse tree and exit\n"
+                  << "  --include-path   Print the header path for native plugins\n";
         return 0;
     }
 

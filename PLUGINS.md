@@ -138,14 +138,14 @@ The Makefile provides a convenience target:
 make plugin SRC=path/to/plugin.cpp OUT=path/to/plugin.dylib
 ```
 
-Or build manually:
+Or build manually using `praia --include-path` to find the headers:
 
 ```sh
 # macOS
-g++ -std=c++17 -shared -fPIC -Isrc -o myplugin.dylib myplugin.cpp
+g++ -std=c++17 -shared -fPIC -I$(praia --include-path) -undefined dynamic_lookup -o myplugin.dylib myplugin.cpp
 
 # Linux
-g++ -std=c++17 -shared -fPIC -Isrc -o myplugin.so myplugin.cpp
+g++ -std=c++17 -shared -fPIC -I$(praia --include-path) -o myplugin.so myplugin.cpp
 ```
 
 Plugins must be compiled with a C++ compiler (the plugin API uses C++ types). They can freely call C functions and wrap C libraries.

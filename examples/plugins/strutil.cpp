@@ -1,7 +1,7 @@
 // Example: wrapping C standard library functions as a Praia plugin.
 // Demonstrates how to expose C APIs (or any C library) to Praia.
 
-#include "../../src/praia_plugin.h"
+#include "praia_plugin.h"
 #include <cstring>   // C string functions
 #include <cstdlib>   // atoi, atof, strtol
 #include <cctype>    // isalpha, isdigit, etc.

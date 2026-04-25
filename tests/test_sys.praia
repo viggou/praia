@@ -71,6 +71,12 @@ testing.test("sys.readDir on nonexistent throws", lam{ in
     testing.assertThrows(lam{ in sys.readDir("/tmp/praia_nonexistent_dir_xyz") }, nil)
 })
 
+testing.test("sys.currentFile returns this script's path", lam{ in
+    let f = sys.currentFile()
+    testing.assert(f != nil, "should not be nil")
+    testing.assert(f.endsWith("test_sys.praia"), "should end with test_sys.praia")
+})
+
 testing.test("sys.setenv and sys.env", lam{ in
     sys.setenv("PRAIA_TEST_KEY", "test_value")
     testing.assertEqual(sys.env("PRAIA_TEST_KEY"), "test_value", nil)

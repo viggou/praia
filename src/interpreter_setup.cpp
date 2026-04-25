@@ -2,6 +2,7 @@
 #include "gc_heap.h"
 #include "grain_resolve.h"
 #include "interpreter.h"
+#include "vm/vm.h"
 #include <algorithm>
 #include <chrono>
 #include <cerrno>
@@ -1495,6 +1496,16 @@ Interpreter::Interpreter() {
     globals->define("math", Value(mathMap));
 
     // ── OS extras on sys ──
+
+    sysMap->entries["currentFile"] = Value(makeNative("sys.currentFile", 0,
+        [this](const std::vector<Value>&) -> Value {
+            // Check VM first (bytecode engine), then tree-walker
+            VM* vm = VM::current();
+            if (vm && !vm->getCurrentFile().empty())
+                return Value(vm->getCurrentFile());
+            if (!currentFile.empty()) return Value(currentFile);
+            return Value();
+        }));
 
     sysMap->entries["env"] = Value(makeNative("sys.env", 1,
         [](const std::vector<Value>& args) -> Value {
