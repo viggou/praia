@@ -41,13 +41,13 @@ Install dependencies (optional - Praia builds without them, you just won't have 
 
 ```sh
 # macOS
-brew install openssl@3 readline sqlite
+brew install openssl@3 readline sqlite utf8proc
 
 # Ubuntu / Debian
-sudo apt install g++ make libssl-dev libreadline-dev libsqlite3-dev
+sudo apt install g++ make libssl-dev libreadline-dev libsqlite3-dev libutf8proc-dev
 
 # Fedora / RHEL
-sudo dnf install gcc-c++ make openssl-devel readline-devel sqlite-devel
+sudo dnf install gcc-c++ make openssl-devel readline-devel sqlite-devel utf8proc-devel
 ```
 
 Build and install:
@@ -88,6 +88,7 @@ make
 | OpenSSL | HTTPS client (`http.get("https://...")`) | Optional |
 | SQLite | `sqlite.open()` built-in | Optional |
 | readline/libedit | REPL history and line editing | Optional |
+| utf8proc | Unicode-aware strings (grapheme splitting, case mapping, emoji) | Optional |
 
 ## Testing
 
@@ -122,7 +123,7 @@ classes, control flow, error handling, pipes/closures, and JSON.
 * Classes with inheritance, super, this, operator overloading
 * Enums and integer types (64-bit)
 * Error handling with try/catch/throw and `ensure` (early-exit guard)
-* String interpolation (`"%{name} is %{age}"`), regex, 14 string methods
+* String interpolation (`"%{name} is %{age}"`), regex, Unicode-aware strings (grapheme clusters, emoji, `\u{...}` escapes)
 * Arrays, maps, destructuring, spread operator
 * HTTP client and server
 * JSON and YAML parse/stringify
@@ -151,6 +152,7 @@ Praia/
 │   ├── interpreter.cpp          # grain loading, execute(), evaluate()
 │   ├── interpreter_setup.cpp    # constructor: globals, sys, http, base64, path, etc.
 │   ├── interpreter_callables.cpp # PraiaFunction/Lambda/Method/Class::call
+│   ├── unicode.h/cpp            # UTF-8 grapheme/codepoint helpers (utf8proc)
 │   ├── builtins.h               # shared helpers (makeNative, callSafe, etc.)
 │   ├── builtins/                # built-in namespace implementations
 │   │   ├── net.cpp              # TCP, UDP, raw sockets, DNS
