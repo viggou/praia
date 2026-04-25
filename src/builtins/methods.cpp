@@ -1,4 +1,5 @@
 #include "../builtins.h"
+#include "../unicode.h"
 #include "../value.h"
 #include "../vm/vm.h"
 #include <algorithm>
@@ -22,16 +23,24 @@ Value getStringMethod(const std::string& str,
                       const std::string& name, int line) {
     if (name == "upper") {
         return Value(makeNative("upper", 0, [str](const std::vector<Value>&) -> Value {
+#ifdef HAVE_UTF8PROC
+            return Value(utf8_upper(str));
+#else
             std::string r = str;
             std::transform(r.begin(), r.end(), r.begin(), ::toupper);
             return Value(std::move(r));
+#endif
         }));
     }
     if (name == "lower") {
         return Value(makeNative("lower", 0, [str](const std::vector<Value>&) -> Value {
+#ifdef HAVE_UTF8PROC
+            return Value(utf8_lower(str));
+#else
             std::string r = str;
             std::transform(r.begin(), r.end(), r.begin(), ::tolower);
             return Value(std::move(r));
+#endif
         }));
     }
     if (name == "strip") {
@@ -49,8 +58,13 @@ Value getStringMethod(const std::string& str,
             auto& sep = args[0].asString();
             auto arr = gcNew<PraiaArray>();
             if (sep.empty()) {
+#ifdef HAVE_UTF8PROC
+                for (auto& g : utf8_graphemes(str))
+                    arr->elements.push_back(Value(std::move(g)));
+#else
                 for (char c : str)
                     arr->elements.push_back(Value(std::string(1, c)));
+#endif
                 return Value(arr);
             }
             size_t pos = 0, found;
@@ -103,6 +117,9 @@ Value getStringMethod(const std::string& str,
     }
     if (name == "title") {
         return Value(makeNative("title", 0, [str](const std::vector<Value>&) -> Value {
+#ifdef HAVE_UTF8PROC
+            return Value(utf8_title(str));
+#else
             std::string r = str;
             bool capNext = true;
             for (auto& c : r) {
@@ -111,10 +128,19 @@ Value getStringMethod(const std::string& str,
                 else { c = std::tolower(c); }
             }
             return Value(std::move(r));
+#endif
         }));
     }
     if (name == "capitalize") {
         return Value(makeNative("capitalize", 0, [str](const std::vector<Value>&) -> Value {
+#ifdef HAVE_UTF8PROC
+            if (str.empty()) return Value(str);
+            auto gs = utf8_graphemes(str);
+            std::string result = utf8_upper(gs[0]);
+            for (size_t i = 1; i < gs.size(); i++)
+                result += utf8_lower(gs[i]);
+            return Value(std::move(result));
+#else
             std::string r = str;
             if (!r.empty()) {
                 r[0] = std::toupper(r[0]);
@@ -122,13 +148,23 @@ Value getStringMethod(const std::string& str,
                     r[i] = std::tolower(r[i]);
             }
             return Value(std::move(r));
+#endif
         }));
     }
     if (name == "capitalizeFirst") {
         return Value(makeNative("capitalizeFirst", 0, [str](const std::vector<Value>&) -> Value {
+#ifdef HAVE_UTF8PROC
+            if (str.empty()) return Value(str);
+            auto gs = utf8_graphemes(str);
+            std::string result = utf8_upper(gs[0]);
+            for (size_t i = 1; i < gs.size(); i++)
+                result += gs[i];
+            return Value(std::move(result));
+#else
             std::string r = str;
             if (!r.empty()) r[0] = std::toupper(r[0]);
             return Value(std::move(r));
+#endif
         }));
     }
     if (name == "charCode") {
@@ -136,10 +172,19 @@ Value getStringMethod(const std::string& str,
             int idx = 0;
             if (!args.empty() && args[0].isNumber())
                 idx = static_cast<int>(args[0].asNumber());
+#ifdef HAVE_UTF8PROC
+            int len = static_cast<int>(utf8_grapheme_count(str));
+            if (idx < 0) idx += len;
+            if (idx < 0 || idx >= len)
+                throw RuntimeError("charCode index out of bounds", 0);
+            std::string g = utf8_grapheme_at(str, idx);
+            return Value(static_cast<int64_t>(utf8_first_codepoint(g)));
+#else
             if (idx < 0) idx += static_cast<int>(str.size());
             if (idx < 0 || idx >= static_cast<int>(str.size()))
                 throw RuntimeError("charCode index out of bounds", 0);
             return Value(static_cast<int64_t>(static_cast<unsigned char>(str[idx])));
+#endif
         }));
     }
     if (name == "test") {
@@ -225,6 +270,24 @@ Value getStringMethod(const std::string& str,
         return Value(makeNative("slice", -1, [str](const std::vector<Value>& args) -> Value {
             if (args.empty() || !args[0].isNumber())
                 throw RuntimeError("slice() requires a start index", 0);
+#ifdef HAVE_UTF8PROC
+            auto gs = utf8_graphemes(str);
+            int len = static_cast<int>(gs.size());
+            int start = static_cast<int>(args[0].asNumber());
+            if (start < 0) start += len;
+            if (start < 0) start = 0;
+            if (start >= len) return Value(std::string(""));
+            int end = len;
+            if (args.size() > 1 && args[1].isNumber()) {
+                end = static_cast<int>(args[1].asNumber());
+                if (end < 0) end += len;
+                if (end <= start) return Value(std::string(""));
+                if (end > len) end = len;
+            }
+            std::string result;
+            for (int i = start; i < end; i++) result += gs[i];
+            return Value(std::move(result));
+#else
             int len = static_cast<int>(str.size());
             int start = static_cast<int>(args[0].asNumber());
             if (start < 0) start += len;
@@ -238,17 +301,33 @@ Value getStringMethod(const std::string& str,
                 return Value(str.substr(start, end - start));
             }
             return Value(str.substr(start));
+#endif
         }));
     }
     if (name == "indexOf") {
         return Value(makeNative("indexOf", -1, [str](const std::vector<Value>& args) -> Value {
             if (args.empty() || !args[0].isString())
                 throw RuntimeError("indexOf() requires a string argument", 0);
+#ifdef HAVE_UTF8PROC
+            size_t startByte = 0;
+            if (args.size() > 1 && args[1].isNumber()) {
+                // Convert grapheme start index to byte offset
+                int gi = static_cast<int>(args[1].asNumber());
+                auto gs = utf8_graphemes(str);
+                if (gi < 0) gi += static_cast<int>(gs.size());
+                if (gi < 0 || gi >= static_cast<int>(gs.size())) return Value(static_cast<int64_t>(-1));
+                for (int i = 0; i < gi; i++) startByte += gs[i].size();
+            }
+            auto pos = str.find(args[0].asString(), startByte);
+            if (pos == std::string::npos) return Value(static_cast<int64_t>(-1));
+            return Value(static_cast<int64_t>(utf8_byte_to_grapheme_index(str, pos)));
+#else
             size_t startPos = 0;
             if (args.size() > 1 && args[1].isNumber())
                 startPos = static_cast<size_t>(args[1].asNumber());
             auto pos = str.find(args[0].asString(), startPos);
             return Value(pos == std::string::npos ? static_cast<int64_t>(-1) : static_cast<int64_t>(pos));
+#endif
         }));
     }
     if (name == "lastIndexOf") {
@@ -256,7 +335,12 @@ Value getStringMethod(const std::string& str,
             if (!args[0].isString())
                 throw RuntimeError("lastIndexOf() requires a string argument", 0);
             auto pos = str.rfind(args[0].asString());
+#ifdef HAVE_UTF8PROC
+            if (pos == std::string::npos) return Value(static_cast<int64_t>(-1));
+            return Value(static_cast<int64_t>(utf8_byte_to_grapheme_index(str, pos)));
+#else
             return Value(pos == std::string::npos ? static_cast<int64_t>(-1) : static_cast<int64_t>(pos));
+#endif
         }));
     }
     if (name == "repeat") {
@@ -279,8 +363,13 @@ Value getStringMethod(const std::string& str,
             std::string pad = " ";
             if (args.size() > 1 && args[1].isString()) pad = args[1].asString();
             std::string result = str;
+#ifdef HAVE_UTF8PROC
+            while (static_cast<int>(utf8_grapheme_count(result)) < target)
+                result = pad + result;
+#else
             while (static_cast<int>(result.size()) < target)
                 result = pad + result;
+#endif
             return Value(std::move(result));
         }));
     }
@@ -292,8 +381,13 @@ Value getStringMethod(const std::string& str,
             std::string pad = " ";
             if (args.size() > 1 && args[1].isString()) pad = args[1].asString();
             std::string result = str;
+#ifdef HAVE_UTF8PROC
+            while (static_cast<int>(utf8_grapheme_count(result)) < target)
+                result += pad;
+#else
             while (static_cast<int>(result.size()) < target)
                 result += pad;
+#endif
             return Value(std::move(result));
         }));
     }
@@ -309,6 +403,40 @@ Value getStringMethod(const std::string& str,
             size_t end = str.find_last_not_of(" \t\n\r");
             if (end == std::string::npos) return Value(std::string(""));
             return Value(str.substr(0, end + 1));
+        }));
+    }
+    if (name == "graphemes") {
+        return Value(makeNative("graphemes", 0, [str](const std::vector<Value>&) -> Value {
+            auto arr = gcNew<PraiaArray>();
+#ifdef HAVE_UTF8PROC
+            for (auto& g : utf8_graphemes(str))
+                arr->elements.push_back(Value(std::move(g)));
+#else
+            for (char c : str)
+                arr->elements.push_back(Value(std::string(1, c)));
+#endif
+            return Value(arr);
+        }));
+    }
+    if (name == "codepoints") {
+        return Value(makeNative("codepoints", 0, [str](const std::vector<Value>&) -> Value {
+            auto arr = gcNew<PraiaArray>();
+#ifdef HAVE_UTF8PROC
+            for (int32_t cp : utf8_codepoints(str))
+                arr->elements.push_back(Value(static_cast<int64_t>(cp)));
+#else
+            for (unsigned char c : str)
+                arr->elements.push_back(Value(static_cast<int64_t>(c)));
+#endif
+            return Value(arr);
+        }));
+    }
+    if (name == "bytes") {
+        return Value(makeNative("bytes", 0, [str](const std::vector<Value>&) -> Value {
+            auto arr = gcNew<PraiaArray>();
+            for (unsigned char c : str)
+                arr->elements.push_back(Value(static_cast<int64_t>(c)));
+            return Value(arr);
         }));
     }
     throw RuntimeError("String has no method '" + name + "'", line);

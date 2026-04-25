@@ -4,6 +4,7 @@
 #include "interpreter.h"
 #include "lexer.h"
 #include "parser.h"
+#include "unicode.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -481,12 +482,21 @@ void Interpreter::execute(const Stmt* stmt) {
             } catch (const BreakSignal&) {}
         } else if (iterable.isString()) {
             try {
+#ifdef HAVE_UTF8PROC
+                for (auto& g : utf8_graphemes(iterable.asString())) {
+                    auto iterEnv = gcNew<Environment>(env);
+                    defineLoopVar(iterEnv, Value(g));
+                    try { executeBlock(bodyBlock, iterEnv); }
+                    catch (const ContinueSignal&) {}
+                }
+#else
                 for (size_t i = 0; i < iterable.asString().size(); i++) {
                     auto iterEnv = gcNew<Environment>(env);
                     defineLoopVar(iterEnv, Value(std::string(1, iterable.asString()[i])));
                     try { executeBlock(bodyBlock, iterEnv); }
                     catch (const ContinueSignal&) {}
                 }
+#endif
             } catch (const BreakSignal&) {}
         } else if (iterable.isGenerator()) {
             auto gen = iterable.asGenerator();
@@ -1094,10 +1104,18 @@ Value Interpreter::evaluate(const Expr* expr) {
                 throw RuntimeError("String index must be a number", e->line);
             auto& str = obj.asString();
             int i = static_cast<int>(idx.asNumber());
+#ifdef HAVE_UTF8PROC
+            int len = static_cast<int>(utf8_grapheme_count(str));
+            if (i < 0) i += len;
+            if (i < 0 || i >= len)
+                throw RuntimeError("String index out of bounds", e->line);
+            return Value(utf8_grapheme_at(str, i));
+#else
             if (i < 0) i += static_cast<int>(str.size());
             if (i < 0 || i >= static_cast<int>(str.size()))
                 throw RuntimeError("String index out of bounds", e->line);
             return Value(std::string(1, str[i]));
+#endif
         }
         if (obj.isMap()) {
             if (!idx.isString())

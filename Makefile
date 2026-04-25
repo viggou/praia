@@ -47,6 +47,20 @@ else
   endif
 endif
 
+# Auto-detect utf8proc (Unicode grapheme/case support)
+HAVE_UTF8PROC := $(shell echo 'int main(){}' | $(CXX) -x c++ - -lutf8proc -o /dev/null 2>/dev/null && echo 1)
+ifeq ($(HAVE_UTF8PROC),1)
+  CXXFLAGS += -DHAVE_UTF8PROC
+  LDLIBS += -lutf8proc
+else
+  UTF8PROC_PREFIX := $(shell brew --prefix utf8proc 2>/dev/null)
+  ifneq ($(UTF8PROC_PREFIX),)
+    HAVE_UTF8PROC := 1
+    CXXFLAGS += -DHAVE_UTF8PROC -I$(UTF8PROC_PREFIX)/include
+    LDLIBS += -L$(UTF8PROC_PREFIX)/lib -lutf8proc
+  endif
+endif
+
 # Auto-detect -ldl for dlopen (Linux needs it, macOS has it in libSystem)
 HAVE_DL := $(shell echo 'int main(){}' | $(CXX) -x c++ - -ldl -o /dev/null 2>/dev/null && echo 1)
 ifeq ($(HAVE_DL),1)

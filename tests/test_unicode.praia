@@ -1,0 +1,161 @@
+use "testing"
+
+// ── Length ──
+
+testing.test("len counts grapheme clusters", lam{ in
+    testing.assertEqual(len("hello"), 5, nil)
+    testing.assertEqual(len(""), 0, nil)
+    testing.assertEqual(len("\u{1F600}"), 1, "single emoji")
+    testing.assertEqual(len("A\u{1F600}B"), 3, "emoji in middle")
+    testing.assertEqual(len("caf\u{E9}"), 4, "e-acute as single codepoint")
+})
+
+testing.test("len with complex emoji", lam{ in
+    // Family emoji (ZWJ sequence): man + ZWJ + woman + ZWJ + girl + ZWJ + boy
+    let family = "\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}\u{200D}\u{1F466}"
+    testing.assertEqual(len(family), 1, "family emoji = 1 grapheme")
+    // Flag emoji (regional indicators)
+    let flag = "\u{1F1FA}\u{1F1F8}"
+    testing.assertEqual(len(flag), 1, "flag emoji = 1 grapheme")
+})
+
+// ── Indexing ──
+
+testing.test("grapheme indexing", lam{ in
+    let s = "Hi\u{1F44B}"
+    testing.assertEqual(s[0], "H", nil)
+    testing.assertEqual(s[1], "i", nil)
+    testing.assertEqual(s[2], "\u{1F44B}", nil)
+    testing.assertEqual(s[-1], "\u{1F44B}", "negative index")
+})
+
+// ── Iteration ──
+
+testing.test("for-in iterates graphemes", lam{ in
+    let chars = []
+    for (c in "A\u{1F600}B") {
+        push(chars, c)
+    }
+    testing.assertEqual(len(chars), 3, nil)
+    testing.assertEqual(chars[0], "A", nil)
+    testing.assertEqual(chars[1], "\u{1F600}", nil)
+    testing.assertEqual(chars[2], "B", nil)
+})
+
+// ── Case conversion ──
+
+testing.test("unicode upper/lower", lam{ in
+    testing.assertEqual("caf\u{E9}".upper(), "CAF\u{C9}", nil)
+    testing.assertEqual("\u{DC}ber".lower(), "\u{FC}ber", "u-umlaut")
+    testing.assertEqual("\u{3B1}\u{3B2}\u{3B3}".upper(), "\u{391}\u{392}\u{393}", "Greek")
+})
+
+testing.test("unicode title", lam{ in
+    testing.assertEqual("hello world".title(), "Hello World", nil)
+    testing.assertEqual("caf\u{E9} latte".title(), "Caf\u{E9} Latte", nil)
+})
+
+testing.test("unicode capitalize", lam{ in
+    testing.assertEqual("\u{E9}cole".capitalize(), "\u{C9}cole", nil)
+    testing.assertEqual("HELLO".capitalize(), "Hello", nil)
+})
+
+testing.test("unicode capitalizeFirst", lam{ in
+    testing.assertEqual("\u{E9}cole".capitalizeFirst(), "\u{C9}cole", nil)
+    testing.assertEqual("hELLO".capitalizeFirst(), "HELLO", nil)
+})
+
+// ── Slice ──
+
+testing.test("grapheme slice", lam{ in
+    testing.assertEqual("caf\u{E9}!".slice(0, 4), "caf\u{E9}", nil)
+    testing.assertEqual("A\u{1F600}BC".slice(1, 3), "\u{1F600}B", nil)
+    testing.assertEqual("hello".slice(-2), "lo", "negative start")
+})
+
+// ── Split ──
+
+testing.test("split empty separator uses graphemes", lam{ in
+    let parts = "\u{1F600}\u{1F601}".split("")
+    testing.assertEqual(len(parts), 2, nil)
+    testing.assertEqual(parts[0], "\u{1F600}", nil)
+    testing.assertEqual(parts[1], "\u{1F601}", nil)
+})
+
+// ── indexOf / lastIndexOf ──
+
+testing.test("indexOf returns grapheme index", lam{ in
+    testing.assertEqual("A\u{1F600}BC".indexOf("B"), 2, nil)
+    testing.assertEqual("A\u{1F600}BC".indexOf("X"), -1, "not found")
+    testing.assertEqual("A\u{1F600}BC".lastIndexOf("C"), 3, nil)
+})
+
+// ── charCode / fromCharCode ──
+
+testing.test("charCode returns codepoint", lam{ in
+    testing.assertEqual("A".charCode(), 65, nil)
+    testing.assertEqual("\u{1F600}".charCode(), 128512, nil)
+    testing.assertEqual("\u{E9}".charCode(), 233, nil)
+})
+
+testing.test("fromCharCode full unicode", lam{ in
+    testing.assertEqual(fromCharCode(65), "A", nil)
+    testing.assertEqual(fromCharCode(0x1F600), "\u{1F600}", nil)
+    testing.assertEqual(fromCharCode(233), "\u{E9}", nil)
+})
+
+// ── New methods ──
+
+testing.test("graphemes method", lam{ in
+    let g = "A\u{1F600}B".graphemes()
+    testing.assertEqual(len(g), 3, nil)
+    testing.assertEqual(g[0], "A", nil)
+    testing.assertEqual(g[1], "\u{1F600}", nil)
+    testing.assertEqual(g[2], "B", nil)
+})
+
+testing.test("codepoints method", lam{ in
+    let cp = "A\u{1F600}".codepoints()
+    testing.assertEqual(len(cp), 2, nil)
+    testing.assertEqual(cp[0], 65, nil)
+    testing.assertEqual(cp[1], 128512, nil)
+})
+
+testing.test("bytes method", lam{ in
+    let b = "A".bytes()
+    testing.assertEqual(b[0], 65, nil)
+    let b2 = "\u{E9}".bytes()
+    testing.assertEqual(len(b2), 2, "e-acute is 2 UTF-8 bytes")
+})
+
+// ── padStart / padEnd ──
+
+testing.test("pad counts graphemes", lam{ in
+    testing.assertEqual("hi".padStart(5), "   hi", nil)
+    testing.assertEqual("hi".padEnd(5), "hi   ", nil)
+    testing.assertEqual("\u{1F600}".padStart(3), "  \u{1F600}", nil)
+})
+
+// ── Unicode escape in interpolation ──
+
+testing.test("unicode escape in strings", lam{ in
+    let emoji = "\u{1F600}"
+    testing.assertEqual(emoji, "\u{1F600}", nil)
+    testing.assertEqual(len(emoji), 1, nil)
+    let msg = "hi \u{1F44B}"
+    testing.assertEqual(len(msg), 4, nil)
+})
+
+// ── Existing operations still work ──
+
+testing.test("contains/startsWith/endsWith with unicode", lam{ in
+    testing.assert("caf\u{E9}".contains("\u{E9}"), nil)
+    testing.assert("caf\u{E9}".startsWith("caf"), nil)
+    testing.assert("caf\u{E9}".endsWith("\u{E9}"), nil)
+})
+
+testing.test("replace with unicode", lam{ in
+    testing.assertEqual("caf\u{E9}".replace("\u{E9}", "e"), "cafe", nil)
+})
+
+testing.done()

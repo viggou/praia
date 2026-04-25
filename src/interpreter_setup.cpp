@@ -2,6 +2,7 @@
 #include "gc_heap.h"
 #include "grain_resolve.h"
 #include "interpreter.h"
+#include "unicode.h"
 #include "vm/vm.h"
 #include <algorithm>
 #include <chrono>
@@ -137,7 +138,11 @@ Interpreter::Interpreter() {
             if (args[0].isArray())
                 return Value(static_cast<int64_t>(args[0].asArray()->elements.size()));
             if (args[0].isString())
+#ifdef HAVE_UTF8PROC
+                return Value(static_cast<int64_t>(utf8_grapheme_count(args[0].asString())));
+#else
                 return Value(static_cast<int64_t>(args[0].asString().size()));
+#endif
             if (args[0].isMap())
                 return Value(static_cast<int64_t>(args[0].asMap()->entries.size()));
             throw RuntimeError("len() requires an array, string, or map", 0);
@@ -230,7 +235,16 @@ Interpreter::Interpreter() {
         [](const std::vector<Value>& args) -> Value {
             if (!args[0].isNumber())
                 throw RuntimeError("fromCharCode() requires a number", 0);
-            return Value(std::string(1, static_cast<char>(static_cast<int>(args[0].asNumber()))));
+            int32_t cp = static_cast<int32_t>(args[0].asNumber());
+#ifdef HAVE_UTF8PROC
+            if (cp < 0 || cp > 0x10FFFF)
+                throw RuntimeError("fromCharCode() codepoint out of range (0-0x10FFFF)", 0);
+            return Value(utf8_from_codepoint(cp));
+#else
+            if (cp < 0 || cp > 255)
+                throw RuntimeError("fromCharCode() value out of range (0-255)", 0);
+            return Value(std::string(1, static_cast<char>(cp)));
+#endif
         })));
 
 
