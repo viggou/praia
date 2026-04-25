@@ -108,6 +108,7 @@ struct Token {
     TokenType type;
     std::string lexeme;
     int line;
+    int column = 0;
 };
 
 inline std::string tokenTypeToString(TokenType type) {

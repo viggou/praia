@@ -14,6 +14,7 @@ using StmtPtr = std::unique_ptr<Stmt>;
 
 struct Expr {
     int line = 0;
+    int column = 0;
     virtual ~Expr() = default;
 };
 
@@ -149,6 +150,7 @@ struct SuperExpr : Expr {
 
 struct Stmt {
     int line = 0;
+    int column = 0;
     virtual ~Stmt() = default;
 };
 
@@ -242,6 +244,7 @@ struct ClassMethod {
     std::vector<ExprPtr> decorators;
     std::vector<StmtPtr> body;
     int line = 0;
+    int column = 0;
     bool isGenerator = false;
     bool isStatic = false;
 };

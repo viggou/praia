@@ -403,12 +403,12 @@ bool VM::callValue(Value callee, int argCount, int line) {
     return false;
 }
 
-void VM::runtimeError(const std::string& msg, int line) {
+void VM::runtimeError(const std::string& msg, int line, int column) {
     lastError_ = msg;
     // In re-entrant calls (depth > 1), suppress output — the error
     // will propagate to the outer scope which will print or catch it.
     if (!suppressErrors_ && executeDepth_ <= 1) {
-        std::cerr << "[line " << line << "] Runtime error: " << msg << std::endl;
+        std::cerr << formatLocation(line, column) << " Runtime error: " << msg << std::endl;
         std::cerr << formatStackTrace();
     }
 }
@@ -438,8 +438,10 @@ std::string VM::formatStackTrace() const {
     for (int i = frameCount - 1; i >= 0; i--) {
         auto& frame = frames[i];
         int offset = static_cast<int>(frame.ip - frame.chunk().code.data()) - 1;
-        int line = frame.chunk().getLine(offset > 0 ? offset : 0);
-        trace += "  at " + frame.name() + "() line " + std::to_string(line) + "\n";
+        int safeOffset = offset > 0 ? offset : 0;
+        int line = frame.chunk().getLine(safeOffset);
+        int col = frame.chunk().getColumn(safeOffset);
+        trace += "  at " + frame.name() + "() " + formatLocation(line, col) + "\n";
     }
     return trace;
 }
@@ -447,71 +449,12 @@ std::string VM::formatStackTrace() const {
 // ── Module loading ──────────────────────────────────────────
 
 std::string VM::resolveGrainPath(const std::string& path, int line) {
-    // Same logic as tree-walker (interpreter.cpp)
-    if (path.rfind("./", 0) == 0 || path.rfind("../", 0) == 0) {
-        std::string base = currentFile.empty() ? fs::current_path().string()
-                                                : fs::path(currentFile).parent_path().string();
-        std::string resolved = (fs::path(base) / (path + ".praia")).string();
-        if (fs::exists(resolved)) return fs::canonical(resolved).string();
-        runtimeError("Grain not found: " + path, line);
+    try {
+        return ::resolveGrainPath(path, currentFile);
+    } catch (const std::runtime_error& e) {
+        runtimeError(e.what(), line);
         return "";
     }
-
-    // ext_grains/ (local dependencies installed by sand)
-    if (!currentFile.empty()) {
-        fs::path dir = fs::path(currentFile).parent_path();
-        for (int i = 0; i < 10; i++) {
-            auto r = tryResolveGrain(dir / "ext_grains", path);
-            if (!r.empty()) return r;
-            if (!dir.has_parent_path() || dir == dir.parent_path()) break;
-            dir = dir.parent_path();
-        }
-    }
-    {
-        auto r = tryResolveGrain(fs::current_path() / "ext_grains", path);
-        if (!r.empty()) return r;
-    }
-
-    // grains/ directory (project-level, bundled grains)
-    if (!currentFile.empty()) {
-        fs::path dir = fs::path(currentFile).parent_path();
-        for (int i = 0; i < 10; i++) {
-            auto r = tryResolveGrain(dir / "grains", path);
-            if (!r.empty()) return r;
-            if (!dir.has_parent_path() || dir == dir.parent_path()) break;
-            dir = dir.parent_path();
-        }
-    }
-    {
-        auto r = tryResolveGrain(fs::current_path() / "grains", path);
-        if (!r.empty()) return r;
-    }
-
-    // ~/.praia/ext_grains/ (user-global)
-    {
-        const char* home = std::getenv("HOME");
-        if (home) {
-            auto r = tryResolveGrain(fs::path(home) / ".praia" / "ext_grains", path);
-            if (!r.empty()) return r;
-        }
-    }
-
-    // Bundled stdlib grains + system-global ext_grains
-    if (g_praiaLibDir) {
-        // Installed: LIBDIR/ext_grains/ (system-global)
-        auto r = tryResolveGrain(fs::path(g_praiaLibDir) / "ext_grains", path);
-        if (!r.empty()) return r;
-        // Installed: LIBDIR/grains/ (bundled stdlib)
-        r = tryResolveGrain(fs::path(g_praiaLibDir) / "grains", path);
-        if (!r.empty()) return r;
-    } else if (!g_praiaInstallDir.empty()) {
-        // Development layout: <bindir>/grains/
-        auto r = tryResolveGrain(fs::path(g_praiaInstallDir) / "grains", path);
-        if (!r.empty()) return r;
-    }
-
-    runtimeError("Grain not found: " + path, line);
-    return "";
 }
 
 Value VM::loadGrain(const std::string& importPath, int line) {
@@ -678,11 +621,13 @@ VM::Result VM::execute(int baseFrameCount_) {
     #define READ_U16() (FRAME.ip += 2, static_cast<uint16_t>((FRAME.ip[-2] << 8) | FRAME.ip[-1]))
     #define READ_CONSTANT() (FRAME.chunk().constants[READ_U16()])
     #define READ_STRING() (READ_CONSTANT().asString())
-    #define CURRENT_LINE() (FRAME.chunk().getLine(static_cast<int>(FRAME.ip - FRAME.chunk().code.data()) - 1))
+    #define CURRENT_OFFSET() (static_cast<int>(FRAME.ip - FRAME.chunk().code.data()) - 1)
+    #define CURRENT_LINE() (FRAME.chunk().getLine(CURRENT_OFFSET()))
+    #define CURRENT_COLUMN() (FRAME.chunk().getColumn(CURRENT_OFFSET()))
     #define RUNTIME_ERR(msg) { \
-        std::string _msg = (msg); int _line = CURRENT_LINE(); \
+        std::string _msg = (msg); int _line = CURRENT_LINE(); int _col = CURRENT_COLUMN(); \
         if (tryHandleError(Value(_msg))) continue; \
-        runtimeError(_msg, _line); return Result::RUNTIME_ERROR; \
+        runtimeError(_msg, _line, _col); return Result::RUNTIME_ERROR; \
     }
 
     try {
@@ -759,6 +704,10 @@ VM::Result VM::execute(int baseFrameCount_) {
             if (a.isInstance()) { auto [ok, r] = vmCallDunder(*this, a, "__div", {b}); if (ok) { push(r); break; } }
             if (a.isNumber() && b.isNumber()) {
                 if (b.asNumber() == 0) { RUNTIME_ERR("Division by zero"); }
+                if (a.isInt() && b.isInt()) {
+                    int64_t ai = a.asInt(), bi = b.asInt();
+                    if (ai % bi == 0) { push(Value(ai / bi)); break; }
+                }
                 push(Value(a.asNumber() / b.asNumber())); break;
             }
             RUNTIME_ERR("Operands of '/' must be numbers");
@@ -1565,8 +1514,8 @@ VM::Result VM::execute(int baseFrameCount_) {
             // Uncaught in this execute scope
             lastError_ = error.toString();
             if (!suppressErrors_ && executeDepth_ <= 1) {
-                int line = CURRENT_LINE();
-                std::cerr << "[line " << line << "] Uncaught error: " << error.toString() << std::endl;
+                std::cerr << formatLocation(CURRENT_LINE(), CURRENT_COLUMN())
+                          << " Uncaught error: " << error.toString() << std::endl;
                 std::cerr << formatStackTrace();
             }
             return Result::RUNTIME_ERROR;

@@ -1,7 +1,9 @@
 #pragma once
 
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <stdexcept>
 #include <string>
 
 namespace fs = std::filesystem;
@@ -80,4 +82,72 @@ inline std::string tryResolveGrain(const fs::path& base, const std::string& name
     // Directory grain
     auto grainDir = base / name;
     return resolveGrainDir(grainDir, base);
+}
+
+// Resolve a grain import path to an absolute file path.
+// Searches (in order): relative paths, ext_grains/, grains/,
+// ~/.praia/ext_grains/, LIBDIR/ext_grains/, LIBDIR/grains/.
+// Throws std::runtime_error if the grain cannot be found.
+inline std::string resolveGrainPath(const std::string& importPath,
+                                     const std::string& currentFile) {
+    // 1. Relative path (starts with ./ or ../)
+    if (importPath.rfind("./", 0) == 0 || importPath.rfind("../", 0) == 0) {
+        std::string base = currentFile.empty() ? fs::current_path().string()
+                                                : fs::path(currentFile).parent_path().string();
+        std::string resolved = (fs::path(base) / (importPath + ".praia")).string();
+        if (fs::exists(resolved)) return fs::canonical(resolved).string();
+        throw std::runtime_error("Grain not found: " + importPath + " (looked in " + resolved + ")");
+    }
+
+    // 2. ext_grains/ (local dependencies installed by sand)
+    if (!currentFile.empty()) {
+        fs::path dir = fs::path(currentFile).parent_path();
+        for (int i = 0; i < 10; i++) {
+            auto r = tryResolveGrain(dir / "ext_grains", importPath);
+            if (!r.empty()) return r;
+            if (!dir.has_parent_path() || dir == dir.parent_path()) break;
+            dir = dir.parent_path();
+        }
+    }
+    {
+        auto r = tryResolveGrain(fs::current_path() / "ext_grains", importPath);
+        if (!r.empty()) return r;
+    }
+
+    // 3. grains/ directory (project-level, bundled grains)
+    if (!currentFile.empty()) {
+        fs::path dir = fs::path(currentFile).parent_path();
+        for (int i = 0; i < 10; i++) {
+            auto r = tryResolveGrain(dir / "grains", importPath);
+            if (!r.empty()) return r;
+            if (!dir.has_parent_path() || dir == dir.parent_path()) break;
+            dir = dir.parent_path();
+        }
+    }
+    {
+        auto r = tryResolveGrain(fs::current_path() / "grains", importPath);
+        if (!r.empty()) return r;
+    }
+
+    // 4. ~/.praia/ext_grains/ (user-global)
+    {
+        const char* home = std::getenv("HOME");
+        if (home) {
+            auto r = tryResolveGrain(fs::path(home) / ".praia" / "ext_grains", importPath);
+            if (!r.empty()) return r;
+        }
+    }
+
+    // 5. Bundled stdlib grains + system-global ext_grains
+    if (g_praiaLibDir) {
+        auto r = tryResolveGrain(fs::path(g_praiaLibDir) / "ext_grains", importPath);
+        if (!r.empty()) return r;
+        r = tryResolveGrain(fs::path(g_praiaLibDir) / "grains", importPath);
+        if (!r.empty()) return r;
+    } else if (!g_praiaInstallDir.empty()) {
+        auto r = tryResolveGrain(fs::path(g_praiaInstallDir) / "grains", importPath);
+        if (!r.empty()) return r;
+    }
+
+    throw std::runtime_error("Grain not found: " + importPath);
 }

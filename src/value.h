@@ -24,9 +24,16 @@ class Interpreter;
 // Runtime error with line info
 struct RuntimeError : std::runtime_error {
     int line;
-    RuntimeError(const std::string& msg, int line)
-        : std::runtime_error(msg), line(line) {}
+    int column;
+    RuntimeError(const std::string& msg, int line, int column = 0)
+        : std::runtime_error(msg), line(line), column(column) {}
 };
+
+inline std::string formatLocation(int line, int column = 0) {
+    if (column > 0)
+        return "[line " + std::to_string(line) + ":col " + std::to_string(column) + "]";
+    return "[line " + std::to_string(line) + "]";
+}
 
 // The universal Praia value type
 struct Value {

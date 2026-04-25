@@ -13,7 +13,13 @@ testing.test("large integer arithmetic", lam{ in
     testing.assertEqual(big - 1, 999999999999999999, nil)
 })
 
-testing.test("integer division produces float", lam{ in
+testing.test("integer division", lam{ in
+    // Exact division returns int
+    testing.assertEqual(10 / 2, 5, nil)
+    testing.assertEqual(type(10 / 2), "int", nil)
+    testing.assertEqual(10 / 5, 2, nil)
+    testing.assertEqual(-6 / 3, -2, nil)
+    // Inexact division returns float
     testing.assertEqual(7 / 2, 3.5, nil)
     testing.assertEqual(type(7 / 2), "float", nil)
 })

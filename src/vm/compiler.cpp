@@ -6,24 +6,24 @@
 
 Chunk& Compiler::currentChunk() { return current->function->chunk; }
 
-void Compiler::emit(OpCode op, int line) { currentChunk().write(op, line); }
-void Compiler::emit(uint8_t byte, int line) { currentChunk().write(byte, line); }
-void Compiler::emitU16(uint16_t val, int line) { currentChunk().writeU16(val, line); }
+void Compiler::emit(OpCode op, int line, int column) { currentChunk().write(op, line, column); }
+void Compiler::emit(uint8_t byte, int line, int column) { currentChunk().write(byte, line, column); }
+void Compiler::emitU16(uint16_t val, int line, int column) { currentChunk().writeU16(val, line, column); }
 
-void Compiler::emitConstant(Value value, int line) {
+void Compiler::emitConstant(Value value, int line, int column) {
     uint16_t idx = currentChunk().addConstant(std::move(value));
-    emit(OpCode::OP_CONSTANT, line);
-    emitU16(idx, line);
+    emit(OpCode::OP_CONSTANT, line, column);
+    emitU16(idx, line, column);
 }
 
 uint16_t Compiler::identifierConstant(const std::string& name) {
     return currentChunk().addConstant(Value(name));
 }
 
-int Compiler::emitJump(OpCode op, int line) {
-    emit(op, line);
-    emit(0xFF, line); // placeholder
-    emit(0xFF, line);
+int Compiler::emitJump(OpCode op, int line, int column) {
+    emit(op, line, column);
+    emit(0xFF, line, column); // placeholder
+    emit(0xFF, line, column);
     return currentChunk().size() - 2;
 }
 
@@ -32,10 +32,10 @@ void Compiler::patchJump(int offset) {
     currentChunk().patchU16(offset, static_cast<uint16_t>(jump));
 }
 
-void Compiler::emitLoop(int loopStart, int line) {
-    emit(OpCode::OP_JUMP_BACK, line);
+void Compiler::emitLoop(int loopStart, int line, int column) {
+    emit(OpCode::OP_JUMP_BACK, line, column);
     int offset = currentChunk().size() - loopStart + 2;
-    emitU16(static_cast<uint16_t>(offset), line);
+    emitU16(static_cast<uint16_t>(offset), line, column);
 }
 
 void Compiler::error(const std::string& msg, int line) {
@@ -149,7 +149,7 @@ void Compiler::compileStmt(const Stmt* stmt) {
 
 void Compiler::compileExprStmt(const ExprStmt* stmt) {
     compileExpr(stmt->expr.get());
-    emit(OpCode::OP_POP, stmt->line);
+    emit(OpCode::OP_POP, stmt->line, stmt->column);
 }
 
 void Compiler::compileLetStmt(const LetStmt* stmt) {
@@ -167,24 +167,24 @@ void Compiler::compileLetStmt(const LetStmt* stmt) {
                 auto& p = stmt->pattern[i];
                 if (p.isRest) {
                     // rest = __arraySlice(arr, i)
-                    emit(OpCode::OP_GET_GLOBAL, stmt->line);
-                    emitU16(identifierConstant("__arraySlice"), stmt->line);
-                    emit(OpCode::OP_GET_LOCAL, stmt->line);
-                    emitU16(static_cast<uint16_t>(arrSlot), stmt->line);
-                    emitConstant(Value(static_cast<int64_t>(i)), stmt->line);
-                    emit(OpCode::OP_CALL, stmt->line);
-                    emit(2, stmt->line);
+                    emit(OpCode::OP_GET_GLOBAL, stmt->line, stmt->column);
+                    emitU16(identifierConstant("__arraySlice"), stmt->line, stmt->column);
+                    emit(OpCode::OP_GET_LOCAL, stmt->line, stmt->column);
+                    emitU16(static_cast<uint16_t>(arrSlot), stmt->line, stmt->column);
+                    emitConstant(Value(static_cast<int64_t>(i)), stmt->line, stmt->column);
+                    emit(OpCode::OP_CALL, stmt->line, stmt->column);
+                    emit(2, stmt->line, stmt->column);
                 } else {
-                    emit(OpCode::OP_GET_LOCAL, stmt->line);
-                    emitU16(static_cast<uint16_t>(arrSlot), stmt->line);
-                    emitConstant(Value(static_cast<int64_t>(i)), stmt->line);
-                    emit(OpCode::OP_INDEX_GET, stmt->line);
+                    emit(OpCode::OP_GET_LOCAL, stmt->line, stmt->column);
+                    emitU16(static_cast<uint16_t>(arrSlot), stmt->line, stmt->column);
+                    emitConstant(Value(static_cast<int64_t>(i)), stmt->line, stmt->column);
+                    emit(OpCode::OP_INDEX_GET, stmt->line, stmt->column);
                 }
                 if (current->scopeDepth > 0) {
                     addLocal(p.name);
                 } else {
-                    emit(OpCode::OP_DEFINE_GLOBAL, stmt->line);
-                    emitU16(identifierConstant(p.name), stmt->line);
+                    emit(OpCode::OP_DEFINE_GLOBAL, stmt->line, stmt->column);
+                    emitU16(identifierConstant(p.name), stmt->line, stmt->column);
                 }
             }
             return;
@@ -205,29 +205,29 @@ void Compiler::compileLetStmt(const LetStmt* stmt) {
             for (auto& p : stmt->pattern) {
                 if (p.isRest) {
                     // rest = __mapRest(map, [extracted_keys...])
-                    emit(OpCode::OP_GET_GLOBAL, stmt->line);
-                    emitU16(identifierConstant("__mapRest"), stmt->line);
-                    emit(OpCode::OP_GET_LOCAL, stmt->line);
-                    emitU16(static_cast<uint16_t>(mapSlot), stmt->line);
+                    emit(OpCode::OP_GET_GLOBAL, stmt->line, stmt->column);
+                    emitU16(identifierConstant("__mapRest"), stmt->line, stmt->column);
+                    emit(OpCode::OP_GET_LOCAL, stmt->line, stmt->column);
+                    emitU16(static_cast<uint16_t>(mapSlot), stmt->line, stmt->column);
                     // Build array of extracted key names
                     for (auto& k : extractedKeys)
-                        emitConstant(Value(k), stmt->line);
-                    emit(OpCode::OP_BUILD_ARRAY, stmt->line);
-                    emitU16(static_cast<uint16_t>(extractedKeys.size()), stmt->line);
-                    emit(OpCode::OP_CALL, stmt->line);
-                    emit(2, stmt->line);
+                        emitConstant(Value(k), stmt->line, stmt->column);
+                    emit(OpCode::OP_BUILD_ARRAY, stmt->line, stmt->column);
+                    emitU16(static_cast<uint16_t>(extractedKeys.size()), stmt->line, stmt->column);
+                    emit(OpCode::OP_CALL, stmt->line, stmt->column);
+                    emit(2, stmt->line, stmt->column);
                 } else {
-                    emit(OpCode::OP_GET_LOCAL, stmt->line);
-                    emitU16(static_cast<uint16_t>(mapSlot), stmt->line);
+                    emit(OpCode::OP_GET_LOCAL, stmt->line, stmt->column);
+                    emitU16(static_cast<uint16_t>(mapSlot), stmt->line, stmt->column);
                     std::string key = p.key.empty() ? p.name : p.key;
-                    emitConstant(Value(key), stmt->line);
-                    emit(OpCode::OP_INDEX_GET, stmt->line);
+                    emitConstant(Value(key), stmt->line, stmt->column);
+                    emit(OpCode::OP_INDEX_GET, stmt->line, stmt->column);
                 }
                 if (current->scopeDepth > 0) {
                     addLocal(p.name);
                 } else {
-                    emit(OpCode::OP_DEFINE_GLOBAL, stmt->line);
-                    emitU16(identifierConstant(p.name), stmt->line);
+                    emit(OpCode::OP_DEFINE_GLOBAL, stmt->line, stmt->column);
+                    emitU16(identifierConstant(p.name), stmt->line, stmt->column);
                 }
             }
             return;
@@ -238,15 +238,15 @@ void Compiler::compileLetStmt(const LetStmt* stmt) {
     if (stmt->initializer) {
         compileExpr(stmt->initializer.get());
     } else {
-        emit(OpCode::OP_NIL, stmt->line);
+        emit(OpCode::OP_NIL, stmt->line, stmt->column);
     }
 
     if (current->scopeDepth > 0) {
         addLocal(stmt->name);
     } else {
         uint16_t nameIdx = identifierConstant(stmt->name);
-        emit(OpCode::OP_DEFINE_GLOBAL, stmt->line);
-        emitU16(nameIdx, stmt->line);
+        emit(OpCode::OP_DEFINE_GLOBAL, stmt->line, stmt->column);
+        emitU16(nameIdx, stmt->line, stmt->column);
     }
 }
 
@@ -263,11 +263,11 @@ void Compiler::compileBlockStmt(const BlockStmt* stmt) {
 void Compiler::compileIfStmt(const IfStmt* stmt) {
     // Condition
     compileExpr(stmt->condition.get());
-    int thenJump = emitJump(OpCode::OP_POP_JUMP_IF_FALSE, stmt->line);
+    int thenJump = emitJump(OpCode::OP_POP_JUMP_IF_FALSE, stmt->line, stmt->column);
 
     // Then branch
     compileStmt(stmt->thenBranch.get());
-    int elseJump = emitJump(OpCode::OP_JUMP, stmt->line);
+    int elseJump = emitJump(OpCode::OP_JUMP, stmt->line, stmt->column);
 
     patchJump(thenJump);
 
@@ -275,9 +275,9 @@ void Compiler::compileIfStmt(const IfStmt* stmt) {
     std::vector<int> elifEndJumps;
     for (auto& elif : stmt->elifBranches) {
         compileExpr(elif.condition.get());
-        int elifJump = emitJump(OpCode::OP_POP_JUMP_IF_FALSE, stmt->line);
+        int elifJump = emitJump(OpCode::OP_POP_JUMP_IF_FALSE, stmt->line, stmt->column);
         compileStmt(elif.body.get());
-        elifEndJumps.push_back(emitJump(OpCode::OP_JUMP, stmt->line));
+        elifEndJumps.push_back(emitJump(OpCode::OP_JUMP, stmt->line, stmt->column));
         patchJump(elifJump);
     }
 
@@ -300,28 +300,28 @@ void Compiler::compileMatchStmt(const MatchStmt* stmt) {
     for (auto& c : stmt->cases) {
         if (!c.pattern) {
             // Default case — pop subject, execute body
-            emit(OpCode::OP_POP, stmt->line);
+            emit(OpCode::OP_POP, stmt->line, stmt->column);
             compileStmt(c.body.get());
             hasDefault = true;
             break;
         }
         // Duplicate subject for comparison
-        emit(OpCode::OP_DUP, stmt->line);
+        emit(OpCode::OP_DUP, stmt->line, stmt->column);
         compileExpr(c.pattern.get());
-        emit(OpCode::OP_EQUAL, stmt->line);
-        int skipJump = emitJump(OpCode::OP_POP_JUMP_IF_FALSE, stmt->line);
+        emit(OpCode::OP_EQUAL, stmt->line, stmt->column);
+        int skipJump = emitJump(OpCode::OP_POP_JUMP_IF_FALSE, stmt->line, stmt->column);
 
         // Match — pop subject, execute body, jump to end
-        emit(OpCode::OP_POP, stmt->line);
+        emit(OpCode::OP_POP, stmt->line, stmt->column);
         compileStmt(c.body.get());
-        endJumps.push_back(emitJump(OpCode::OP_JUMP, stmt->line));
+        endJumps.push_back(emitJump(OpCode::OP_JUMP, stmt->line, stmt->column));
 
         patchJump(skipJump);
     }
 
     // If no case matched and no default, pop the subject
     if (!hasDefault) {
-        emit(OpCode::OP_POP, stmt->line);
+        emit(OpCode::OP_POP, stmt->line, stmt->column);
     }
 
     for (int j : endJumps) patchJump(j);
@@ -333,7 +333,7 @@ void Compiler::compileWhileStmt(const WhileStmt* stmt) {
     current->loops.push_back({loopStart, loopStart, {}, {}, current->scopeDepth, current->tryDepth});
 
     compileExpr(stmt->condition.get());
-    int exitJump = emitJump(OpCode::OP_POP_JUMP_IF_FALSE, stmt->line);
+    int exitJump = emitJump(OpCode::OP_POP_JUMP_IF_FALSE, stmt->line, stmt->column);
 
     compileStmt(stmt->body.get());
 
@@ -341,7 +341,7 @@ void Compiler::compileWhileStmt(const WhileStmt* stmt) {
     auto& loop = current->loops.back();
     for (int j : loop.continueJumps) patchJump(j);
 
-    emitLoop(loopStart, stmt->line);
+    emitLoop(loopStart, stmt->line, stmt->column);
 
     patchJump(exitJump);
 
@@ -365,12 +365,12 @@ void Compiler::compileForStmt(const ForStmt* stmt) {
     // Condition: i < end
     int iSlot = resolveLocal(current, stmt->varName);
     int endSlot = resolveLocal(current, "__end__");
-    emit(OpCode::OP_GET_LOCAL, stmt->line);
-    emitU16(static_cast<uint16_t>(iSlot), stmt->line);
-    emit(OpCode::OP_GET_LOCAL, stmt->line);
-    emitU16(static_cast<uint16_t>(endSlot), stmt->line);
-    emit(OpCode::OP_LESS, stmt->line);
-    int exitJump = emitJump(OpCode::OP_POP_JUMP_IF_FALSE, stmt->line);
+    emit(OpCode::OP_GET_LOCAL, stmt->line, stmt->column);
+    emitU16(static_cast<uint16_t>(iSlot), stmt->line, stmt->column);
+    emit(OpCode::OP_GET_LOCAL, stmt->line, stmt->column);
+    emitU16(static_cast<uint16_t>(endSlot), stmt->line, stmt->column);
+    emit(OpCode::OP_LESS, stmt->line, stmt->column);
+    int exitJump = emitJump(OpCode::OP_POP_JUMP_IF_FALSE, stmt->line, stmt->column);
 
     // Body
     compileStmt(stmt->body.get());
@@ -381,15 +381,15 @@ void Compiler::compileForStmt(const ForStmt* stmt) {
     for (int j : current->loops.back().continueJumps) patchJump(j);
 
     // Increment: i = i + 1
-    emit(OpCode::OP_GET_LOCAL, stmt->line);
-    emitU16(static_cast<uint16_t>(iSlot), stmt->line);
-    emitConstant(Value(static_cast<int64_t>(1)), stmt->line);
-    emit(OpCode::OP_ADD, stmt->line);
-    emit(OpCode::OP_SET_LOCAL, stmt->line);
-    emitU16(static_cast<uint16_t>(iSlot), stmt->line);
-    emit(OpCode::OP_POP, stmt->line);
+    emit(OpCode::OP_GET_LOCAL, stmt->line, stmt->column);
+    emitU16(static_cast<uint16_t>(iSlot), stmt->line, stmt->column);
+    emitConstant(Value(static_cast<int64_t>(1)), stmt->line, stmt->column);
+    emit(OpCode::OP_ADD, stmt->line, stmt->column);
+    emit(OpCode::OP_SET_LOCAL, stmt->line, stmt->column);
+    emitU16(static_cast<uint16_t>(iSlot), stmt->line, stmt->column);
+    emit(OpCode::OP_POP, stmt->line, stmt->column);
 
-    emitLoop(loopStart, stmt->line);
+    emitLoop(loopStart, stmt->line, stmt->column);
     patchJump(exitJump);
 
     auto& loop = current->loops.back();
@@ -414,21 +414,21 @@ void Compiler::compileForInStmt(const ForInStmt* stmt) {
     // Normalize iterable via __iterEntries (arrays pass through,
     // maps become [{key,value},...], strings become char arrays,
     // generators pass through as-is)
-    emit(OpCode::OP_GET_GLOBAL, stmt->line);
-    emitU16(identifierConstant("__iterEntries"), stmt->line);
+    emit(OpCode::OP_GET_GLOBAL, stmt->line, stmt->column);
+    emitU16(identifierConstant("__iterEntries"), stmt->line, stmt->column);
     compileExpr(stmt->iterable.get());
-    emit(OpCode::OP_CALL, stmt->line);
-    emit(1, stmt->line);
+    emit(OpCode::OP_CALL, stmt->line, stmt->column);
+    emit(1, stmt->line, stmt->column);
     addLocal("__iter__");
     int iterSlot = resolveLocal(current, "__iter__");
 
     // Index counter (only meaningful for arrays, ignored for generators)
-    emitConstant(Value(static_cast<int64_t>(0)), stmt->line);
+    emitConstant(Value(static_cast<int64_t>(0)), stmt->line, stmt->column);
     addLocal("__idx__");
     int idxSlot = resolveLocal(current, "__idx__");
 
     // Placeholder for __result__ (reused each iteration)
-    emit(OpCode::OP_NIL, stmt->line);
+    emit(OpCode::OP_NIL, stmt->line, stmt->column);
     addLocal("__result__");
     int resultSlot = resolveLocal(current, "__result__");
 
@@ -436,42 +436,42 @@ void Compiler::compileForInStmt(const ForInStmt* stmt) {
     current->loops.push_back({loopStart, loopStart, {}, {}, current->scopeDepth, current->tryDepth});
 
     // Call __iterNext(__iter__, __idx__) — returns {value, done}
-    emit(OpCode::OP_GET_GLOBAL, stmt->line);
-    emitU16(identifierConstant("__iterNext"), stmt->line);
-    emit(OpCode::OP_GET_LOCAL, stmt->line);
-    emitU16(static_cast<uint16_t>(iterSlot), stmt->line);
-    emit(OpCode::OP_GET_LOCAL, stmt->line);
-    emitU16(static_cast<uint16_t>(idxSlot), stmt->line);
-    emit(OpCode::OP_CALL, stmt->line);
-    emit(2, stmt->line);
+    emit(OpCode::OP_GET_GLOBAL, stmt->line, stmt->column);
+    emitU16(identifierConstant("__iterNext"), stmt->line, stmt->column);
+    emit(OpCode::OP_GET_LOCAL, stmt->line, stmt->column);
+    emitU16(static_cast<uint16_t>(iterSlot), stmt->line, stmt->column);
+    emit(OpCode::OP_GET_LOCAL, stmt->line, stmt->column);
+    emitU16(static_cast<uint16_t>(idxSlot), stmt->line, stmt->column);
+    emit(OpCode::OP_CALL, stmt->line, stmt->column);
+    emit(2, stmt->line, stmt->column);
     // Store result in pre-allocated local
-    emit(OpCode::OP_SET_LOCAL, stmt->line);
-    emitU16(static_cast<uint16_t>(resultSlot), stmt->line);
-    emit(OpCode::OP_POP, stmt->line); // pop SET_LOCAL's leftover
+    emit(OpCode::OP_SET_LOCAL, stmt->line, stmt->column);
+    emitU16(static_cast<uint16_t>(resultSlot), stmt->line, stmt->column);
+    emit(OpCode::OP_POP, stmt->line, stmt->column); // pop SET_LOCAL's leftover
 
     // Check __result__.done — exit loop if true
-    emit(OpCode::OP_GET_LOCAL, stmt->line);
-    emitU16(static_cast<uint16_t>(resultSlot), stmt->line);
-    emitConstant(Value("done"), stmt->line);
-    emit(OpCode::OP_INDEX_GET, stmt->line);
-    emit(OpCode::OP_NOT, stmt->line);
-    int exitJump = emitJump(OpCode::OP_POP_JUMP_IF_FALSE, stmt->line);
+    emit(OpCode::OP_GET_LOCAL, stmt->line, stmt->column);
+    emitU16(static_cast<uint16_t>(resultSlot), stmt->line, stmt->column);
+    emitConstant(Value("done"), stmt->line, stmt->column);
+    emit(OpCode::OP_INDEX_GET, stmt->line, stmt->column);
+    emit(OpCode::OP_NOT, stmt->line, stmt->column);
+    int exitJump = emitJump(OpCode::OP_POP_JUMP_IF_FALSE, stmt->line, stmt->column);
 
     // Loop var = __result__.value
     beginScope();
-    emit(OpCode::OP_GET_LOCAL, stmt->line);
-    emitU16(static_cast<uint16_t>(resultSlot), stmt->line);
-    emitConstant(Value("value"), stmt->line);
-    emit(OpCode::OP_INDEX_GET, stmt->line);
+    emit(OpCode::OP_GET_LOCAL, stmt->line, stmt->column);
+    emitU16(static_cast<uint16_t>(resultSlot), stmt->line, stmt->column);
+    emitConstant(Value("value"), stmt->line, stmt->column);
+    emit(OpCode::OP_INDEX_GET, stmt->line, stmt->column);
 
     if (!stmt->destructureKeys.empty()) {
         addLocal("__entry__");
         int entrySlot = resolveLocal(current, "__entry__");
         for (auto& dk : stmt->destructureKeys) {
-            emit(OpCode::OP_GET_LOCAL, stmt->line);
-            emitU16(static_cast<uint16_t>(entrySlot), stmt->line);
-            emitConstant(Value(dk), stmt->line);
-            emit(OpCode::OP_INDEX_GET, stmt->line);
+            emit(OpCode::OP_GET_LOCAL, stmt->line, stmt->column);
+            emitU16(static_cast<uint16_t>(entrySlot), stmt->line, stmt->column);
+            emitConstant(Value(dk), stmt->line, stmt->column);
+            emit(OpCode::OP_INDEX_GET, stmt->line, stmt->column);
             addLocal(dk);
         }
     } else {
@@ -488,15 +488,15 @@ void Compiler::compileForInStmt(const ForInStmt* stmt) {
     for (int j : current->loops.back().continueJumps) patchJump(j);
 
     // Increment: __idx__ += 1
-    emit(OpCode::OP_GET_LOCAL, stmt->line);
-    emitU16(static_cast<uint16_t>(idxSlot), stmt->line);
-    emitConstant(Value(static_cast<int64_t>(1)), stmt->line);
-    emit(OpCode::OP_ADD, stmt->line);
-    emit(OpCode::OP_SET_LOCAL, stmt->line);
-    emitU16(static_cast<uint16_t>(idxSlot), stmt->line);
-    emit(OpCode::OP_POP, stmt->line);
+    emit(OpCode::OP_GET_LOCAL, stmt->line, stmt->column);
+    emitU16(static_cast<uint16_t>(idxSlot), stmt->line, stmt->column);
+    emitConstant(Value(static_cast<int64_t>(1)), stmt->line, stmt->column);
+    emit(OpCode::OP_ADD, stmt->line, stmt->column);
+    emit(OpCode::OP_SET_LOCAL, stmt->line, stmt->column);
+    emitU16(static_cast<uint16_t>(idxSlot), stmt->line, stmt->column);
+    emit(OpCode::OP_POP, stmt->line, stmt->column);
 
-    emitLoop(loopStart, stmt->line);
+    emitLoop(loopStart, stmt->line, stmt->column);
 
     // Exit jump from done check lands here
     patchJump(exitJump);
@@ -541,16 +541,16 @@ void Compiler::compileFuncStmt(const FuncStmt* stmt) {
     for (size_t i = 0; i < stmt->defaults.size(); i++) {
         if (stmt->defaults[i]) {
             int slot = static_cast<int>(i) + 1; // +1 for slot 0 (function itself)
-            emit(OpCode::OP_GET_LOCAL, stmt->line);
-            emitU16(static_cast<uint16_t>(slot), stmt->line);
-            emit(OpCode::OP_NIL, stmt->line);
-            emit(OpCode::OP_EQUAL, stmt->line);
-            int skipJump = emitJump(OpCode::OP_POP_JUMP_IF_FALSE, stmt->line);
+            emit(OpCode::OP_GET_LOCAL, stmt->line, stmt->column);
+            emitU16(static_cast<uint16_t>(slot), stmt->line, stmt->column);
+            emit(OpCode::OP_NIL, stmt->line, stmt->column);
+            emit(OpCode::OP_EQUAL, stmt->line, stmt->column);
+            int skipJump = emitJump(OpCode::OP_POP_JUMP_IF_FALSE, stmt->line, stmt->column);
             // Replace with default value
             compileExpr(stmt->defaults[i].get());
-            emit(OpCode::OP_SET_LOCAL, stmt->line);
-            emitU16(static_cast<uint16_t>(slot), stmt->line);
-            emit(OpCode::OP_POP, stmt->line);
+            emit(OpCode::OP_SET_LOCAL, stmt->line, stmt->column);
+            emitU16(static_cast<uint16_t>(slot), stmt->line, stmt->column);
+            emit(OpCode::OP_POP, stmt->line, stmt->column);
             patchJump(skipJump);
         }
     }
@@ -562,8 +562,8 @@ void Compiler::compileFuncStmt(const FuncStmt* stmt) {
     }
 
     // Implicit nil return
-    emit(OpCode::OP_NIL, stmt->line);
-    emit(OpCode::OP_RETURN, stmt->line);
+    emit(OpCode::OP_NIL, stmt->line, stmt->column);
+    emit(OpCode::OP_RETURN, stmt->line, stmt->column);
 
     current = funcState.enclosing;
     fn->upvalueCount = static_cast<int>(funcState.upvalues.size());
@@ -578,13 +578,13 @@ void Compiler::compileFuncStmt(const FuncStmt* stmt) {
         Value(std::static_pointer_cast<Callable>(wrapper)));
 
     // Emit OP_CLOSURE
-    emit(OpCode::OP_CLOSURE, stmt->line);
-    emitU16(fnIdx, stmt->line);
+    emit(OpCode::OP_CLOSURE, stmt->line, stmt->column);
+    emitU16(fnIdx, stmt->line, stmt->column);
 
     // Emit upvalue descriptors
     for (auto& uv : funcState.upvalues) {
-        emit(uv.isLocal ? 1 : 0, stmt->line);
-        emitU16(uv.index, stmt->line);
+        emit(uv.isLocal ? 1 : 0, stmt->line, stmt->column);
+        emitU16(uv.index, stmt->line, stmt->column);
     }
 
     // Define in current scope
@@ -592,8 +592,8 @@ void Compiler::compileFuncStmt(const FuncStmt* stmt) {
         addLocal(stmt->name);
     } else {
         uint16_t nameIdx = identifierConstant(stmt->name);
-        emit(OpCode::OP_DEFINE_GLOBAL, stmt->line);
-        emitU16(nameIdx, stmt->line);
+        emit(OpCode::OP_DEFINE_GLOBAL, stmt->line, stmt->column);
+        emitU16(nameIdx, stmt->line, stmt->column);
     }
 }
 
@@ -601,17 +601,17 @@ void Compiler::compileReturnStmt(const ReturnStmt* stmt) {
     if (stmt->value) {
         compileExpr(stmt->value.get());
     } else {
-        emit(OpCode::OP_NIL, stmt->line);
+        emit(OpCode::OP_NIL, stmt->line, stmt->column);
     }
     // Close any active try handlers before returning from this function
     for (int i = 0; i < current->tryDepth; i++) {
-        emit(OpCode::OP_TRY_END, stmt->line);
+        emit(OpCode::OP_TRY_END, stmt->line, stmt->column);
     }
     // Run any enclosing finally blocks (outermost last)
     for (auto* finallyBody : current->finallyStack) {
         compileStmt(finallyBody);
     }
-    emit(OpCode::OP_RETURN, stmt->line);
+    emit(OpCode::OP_RETURN, stmt->line, stmt->column);
 }
 
 void Compiler::compileBreakStmt(const BreakStmt* stmt) {
@@ -622,14 +622,14 @@ void Compiler::compileBreakStmt(const BreakStmt* stmt) {
     auto& loop = current->loops.back();
     // Close try handlers that are active inside this loop
     for (int i = loop.tryDepthAtLoop; i < current->tryDepth; i++) {
-        emit(OpCode::OP_TRY_END, stmt->line);
+        emit(OpCode::OP_TRY_END, stmt->line, stmt->column);
     }
     // Pop locals in the loop scope
     for (int i = static_cast<int>(current->locals.size()) - 1; i >= 0; i--) {
         if (current->locals[i].depth <= loop.scopeDepthAtLoop) break;
-        emit(OpCode::OP_POP, stmt->line);
+        emit(OpCode::OP_POP, stmt->line, stmt->column);
     }
-    loop.breakJumps.push_back(emitJump(OpCode::OP_JUMP, stmt->line));
+    loop.breakJumps.push_back(emitJump(OpCode::OP_JUMP, stmt->line, stmt->column));
 }
 
 void Compiler::compileContinueStmt(const ContinueStmt* stmt) {
@@ -640,29 +640,29 @@ void Compiler::compileContinueStmt(const ContinueStmt* stmt) {
     auto& loop = current->loops.back();
     // Close try handlers that are active inside this loop body
     for (int i = loop.tryDepthAtLoop; i < current->tryDepth; i++) {
-        emit(OpCode::OP_TRY_END, stmt->line);
+        emit(OpCode::OP_TRY_END, stmt->line, stmt->column);
     }
     // Pop locals inside the loop body
     for (int i = static_cast<int>(current->locals.size()) - 1; i >= 0; i--) {
         if (current->locals[i].depth <= loop.scopeDepthAtLoop) break;
-        emit(OpCode::OP_POP, stmt->line);
+        emit(OpCode::OP_POP, stmt->line, stmt->column);
     }
     // Jump forward to the increment section (will be patched later)
-    loop.continueJumps.push_back(emitJump(OpCode::OP_JUMP, stmt->line));
+    loop.continueJumps.push_back(emitJump(OpCode::OP_JUMP, stmt->line, stmt->column));
 }
 
 void Compiler::compileClassStmt(const ClassStmt* stmt) {
     uint16_t nameIdx = identifierConstant(stmt->name);
 
-    emit(OpCode::OP_CLASS, stmt->line);
-    emitU16(nameIdx, stmt->line);
+    emit(OpCode::OP_CLASS, stmt->line, stmt->column);
+    emitU16(nameIdx, stmt->line, stmt->column);
 
     // Define the class name immediately so methods can reference it
     if (current->scopeDepth > 0) {
         addLocal(stmt->name);
     } else {
-        emit(OpCode::OP_DEFINE_GLOBAL, stmt->line);
-        emitU16(identifierConstant(stmt->name), stmt->line);
+        emit(OpCode::OP_DEFINE_GLOBAL, stmt->line, stmt->column);
+        emitU16(identifierConstant(stmt->name), stmt->line, stmt->column);
     }
 
     // Inheritance
@@ -670,40 +670,40 @@ void Compiler::compileClassStmt(const ClassStmt* stmt) {
         // Push superclass (resolve as local first, then global)
         int superSlot = resolveLocal(current, stmt->superclass);
         if (superSlot != -1) {
-            emit(OpCode::OP_GET_LOCAL, stmt->line);
-            emitU16(static_cast<uint16_t>(superSlot), stmt->line);
+            emit(OpCode::OP_GET_LOCAL, stmt->line, stmt->column);
+            emitU16(static_cast<uint16_t>(superSlot), stmt->line, stmt->column);
         } else {
             int upval = resolveUpvalue(current, stmt->superclass);
             if (upval != -1) {
-                emit(OpCode::OP_GET_UPVALUE, stmt->line);
-                emitU16(static_cast<uint16_t>(upval), stmt->line);
+                emit(OpCode::OP_GET_UPVALUE, stmt->line, stmt->column);
+                emitU16(static_cast<uint16_t>(upval), stmt->line, stmt->column);
             } else {
-                emit(OpCode::OP_GET_GLOBAL, stmt->line);
-                emitU16(identifierConstant(stmt->superclass), stmt->line);
+                emit(OpCode::OP_GET_GLOBAL, stmt->line, stmt->column);
+                emitU16(identifierConstant(stmt->superclass), stmt->line, stmt->column);
             }
         }
 
         // Push the class again for INHERIT
         if (current->scopeDepth > 0) {
             int slot = resolveLocal(current, stmt->name);
-            emit(OpCode::OP_GET_LOCAL, stmt->line);
-            emitU16(static_cast<uint16_t>(slot), stmt->line);
+            emit(OpCode::OP_GET_LOCAL, stmt->line, stmt->column);
+            emitU16(static_cast<uint16_t>(slot), stmt->line, stmt->column);
         } else {
-            emit(OpCode::OP_GET_GLOBAL, stmt->line);
-            emitU16(identifierConstant(stmt->name), stmt->line);
+            emit(OpCode::OP_GET_GLOBAL, stmt->line, stmt->column);
+            emitU16(identifierConstant(stmt->name), stmt->line, stmt->column);
         }
 
-        emit(OpCode::OP_INHERIT, stmt->line);
+        emit(OpCode::OP_INHERIT, stmt->line, stmt->column);
     }
 
     // Push class onto stack for METHOD opcodes
     if (current->scopeDepth > 0) {
         int slot = resolveLocal(current, stmt->name);
-        emit(OpCode::OP_GET_LOCAL, stmt->line);
-        emitU16(static_cast<uint16_t>(slot), stmt->line);
+        emit(OpCode::OP_GET_LOCAL, stmt->line, stmt->column);
+        emitU16(static_cast<uint16_t>(slot), stmt->line, stmt->column);
     } else {
-        emit(OpCode::OP_GET_GLOBAL, stmt->line);
-        emitU16(identifierConstant(stmt->name), stmt->line);
+        emit(OpCode::OP_GET_GLOBAL, stmt->line, stmt->column);
+        emitU16(identifierConstant(stmt->name), stmt->line, stmt->column);
     }
 
     // Compile each method
@@ -810,14 +810,14 @@ void Compiler::compileClassStmt(const ClassStmt* stmt) {
     }
 
     // Pop the class from the stack
-    emit(OpCode::OP_POP, stmt->line);
+    emit(OpCode::OP_POP, stmt->line, stmt->column);
 }
 void Compiler::compileEnumStmt(const EnumStmt* stmt) {
     // Compile as a map: {Name1: 0, Name2: 1, ...}
     int64_t nextVal = 0;
     int count = 0;
     for (size_t i = 0; i < stmt->members.size(); i++) {
-        emitConstant(Value(stmt->members[i]), stmt->line); // key
+        emitConstant(Value(stmt->members[i]), stmt->line, stmt->column); // key
         if (stmt->values[i]) {
             // Custom value — compile the expression
             compileExpr(stmt->values[i].get());
@@ -829,24 +829,24 @@ void Compiler::compileEnumStmt(const EnumStmt* stmt) {
                 nextVal++; // best guess if not a constant
             }
         } else {
-            emitConstant(Value(nextVal), stmt->line);
+            emitConstant(Value(nextVal), stmt->line, stmt->column);
             nextVal++;
         }
         count++;
     }
-    emit(OpCode::OP_BUILD_MAP, stmt->line);
-    emitU16(static_cast<uint16_t>(count), stmt->line);
+    emit(OpCode::OP_BUILD_MAP, stmt->line, stmt->column);
+    emitU16(static_cast<uint16_t>(count), stmt->line, stmt->column);
 
     if (current->scopeDepth > 0) {
         addLocal(stmt->name);
     } else {
-        emit(OpCode::OP_DEFINE_GLOBAL, stmt->line);
-        emitU16(identifierConstant(stmt->name), stmt->line);
+        emit(OpCode::OP_DEFINE_GLOBAL, stmt->line, stmt->column);
+        emitU16(identifierConstant(stmt->name), stmt->line, stmt->column);
     }
 }
 void Compiler::compileThrowStmt(const ThrowStmt* stmt) {
     compileExpr(stmt->value.get());
-    emit(OpCode::OP_THROW, stmt->line);
+    emit(OpCode::OP_THROW, stmt->line, stmt->column);
 }
 
 void Compiler::compileTryCatchStmt(const TryCatchStmt* stmt) {
@@ -855,17 +855,17 @@ void Compiler::compileTryCatchStmt(const TryCatchStmt* stmt) {
         current->finallyStack.push_back(stmt->finallyBody.get());
 
         // Outer try to guarantee finally runs even if catch throws
-        int outerTry = emitJump(OpCode::OP_TRY_BEGIN, stmt->line);
+        int outerTry = emitJump(OpCode::OP_TRY_BEGIN, stmt->line, stmt->column);
         current->tryDepth++;
 
         // Inner try/catch
         {
-            int tryBegin = emitJump(OpCode::OP_TRY_BEGIN, stmt->line);
+            int tryBegin = emitJump(OpCode::OP_TRY_BEGIN, stmt->line, stmt->column);
             current->tryDepth++;
             compileStmt(stmt->tryBody.get());
             current->tryDepth--;
-            emit(OpCode::OP_TRY_END, stmt->line);
-            int endJump = emitJump(OpCode::OP_JUMP, stmt->line);
+            emit(OpCode::OP_TRY_END, stmt->line, stmt->column);
+            int endJump = emitJump(OpCode::OP_JUMP, stmt->line, stmt->column);
 
             patchJump(tryBegin);
             beginScope();
@@ -877,32 +877,32 @@ void Compiler::compileTryCatchStmt(const TryCatchStmt* stmt) {
         }
 
         current->tryDepth--;
-        emit(OpCode::OP_TRY_END, stmt->line);
+        emit(OpCode::OP_TRY_END, stmt->line, stmt->column);
 
         current->finallyStack.pop_back();
 
         // Finally after normal completion
         compileStmt(stmt->finallyBody.get());
-        int skipJump = emitJump(OpCode::OP_JUMP, stmt->line);
+        int skipJump = emitJump(OpCode::OP_JUMP, stmt->line, stmt->column);
 
         // Outer catch: run finally then rethrow
         patchJump(outerTry);
         beginScope();
         addLocal("__err__");
         compileStmt(stmt->finallyBody.get());
-        emit(OpCode::OP_GET_LOCAL, stmt->line);
-        emitU16(static_cast<uint16_t>(resolveLocal(current, "__err__")), stmt->line);
-        emit(OpCode::OP_THROW, stmt->line);
+        emit(OpCode::OP_GET_LOCAL, stmt->line, stmt->column);
+        emitU16(static_cast<uint16_t>(resolveLocal(current, "__err__")), stmt->line, stmt->column);
+        emit(OpCode::OP_THROW, stmt->line, stmt->column);
         endScope(stmt->line);
 
         patchJump(skipJump);
     } else {
-        int tryBegin = emitJump(OpCode::OP_TRY_BEGIN, stmt->line);
+        int tryBegin = emitJump(OpCode::OP_TRY_BEGIN, stmt->line, stmt->column);
         current->tryDepth++;
         compileStmt(stmt->tryBody.get());
         current->tryDepth--;
-        emit(OpCode::OP_TRY_END, stmt->line);
-        int endJump = emitJump(OpCode::OP_JUMP, stmt->line);
+        emit(OpCode::OP_TRY_END, stmt->line, stmt->column);
+        int endJump = emitJump(OpCode::OP_JUMP, stmt->line, stmt->column);
 
         patchJump(tryBegin);
         beginScope();
@@ -918,8 +918,8 @@ void Compiler::compileEnsureStmt(const EnsureStmt* stmt) {
     // ensure (condition) else { body }
     // Compiled as: if (!condition) { body }
     compileExpr(stmt->condition.get());
-    int elseJump = emitJump(OpCode::OP_POP_JUMP_IF_FALSE, stmt->line);
-    int endJump = emitJump(OpCode::OP_JUMP, stmt->line);
+    int elseJump = emitJump(OpCode::OP_POP_JUMP_IF_FALSE, stmt->line, stmt->column);
+    int endJump = emitJump(OpCode::OP_JUMP, stmt->line, stmt->column);
     patchJump(elseJump);
 
     compileStmt(stmt->elseBody.get());
@@ -931,16 +931,16 @@ void Compiler::compileUseStmt(const UseStmt* stmt) {
     // VM resolves, compiles, and executes the grain, pushes the exports map
     uint16_t pathIdx = identifierConstant(stmt->path);
     uint16_t aliasIdx = identifierConstant(stmt->alias);
-    emit(OpCode::OP_IMPORT, stmt->line);
-    emitU16(pathIdx, stmt->line);
-    emitU16(aliasIdx, stmt->line);
+    emit(OpCode::OP_IMPORT, stmt->line, stmt->column);
+    emitU16(pathIdx, stmt->line, stmt->column);
+    emitU16(aliasIdx, stmt->line, stmt->column);
 
     // The import pushes the exports map — define as a variable
     if (current->scopeDepth > 0) {
         addLocal(stmt->alias);
     } else {
-        emit(OpCode::OP_DEFINE_GLOBAL, stmt->line);
-        emitU16(identifierConstant(stmt->alias), stmt->line);
+        emit(OpCode::OP_DEFINE_GLOBAL, stmt->line, stmt->column);
+        emitU16(identifierConstant(stmt->alias), stmt->line, stmt->column);
     }
 }
 
@@ -948,20 +948,20 @@ void Compiler::compileExportStmt(const ExportStmt* stmt) {
     // Build a map from exported names, then signal export
     // Push each name as key and its value
     for (auto& name : stmt->names) {
-        emitConstant(Value(name), stmt->line); // key
+        emitConstant(Value(name), stmt->line, stmt->column); // key
 
         // Look up the name
         int slot = resolveLocal(current, name);
         if (slot != -1) {
-            emit(OpCode::OP_GET_LOCAL, stmt->line);
-            emitU16(static_cast<uint16_t>(slot), stmt->line);
+            emit(OpCode::OP_GET_LOCAL, stmt->line, stmt->column);
+            emitU16(static_cast<uint16_t>(slot), stmt->line, stmt->column);
         } else {
-            emit(OpCode::OP_GET_GLOBAL, stmt->line);
-            emitU16(identifierConstant(name), stmt->line);
+            emit(OpCode::OP_GET_GLOBAL, stmt->line, stmt->column);
+            emitU16(identifierConstant(name), stmt->line, stmt->column);
         }
     }
-    emit(OpCode::OP_BUILD_MAP, stmt->line);
-    emitU16(static_cast<uint16_t>(stmt->names.size()), stmt->line);
-    emit(OpCode::OP_EXPORT, stmt->line);
-    emit(static_cast<uint8_t>(0), stmt->line); // unused count byte
+    emit(OpCode::OP_BUILD_MAP, stmt->line, stmt->column);
+    emitU16(static_cast<uint16_t>(stmt->names.size()), stmt->line, stmt->column);
+    emit(OpCode::OP_EXPORT, stmt->line, stmt->column);
+    emit(static_cast<uint8_t>(0), stmt->line, stmt->column); // unused count byte
 }

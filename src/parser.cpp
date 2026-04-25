@@ -35,6 +35,7 @@ StmtPtr Parser::statement() {
         auto funcStmt = funcStatement();
         std::string funcName = static_cast<FuncStmt*>(funcStmt.get())->name;
         int ln = static_cast<FuncStmt*>(funcStmt.get())->line;
+        int lnCol = static_cast<FuncStmt*>(funcStmt.get())->column;
 
         // Build reassignment: name = outer(inner(name))
         // decorators[0] is outermost, decorators[last] is innermost (closest to func)
@@ -45,6 +46,7 @@ StmtPtr Parser::statement() {
         for (int i = static_cast<int>(decorators.size()) - 1; i >= 0; i--) {
             auto callExpr = std::make_unique<CallExpr>();
             callExpr->line = ln;
+            callExpr->column = lnCol;
             callExpr->callee = std::move(decorators[i]);
             callExpr->args.push_back(std::move(wrapped));
             wrapped = std::move(callExpr);
@@ -52,11 +54,13 @@ StmtPtr Parser::statement() {
 
         auto assign = std::make_unique<AssignExpr>();
         assign->line = ln;
+        assign->column = lnCol;
         assign->name = funcName;
         assign->value = std::move(wrapped);
 
         auto assignStmt = std::make_unique<ExprStmt>();
         assignStmt->line = ln;
+        assignStmt->column = lnCol;
         assignStmt->expr = std::move(assign);
         pending_.push_back(std::move(assignStmt));
 
@@ -84,8 +88,10 @@ StmtPtr Parser::statement() {
 
 StmtPtr Parser::letStatement() {
     int ln = previous().line;
+    int lnCol = previous().column;
     auto stmt = std::make_unique<LetStmt>();
     stmt->line = ln;
+    stmt->column = lnCol;
 
     // Array destructuring: let [a, b, ...rest] = expr
     if (match(TokenType::LBRACKET)) {
@@ -179,6 +185,7 @@ StmtPtr Parser::funcStatement() {
 
     auto stmt = std::make_unique<FuncStmt>();
     stmt->line = name.line;
+    stmt->column = name.column;
     stmt->name = name.lexeme;
     stmt->params = std::move(params);
     stmt->defaults = std::move(defaults);
@@ -195,6 +202,7 @@ StmtPtr Parser::funcStatement() {
 
 StmtPtr Parser::classStatement() {
     int ln = previous().line;
+    int lnCol = previous().column;
     Token name = consume(TokenType::IDENTIFIER, "Expected class name");
 
     std::string superclass;
@@ -208,6 +216,7 @@ StmtPtr Parser::classStatement() {
     while (!check(TokenType::RBRACE) && !isAtEnd()) {
         ClassMethod method;
         method.line = peek().line;
+        method.column = peek().column;
         while (match(TokenType::AT)) {
             method.decorators.push_back(call());
         }
@@ -256,6 +265,7 @@ StmtPtr Parser::classStatement() {
 
     auto stmt = std::make_unique<ClassStmt>();
     stmt->line = ln;
+    stmt->column = lnCol;
     stmt->name = name.lexeme;
     stmt->superclass = superclass;
     stmt->methods = std::move(methods);
@@ -264,11 +274,13 @@ StmtPtr Parser::classStatement() {
 
 StmtPtr Parser::enumStatement() {
     int ln = previous().line;
+    int lnCol = previous().column;
     Token name = consume(TokenType::IDENTIFIER, "Expected enum name");
     consume(TokenType::LBRACE, "Expected '{' after enum name");
 
     auto stmt = std::make_unique<EnumStmt>();
     stmt->line = ln;
+    stmt->column = lnCol;
     stmt->name = name.lexeme;
 
     if (!check(TokenType::RBRACE)) {
@@ -289,6 +301,7 @@ StmtPtr Parser::enumStatement() {
 
 StmtPtr Parser::ifStatement() {
     int ln = previous().line;
+    int lnCol = previous().column;
     consume(TokenType::LPAREN, "Expected '(' after 'if'");
     auto condition = expression();
     consume(TokenType::RPAREN, "Expected ')' after condition");
@@ -297,6 +310,7 @@ StmtPtr Parser::ifStatement() {
 
     auto stmt = std::make_unique<IfStmt>();
     stmt->line = ln;
+    stmt->column = lnCol;
     stmt->condition = std::move(condition);
     stmt->thenBranch = std::move(thenBranch);
 
@@ -323,6 +337,7 @@ StmtPtr Parser::ifStatement() {
 
 StmtPtr Parser::matchStatement() {
     int ln = previous().line;
+    int lnCol = previous().column;
     consume(TokenType::LPAREN, "Expected '(' after 'match'");
     auto subject = expression();
     consume(TokenType::RPAREN, "Expected ')' after match subject");
@@ -330,6 +345,7 @@ StmtPtr Parser::matchStatement() {
 
     auto stmt = std::make_unique<MatchStmt>();
     stmt->line = ln;
+    stmt->column = lnCol;
     stmt->subject = std::move(subject);
 
     while (!check(TokenType::RBRACE) && !isAtEnd()) {
@@ -352,6 +368,7 @@ StmtPtr Parser::matchStatement() {
 
 StmtPtr Parser::whileStatement() {
     int ln = previous().line;
+    int lnCol = previous().column;
     consume(TokenType::LPAREN, "Expected '(' after 'while'");
     auto condition = expression();
     consume(TokenType::RPAREN, "Expected ')' after condition");
@@ -359,6 +376,7 @@ StmtPtr Parser::whileStatement() {
 
     auto stmt = std::make_unique<WhileStmt>();
     stmt->line = ln;
+    stmt->column = lnCol;
     stmt->condition = std::move(condition);
     loopDepth++;
     stmt->body = block();
@@ -368,6 +386,7 @@ StmtPtr Parser::whileStatement() {
 
 StmtPtr Parser::forStatement() {
     int ln = previous().line;
+    int lnCol = previous().column;
     consume(TokenType::LPAREN, "Expected '(' after 'for'");
 
     // Check for destructuring: for ({key, value} in ...)
@@ -397,6 +416,7 @@ StmtPtr Parser::forStatement() {
         consume(TokenType::LBRACE, "Expected '{' after for");
         auto stmt = std::make_unique<ForStmt>();
         stmt->line = ln;
+        stmt->column = lnCol;
         stmt->varName = varName;
         stmt->start = std::move(iterExpr);
         stmt->end = std::move(endExpr);
@@ -411,6 +431,7 @@ StmtPtr Parser::forStatement() {
     consume(TokenType::LBRACE, "Expected '{' after for");
     auto stmt = std::make_unique<ForInStmt>();
     stmt->line = ln;
+    stmt->column = lnCol;
     stmt->varName = varName;
     stmt->destructureKeys = destructureKeys;
     stmt->iterable = std::move(iterExpr);
@@ -425,8 +446,10 @@ StmtPtr Parser::returnStatement() {
     if (functionDepth == 0)
         throw error(tok, "'return' outside of function");
     int ln = tok.line;
+    int lnCol = tok.column;
     auto stmt = std::make_unique<ReturnStmt>();
     stmt->line = ln;
+    stmt->column = lnCol;
 
     // Only parse a return value if the next token can start an expression
     switch (peek().type) {
@@ -477,14 +500,17 @@ StmtPtr Parser::continueStatement() {
 
 StmtPtr Parser::throwStatement() {
     int ln = previous().line;
+    int lnCol = previous().column;
     auto stmt = std::make_unique<ThrowStmt>();
     stmt->line = ln;
+    stmt->column = lnCol;
     stmt->value = expression();
     return stmt;
 }
 
 StmtPtr Parser::tryCatchStatement() {
     int ln = previous().line;
+    int lnCol = previous().column;
     consume(TokenType::LBRACE, "Expected '{' after 'try'");
     auto tryBody = block();
 
@@ -503,6 +529,7 @@ StmtPtr Parser::tryCatchStatement() {
 
     auto stmt = std::make_unique<TryCatchStmt>();
     stmt->line = ln;
+    stmt->column = lnCol;
     stmt->tryBody = std::move(tryBody);
     stmt->errorVar = errVar.lexeme;
     stmt->catchBody = std::move(catchBody);
@@ -512,6 +539,7 @@ StmtPtr Parser::tryCatchStatement() {
 
 StmtPtr Parser::ensureStatement() {
     int ln = previous().line;
+    int lnCol = previous().column;
     consume(TokenType::LPAREN, "Expected '(' after 'ensure'");
     auto condition = expression();
     consume(TokenType::RPAREN, "Expected ')' after condition");
@@ -521,6 +549,7 @@ StmtPtr Parser::ensureStatement() {
 
     auto stmt = std::make_unique<EnsureStmt>();
     stmt->line = ln;
+    stmt->column = lnCol;
     stmt->condition = std::move(condition);
     stmt->elseBody = std::move(elseBody);
     return stmt;
@@ -528,6 +557,7 @@ StmtPtr Parser::ensureStatement() {
 
 StmtPtr Parser::useStatement() {
     int ln = previous().line;
+    int lnCol = previous().column;
     Token path = consume(TokenType::STRING, "Expected grain path string after 'use'");
 
     // Derive alias from the last path segment: "utils/math" -> "math"
@@ -544,6 +574,7 @@ StmtPtr Parser::useStatement() {
 
     auto stmt = std::make_unique<UseStmt>();
     stmt->line = ln;
+    stmt->column = lnCol;
     stmt->path = path.lexeme;
     stmt->alias = alias;
     return stmt;
@@ -551,10 +582,12 @@ StmtPtr Parser::useStatement() {
 
 StmtPtr Parser::exportStatement() {
     int ln = previous().line;
+    int lnCol = previous().column;
     consume(TokenType::LBRACE, "Expected '{' after 'export'");
 
     auto stmt = std::make_unique<ExportStmt>();
     stmt->line = ln;
+    stmt->column = lnCol;
 
     if (!check(TokenType::RBRACE)) {
         do {
@@ -570,6 +603,7 @@ StmtPtr Parser::expressionStatement() {
     auto expr = expression();
     auto stmt = std::make_unique<ExprStmt>();
     stmt->line = expr->line;
+    stmt->column = expr->column;
     stmt->expr = std::move(expr);
     return stmt;
 }
@@ -577,6 +611,7 @@ StmtPtr Parser::expressionStatement() {
 StmtPtr Parser::block() {
     auto blk = std::make_unique<BlockStmt>();
     blk->line = previous().line;
+    blk->column = previous().column;
 
     while (!check(TokenType::RBRACE) && !isAtEnd()) {
         try {
@@ -613,20 +648,24 @@ ExprPtr Parser::assignment() {
 
     if (compoundOp != TokenType::EOF_TOKEN) {
         int ln = previous().line;
+        int lnCol = previous().column;
         auto value = assignment();
 
         if (auto* ident = dynamic_cast<IdentifierExpr*>(expr.get())) {
             // x += expr → x = x + expr
             auto lhs = std::make_unique<IdentifierExpr>();
             lhs->line = ln;
+            lhs->column = lnCol;
             lhs->name = ident->name;
             auto binop = std::make_unique<BinaryExpr>();
             binop->line = ln;
+            binop->column = lnCol;
             binop->left = std::move(lhs);
             binop->op = compoundOp;
             binop->right = std::move(value);
             auto assign = std::make_unique<AssignExpr>();
             assign->line = ln;
+            assign->column = lnCol;
             assign->name = ident->name;
             assign->value = std::move(binop);
             return assign;
@@ -637,11 +676,13 @@ ExprPtr Parser::assignment() {
 
     if (match(TokenType::ASSIGN)) {
         int ln = previous().line;
+        int lnCol = previous().column;
         auto value = assignment();
 
         if (auto* ident = dynamic_cast<IdentifierExpr*>(expr.get())) {
             auto assign = std::make_unique<AssignExpr>();
             assign->line = ln;
+            assign->column = lnCol;
             assign->name = ident->name;
             assign->value = std::move(value);
             return assign;
@@ -650,6 +691,7 @@ ExprPtr Parser::assignment() {
         if (auto* idx = dynamic_cast<IndexExpr*>(expr.get())) {
             auto ia = std::make_unique<IndexAssignExpr>();
             ia->line = ln;
+            ia->column = lnCol;
             ia->object = std::move(idx->object);
             ia->index = std::move(idx->index);
             ia->value = std::move(value);
@@ -659,6 +701,7 @@ ExprPtr Parser::assignment() {
         if (auto* dot = dynamic_cast<DotExpr*>(expr.get())) {
             auto da = std::make_unique<DotAssignExpr>();
             da->line = ln;
+            da->column = lnCol;
             da->object = std::move(dot->object);
             da->field = dot->field;
             da->value = std::move(value);
@@ -675,9 +718,11 @@ ExprPtr Parser::pipe() {
     auto left = ternary();
     while (match(TokenType::PIPE)) {
         int ln = previous().line;
+        int lnCol = previous().column;
         auto right = ternary();
         auto e = std::make_unique<PipeExpr>();
         e->line = ln;
+        e->column = lnCol;
         e->left = std::move(left);
         e->right = std::move(right);
         left = std::move(e);
@@ -689,11 +734,13 @@ ExprPtr Parser::ternary() {
     auto expr = nilCoalesce();
     if (match(TokenType::QUESTION)) {
         int ln = previous().line;
+        int lnCol = previous().column;
         auto thenExpr = expression(); // full expression between ? and :
         consume(TokenType::COLON, "Expected ':' in ternary expression");
         auto elseExpr = ternary(); // right-associative
         auto t = std::make_unique<TernaryExpr>();
         t->line = ln;
+        t->column = lnCol;
         t->condition = std::move(expr);
         t->thenExpr = std::move(thenExpr);
         t->elseExpr = std::move(elseExpr);
@@ -706,9 +753,11 @@ ExprPtr Parser::nilCoalesce() {
     auto expr = logicOr();
     while (match(TokenType::NIL_COALESCE)) {
         int ln = previous().line;
+        int lnCol = previous().column;
         auto right = logicOr();
         auto bin = std::make_unique<BinaryExpr>();
         bin->line = ln;
+        bin->column = lnCol;
         bin->left = std::move(expr);
         bin->op = TokenType::NIL_COALESCE;
         bin->right = std::move(right);
@@ -721,9 +770,11 @@ ExprPtr Parser::logicOr() {
     auto left = logicAnd();
     while (match(TokenType::OR)) {
         int ln = previous().line;
+        int lnCol = previous().column;
         auto right = logicAnd();
         auto expr = std::make_unique<BinaryExpr>();
         expr->line = ln;
+        expr->column = lnCol;
         expr->left = std::move(left);
         expr->op = TokenType::OR;
         expr->right = std::move(right);
@@ -736,9 +787,11 @@ ExprPtr Parser::logicAnd() {
     auto left = bitOr();
     while (match(TokenType::AND)) {
         int ln = previous().line;
+        int lnCol = previous().column;
         auto right = bitOr();
         auto expr = std::make_unique<BinaryExpr>();
         expr->line = ln;
+        expr->column = lnCol;
         expr->left = std::move(left);
         expr->op = TokenType::AND;
         expr->right = std::move(right);
@@ -754,6 +807,7 @@ ExprPtr Parser::bitOr() {
         auto right = bitXor();
         auto expr = std::make_unique<BinaryExpr>();
         expr->line = op.line;
+        expr->column = op.column;
         expr->left = std::move(left);
         expr->op = op.type;
         expr->right = std::move(right);
@@ -769,6 +823,7 @@ ExprPtr Parser::bitXor() {
         auto right = bitAnd();
         auto expr = std::make_unique<BinaryExpr>();
         expr->line = op.line;
+        expr->column = op.column;
         expr->left = std::move(left);
         expr->op = op.type;
         expr->right = std::move(right);
@@ -784,6 +839,7 @@ ExprPtr Parser::bitAnd() {
         auto right = equality();
         auto expr = std::make_unique<BinaryExpr>();
         expr->line = op.line;
+        expr->column = op.column;
         expr->left = std::move(left);
         expr->op = op.type;
         expr->right = std::move(right);
@@ -799,6 +855,7 @@ ExprPtr Parser::equality() {
         auto right = comparison();
         auto expr = std::make_unique<BinaryExpr>();
         expr->line = op.line;
+        expr->column = op.column;
         expr->left = std::move(left);
         expr->op = op.type;
         expr->right = std::move(right);
@@ -815,6 +872,7 @@ ExprPtr Parser::comparison() {
         auto right = shift();
         auto expr = std::make_unique<BinaryExpr>();
         expr->line = op.line;
+        expr->column = op.column;
         expr->left = std::move(left);
         expr->op = op.type;
         expr->right = std::move(right);
@@ -830,6 +888,7 @@ ExprPtr Parser::shift() {
         auto right = addition();
         auto expr = std::make_unique<BinaryExpr>();
         expr->line = op.line;
+        expr->column = op.column;
         expr->left = std::move(left);
         expr->op = op.type;
         expr->right = std::move(right);
@@ -845,6 +904,7 @@ ExprPtr Parser::addition() {
         auto right = multiplication();
         auto expr = std::make_unique<BinaryExpr>();
         expr->line = op.line;
+        expr->column = op.column;
         expr->left = std::move(left);
         expr->op = op.type;
         expr->right = std::move(right);
@@ -861,6 +921,7 @@ ExprPtr Parser::multiplication() {
         auto right = unary();
         auto expr = std::make_unique<BinaryExpr>();
         expr->line = op.line;
+        expr->column = op.column;
         expr->left = std::move(left);
         expr->op = op.type;
         expr->right = std::move(right);
@@ -875,6 +936,7 @@ ExprPtr Parser::unary() {
         auto operand = unary(); // right-recursive for chaining: !!x, --x
         auto expr = std::make_unique<UnaryExpr>();
         expr->line = op.line;
+        expr->column = op.column;
         expr->op = op.type;
         expr->operand = std::move(operand);
         return expr;
@@ -888,6 +950,7 @@ ExprPtr Parser::postfix() {
         Token op = previous();
         auto post = std::make_unique<PostfixExpr>();
         post->line = op.line;
+        post->column = op.column;
         post->operand = std::move(expr);
         post->op = op.type;
         return post;
@@ -901,6 +964,7 @@ ExprPtr Parser::call() {
     while (true) {
         if (match(TokenType::LPAREN)) {
             int ln = previous().line;
+            int lnCol = previous().column;
             std::vector<ExprPtr> args;
             std::vector<std::string> argNames;
             bool seenNamed = false;
@@ -913,6 +977,7 @@ ExprPtr Parser::call() {
                         argNames.push_back(""); // positional
                         auto spread = std::make_unique<SpreadExpr>();
                         spread->line = previous().line;
+                        spread->column = previous().column;
                         spread->expr = expression();
                         args.push_back(std::move(spread));
                     // Named argument: identifier followed by COLON
@@ -940,16 +1005,19 @@ ExprPtr Parser::call() {
 
             auto c = std::make_unique<CallExpr>();
             c->line = ln;
+            c->column = lnCol;
             c->callee = std::move(expr);
             c->args = std::move(args);
             c->argNames = std::move(argNames);
             expr = std::move(c);
         } else if (match(TokenType::LBRACKET)) {
             int ln = previous().line;
+            int lnCol = previous().column;
             auto index = expression();
             consume(TokenType::RBRACKET, "Expected ']' after index");
             auto ie = std::make_unique<IndexExpr>();
             ie->line = ln;
+            ie->column = lnCol;
             ie->object = std::move(expr);
             ie->index = std::move(index);
             expr = std::move(ie);
@@ -960,10 +1028,12 @@ ExprPtr Parser::call() {
             advance(); // consume '?'
             advance(); // consume '['
             int ln = previous().line;
+            int lnCol = previous().column;
             auto index = expression();
             consume(TokenType::RBRACKET, "Expected ']' after index");
             auto ie = std::make_unique<IndexExpr>();
             ie->line = ln;
+            ie->column = lnCol;
             ie->object = std::move(expr);
             ie->index = std::move(index);
             ie->isOptional = true;
@@ -971,12 +1041,14 @@ ExprPtr Parser::call() {
         } else if (match(TokenType::DOT) || match(TokenType::QUESTION_DOT)) {
             bool isOpt = (previous().type == TokenType::QUESTION_DOT);
             int ln = previous().line;
+            int lnCol = previous().column;
             // Accept identifiers and keywords as field names (e.g. app.use, obj.class)
             if (!isNameToken(peek().type))
                 throw error(peek(), "Expected field name after '.'");
             Token field = advance();
             auto de = std::make_unique<DotExpr>();
             de->line = ln;
+            de->column = lnCol;
             de->object = std::move(expr);
             de->field = field.lexeme;
             de->isOptional = isOpt;
@@ -993,6 +1065,7 @@ ExprPtr Parser::primary() {
     if (match(TokenType::NUMBER)) {
         auto e = std::make_unique<NumberExpr>();
         e->line = previous().line;
+        e->column = previous().column;
         std::string lex = previous().lexeme;
         if (lex.find('.') == std::string::npos) {
             try {
@@ -1019,6 +1092,7 @@ ExprPtr Parser::primary() {
     if (match(TokenType::STRING)) {
         auto e = std::make_unique<StringExpr>();
         e->line = previous().line;
+        e->column = previous().column;
         e->value = previous().lexeme;
         return e;
     }
@@ -1029,6 +1103,7 @@ ExprPtr Parser::primary() {
     if (match(TokenType::TRUE)) {
         auto e = std::make_unique<BoolExpr>();
         e->line = previous().line;
+        e->column = previous().column;
         e->value = true;
         return e;
     }
@@ -1036,6 +1111,7 @@ ExprPtr Parser::primary() {
     if (match(TokenType::FALSE)) {
         auto e = std::make_unique<BoolExpr>();
         e->line = previous().line;
+        e->column = previous().column;
         e->value = false;
         return e;
     }
@@ -1043,30 +1119,36 @@ ExprPtr Parser::primary() {
     if (match(TokenType::NIL)) {
         auto e = std::make_unique<NilExpr>();
         e->line = previous().line;
+        e->column = previous().column;
         return e;
     }
 
     if (match(TokenType::IDENTIFIER)) {
         auto e = std::make_unique<IdentifierExpr>();
         e->line = previous().line;
+        e->column = previous().column;
         e->name = previous().lexeme;
         return e;
     }
 
     if (match(TokenType::ASYNC)) {
         int ln = previous().line;
+        int lnCol = previous().column;
         auto expr = expression();
         auto e = std::make_unique<AsyncExpr>();
         e->line = ln;
+        e->column = lnCol;
         e->expr = std::move(expr);
         return e;
     }
 
     if (match(TokenType::AWAIT)) {
         int ln = previous().line;
+        int lnCol = previous().column;
         auto expr = unary();
         auto e = std::make_unique<AwaitExpr>();
         e->line = ln;
+        e->column = lnCol;
         e->expr = std::move(expr);
         return e;
     }
@@ -1075,9 +1157,11 @@ ExprPtr Parser::primary() {
         if (functionDepth == 0)
             throw error(previous(), "'yield' outside of function");
         int ln = previous().line;
+        int lnCol = previous().column;
         yieldCount++;
         auto e = std::make_unique<YieldExpr>();
         e->line = ln;
+        e->column = lnCol;
         // Parse optional value — check if what follows could be a value expression
         if (!check(TokenType::RBRACE) && !check(TokenType::EOF_TOKEN) && !isAtEnd()) {
             auto t = peek().type;
@@ -1099,15 +1183,18 @@ ExprPtr Parser::primary() {
     if (match(TokenType::THIS)) {
         auto e = std::make_unique<ThisExpr>();
         e->line = previous().line;
+        e->column = previous().column;
         return e;
     }
 
     if (match(TokenType::SUPER)) {
         int ln = previous().line;
+        int lnCol = previous().column;
         consume(TokenType::DOT, "Expected '.' after 'super'");
         Token method = consume(TokenType::IDENTIFIER, "Expected method name after 'super.'");
         auto e = std::make_unique<SuperExpr>();
         e->line = ln;
+        e->column = lnCol;
         e->method = method.lexeme;
         return e;
     }
@@ -1120,13 +1207,16 @@ ExprPtr Parser::primary() {
 
     if (match(TokenType::LBRACKET)) {
         int ln = previous().line;
+        int lnCol = previous().column;
         auto arr = std::make_unique<ArrayLiteralExpr>();
         arr->line = ln;
+        arr->column = lnCol;
         if (!check(TokenType::RBRACKET)) {
             do {
                 if (match(TokenType::SPREAD)) {
                     auto spread = std::make_unique<SpreadExpr>();
                     spread->line = previous().line;
+                    spread->column = previous().column;
                     spread->expr = expression();
                     arr->elements.push_back(std::move(spread));
                 } else {
@@ -1140,6 +1230,7 @@ ExprPtr Parser::primary() {
 
     if (match(TokenType::LAM)) {
         int ln = previous().line;
+        int lnCol = previous().column;
         consume(TokenType::LBRACE, "Expected '{' after 'lam'");
 
         // Parse optional params before 'in'
@@ -1170,6 +1261,7 @@ ExprPtr Parser::primary() {
         // Parse body statements until '}'
         auto lam = std::make_unique<LambdaExpr>();
         lam->line = ln;
+        lam->column = lnCol;
         lam->params = std::move(params);
         lam->defaults = std::move(defaults);
         lam->restParam = std::move(restParam);
@@ -1193,6 +1285,7 @@ ExprPtr Parser::primary() {
             if (auto* es = dynamic_cast<ExprStmt*>(lam->body[0].get())) {
                 auto ret = std::make_unique<ReturnStmt>();
                 ret->line = es->line;
+                ret->column = es->column;
                 ret->value = std::move(es->expr);
                 lam->body[0] = std::move(ret);
             }
@@ -1203,14 +1296,17 @@ ExprPtr Parser::primary() {
 
     if (match(TokenType::LBRACE)) {
         int ln = previous().line;
+        int lnCol = previous().column;
         auto map = std::make_unique<MapLiteralExpr>();
         map->line = ln;
+        map->column = lnCol;
         if (!check(TokenType::RBRACE)) {
             do {
                 // Spread: {...other}
                 if (match(TokenType::SPREAD)) {
                     auto spread = std::make_unique<SpreadExpr>();
                     spread->line = previous().line;
+                    spread->column = previous().column;
                     spread->expr = expression();
                     map->keys.push_back("");  // empty key = spread
                     map->values.push_back(std::move(spread));
@@ -1238,12 +1334,15 @@ ExprPtr Parser::primary() {
 
 ExprPtr Parser::interpolatedString() {
     int ln = previous().line;
+    int lnCol = previous().column;
     auto interp = std::make_unique<InterpolatedStringExpr>();
     interp->line = ln;
+    interp->column = lnCol;
 
     // Leading string fragment from INTERP_START
     auto first = std::make_unique<StringExpr>();
     first->line = ln;
+    first->column = lnCol;
     first->value = previous().lexeme;
     interp->parts.push_back(std::move(first));
 
@@ -1254,6 +1353,7 @@ ExprPtr Parser::interpolatedString() {
     while (match(TokenType::INTERP_MID)) {
         auto mid = std::make_unique<StringExpr>();
         mid->line = previous().line;
+        mid->column = previous().column;
         mid->value = previous().lexeme;
         interp->parts.push_back(std::move(mid));
         interp->parts.push_back(expression());
@@ -1263,6 +1363,7 @@ ExprPtr Parser::interpolatedString() {
     Token end = consume(TokenType::INTERP_END, "Expected end of interpolated string");
     auto last = std::make_unique<StringExpr>();
     last->line = end.line;
+    last->column = end.column;
     last->value = end.lexeme;
     interp->parts.push_back(std::move(last));
 
@@ -1305,10 +1406,17 @@ bool Parser::isAtEnd() const {
 
 Parser::ParseError Parser::error(const Token& token, const std::string& message) {
     if (token.type == TokenType::EOF_TOKEN) {
-        std::cerr << "[line " << token.line << "] Error at end: " << message << std::endl;
+        if (token.column > 0)
+            std::cerr << "[line " << token.line << ":col " << token.column << "] Error at end: " << message << std::endl;
+        else
+            std::cerr << "[line " << token.line << "] Error at end: " << message << std::endl;
     } else {
-        std::cerr << "[line " << token.line << "] Error at '" << token.lexeme
-                  << "': " << message << std::endl;
+        if (token.column > 0)
+            std::cerr << "[line " << token.line << ":col " << token.column << "] Error at '" << token.lexeme
+                      << "': " << message << std::endl;
+        else
+            std::cerr << "[line " << token.line << "] Error at '" << token.lexeme
+                      << "': " << message << std::endl;
     }
     hadError = true;
     return ParseError(message);

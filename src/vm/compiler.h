@@ -117,13 +117,13 @@ private:
 
     // Emit helpers
     Chunk& currentChunk();
-    void emit(OpCode op, int line);
-    void emit(uint8_t byte, int line);
-    void emitU16(uint16_t val, int line);
-    void emitConstant(Value value, int line);
-    int emitJump(OpCode op, int line);
+    void emit(OpCode op, int line, int column = 0);
+    void emit(uint8_t byte, int line, int column = 0);
+    void emitU16(uint16_t val, int line, int column = 0);
+    void emitConstant(Value value, int line, int column = 0);
+    int emitJump(OpCode op, int line, int column = 0);
     void patchJump(int offset);
-    void emitLoop(int loopStart, int line);
+    void emitLoop(int loopStart, int line, int column = 0);
     uint16_t identifierConstant(const std::string& name);
 
     void error(const std::string& msg, int line);
