@@ -167,7 +167,7 @@ Praia has 7 types:
 | `bool` | `true`, `false` | |
 | `int` | `42`, `0`, `-7` | 64-bit integer (exact up to 2^63) |
 | `float` | `3.14`, `0.5` | Double-precision float |
-| `string` | `"hello"` | Supports interpolation and escape sequences |
+| `string` | `"hello"` | UTF-8, supports interpolation, escape sequences, and Unicode (`\u{...}`) |
 | `array` | `[1, 2, 3]` | Ordered, mixed-type, reference semantics |
 | `map` | `{name: "Ada"}` | String keys, reference semantics |
 | `function` | `func add(a, b) { ... }` | First-class, supports closures |
@@ -284,6 +284,18 @@ Strings are enclosed in double quotes.
 | `\\` | Backslash |
 | `\"` | Double quote |
 | `\%` | Literal `%` (prevents interpolation) |
+| `\xHH` | Byte from 2-digit hex value |
+| `\u{HHHH}` | Unicode codepoint (1-6 hex digits) |
+
+#### Unicode escapes
+
+`\u{...}` inserts any Unicode codepoint by its hex value:
+
+```
+"\u{E9}"        // "e" (e-acute)
+"\u{1F600}"     // "😀"
+"\u{1F1F5}\u{1F1F9}"  // "🇵🇹" (flag)
+```
 
 ### String Interpolation
 
@@ -317,10 +329,16 @@ Interpolation and escape sequences work inside triple-quoted strings.
 
 ### String Indexing
 
+Strings are indexed by grapheme cluster (visible character), not by byte. This means emoji and accented characters work correctly.
+
 ```
 let s = "hello"
 print(s[0])         // h
 print(s[-1])        // o (negative = from end)
+
+let emoji = "Hi👋"
+print(len(emoji))   // 3
+print(emoji[2])     // 👋
 ```
 
 ---
@@ -1224,6 +1242,8 @@ Classes without operator overloads use default behavior (reference equality for 
 print(len([1, 2, 3]))      // 3
 print(len("hello"))         // 5
 print(len({a: 1, b: 2}))   // 2
+print(len("café"))          // 4 (grapheme clusters, not bytes)
+print(len("👨‍👩‍👧‍👦"))              // 1 (family emoji = 1 grapheme)
 
 print(type(42))             // int
 print(type(3.14))           // float
@@ -1283,6 +1303,11 @@ Methods are called with dot notation on string values.
 | `.padEnd(len, char?)` | Right-pad to width (default: space) |
 | `.trimStart()` | Remove leading whitespace |
 | `.trimEnd()` | Remove trailing whitespace |
+| `.graphemes()` | Split into array of grapheme clusters |
+| `.codepoints()` | Array of Unicode codepoint values (integers) |
+| `.bytes()` | Array of raw byte values (integers) |
+
+All positional methods (`len`, indexing, `slice`, `split("")`, `indexOf`, `padStart`, `padEnd`) operate on **grapheme clusters** — visible characters, not bytes. This means emoji, accented characters, and flags all count as single units.
 
 ```
 "hello".upper()                  // "HELLO"
@@ -1299,6 +1324,19 @@ Methods are called with dot notation on string values.
 
 // Chaining works
 "  Hello World  ".strip().lower()   // "hello world"
+
+// Unicode-aware case conversion
+"café".upper()                      // "CAFÉ"
+"ÜBER".lower()                      // "über"
+
+// Grapheme-aware operations
+"Hi👋".slice(0, 2)                  // "Hi"
+"A😀BC".indexOf("B")               // 2
+
+// Inspecting string internals
+"A😀".graphemes()                   // ["A", "😀"]
+"A😀".codepoints()                  // [65, 128512]
+"é".bytes()                         // [195, 169] (UTF-8 encoding)
 ```
 
 ---
@@ -1715,16 +1753,6 @@ print(ESC + "[10;20H")       // move cursor to row 10, col 20
 print(ESC + "[31mRed" + ESC + "[0m")    // colored text
 print(ESC + "[?25l")         // hide cursor
 print(ESC + "[?25h")         // show cursor
-```
-
-### Hex escapes in strings
-
-`\xHH` produces a byte from a two-digit hex value:
-
-```
-"\x1b"     // ESC (27)
-"\x00"     // null byte
-"\x41"     // 'A' (65)
 ```
 
 ---
@@ -3067,10 +3095,14 @@ bytes.len(data)                 // same as len() but clear intent for binary
 
 ### Character codes
 
+`.charCode(index?)` returns the Unicode codepoint of the grapheme at the given index (default: 0). `fromCharCode(codepoint)` creates a string from a Unicode codepoint (0-0x10FFFF).
+
 ```
-"A".charCode()          // 65
-"hello".charCode(1)     // 101 (character 'e')
-fromCharCode(65)        // "A"
+"A".charCode()              // 65
+"hello".charCode(1)         // 101 (character 'e')
+"😀".charCode()             // 128512
+fromCharCode(65)            // "A"
+fromCharCode(0x1F600)       // "😀"
 ```
 
 ---
