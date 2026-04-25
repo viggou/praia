@@ -23,6 +23,7 @@ enum class TokenType {
     IF,
     ELSE,
     ELIF,
+    MATCH,
     WHILE,
     FOR,
     IN,
@@ -117,6 +118,7 @@ inline std::string tokenTypeToString(TokenType type) {
         case TokenType::IF:          return "IF";
         case TokenType::ELSE:        return "ELSE";
         case TokenType::ELIF:        return "ELIF";
+        case TokenType::MATCH:       return "MATCH";
         case TokenType::WHILE:       return "WHILE";
         case TokenType::FOR:         return "FOR";
         case TokenType::IN:          return "IN";

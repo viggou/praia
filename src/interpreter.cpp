@@ -414,6 +414,27 @@ void Interpreter::execute(const Stmt* stmt) {
                 execute(s->elseBranch.get());
         }
 
+    } else if (auto* s = dynamic_cast<const MatchStmt*>(stmt)) {
+        Value subject = evaluate(s->subject.get());
+        for (auto& c : s->cases) {
+            if (!c.pattern) {
+                execute(c.body.get());
+                break;
+            }
+            Value pattern = evaluate(c.pattern.get());
+            bool eq = false;
+            if (subject.isInstance()) {
+                auto [found, result] = callDunder(*this, subject.asInstance(), "__eq", {pattern});
+                eq = found ? result.isTruthy() : (subject == pattern);
+            } else {
+                eq = (subject == pattern);
+            }
+            if (eq) {
+                execute(c.body.get());
+                break;
+            }
+        }
+
     } else if (auto* s = dynamic_cast<const WhileStmt*>(stmt)) {
         try {
             while (evaluate(s->condition.get()).isTruthy()) {

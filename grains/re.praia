@@ -64,7 +64,7 @@ func test(str, pattern) {
 }
 
 // Find the first match with full group and named group support
-func match(str, pattern) {
+func find(str, pattern) {
     let parsed = parseNamedGroups(pattern)
     let m = str.match(parsed.clean)
     if (m == nil) { return nil }
@@ -73,7 +73,7 @@ func match(str, pattern) {
 }
 
 // Find all matches with full group and named group support
-func matchAll(str, pattern) {
+func findAll(str, pattern) {
     let parsed = parseNamedGroups(pattern)
     let matches = str.matchAll(parsed.clean)
     if (len(parsed.names) > 0) {
@@ -119,4 +119,4 @@ func escape(str) {
     return result
 }
 
-export { test, match, matchAll, replace, split, escape }
+export { test, find, findAll, replace, split, escape }

@@ -12,6 +12,7 @@ enum class OpCode : uint8_t {
     // ── Stack ──
     OP_POP,
     OP_POPN,            // [n:8]
+    OP_DUP,             // duplicate top of stack
 
     // ── Arithmetic ──
     OP_ADD,
