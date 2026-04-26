@@ -250,8 +250,11 @@ struct MatchStmt : Stmt {
     MatchStmt() : Stmt(StmtType::Match) {}
     ExprPtr subject;
     struct CaseBranch {
-        ExprPtr pattern; // nullptr = default (_)
+        ExprPtr pattern; // equality pattern (nullptr if not equality)
+        ExprPtr guard;   // when condition (nullptr if not guard)
+        ExprPtr isType;  // is type pattern (nullptr if not type)
         StmtPtr body;
+        // All three nullptr = default (_)
     };
     std::vector<CaseBranch> cases;
 };

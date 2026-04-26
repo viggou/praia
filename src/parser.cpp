@@ -352,14 +352,23 @@ StmtPtr Parser::matchStatement() {
         MatchStmt::CaseBranch branch;
         if (check(TokenType::IDENTIFIER) && peek().lexeme == "_") {
             advance(); // consume '_'
-            branch.pattern = nullptr;
+            // Default: all fields remain nullptr
+        } else if (match(TokenType::IS)) {
+            // Type pattern: is "typename" or is ClassName
+            branch.isType = expression();
+        } else if (check(TokenType::IDENTIFIER) && peek().lexeme == "when") {
+            // Guard clause: when condition
+            advance(); // consume "when" (contextual, not a keyword)
+            branch.guard = expression();
         } else {
+            // Equality pattern (existing behavior)
             branch.pattern = expression();
         }
         consume(TokenType::LBRACE, "Expected '{' after match case");
         branch.body = block();
         stmt->cases.push_back(std::move(branch));
-        if (!stmt->cases.back().pattern) break; // default must be last
+        auto& last = stmt->cases.back();
+        if (!last.pattern && !last.guard && !last.isType) break; // default must be last
     }
 
     consume(TokenType::RBRACE, "Expected '}' to close match");
