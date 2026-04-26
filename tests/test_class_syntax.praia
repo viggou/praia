@@ -51,14 +51,15 @@ testing.test("type() returns int and float", lam{ in
     testing.assertEqual(type(7 / 2), "float", nil)
 })
 
-testing.test("empty string is falsy", lam{ in
-    testing.assert(!"", "empty string should be falsy")
+testing.test("only nil and false are falsy", lam{ in
+    // All non-nil, non-false values are truthy
+    testing.assert("", "empty string should be truthy")
     testing.assert("x", "non-empty string should be truthy")
-})
-
-testing.test("empty array is falsy", lam{ in
-    testing.assert(![], "empty array should be falsy")
+    testing.assert([], "empty array should be truthy")
     testing.assert([0], "non-empty array should be truthy")
+    testing.assert(0, "zero should be truthy")
+    testing.assert(!nil, "nil should be falsy")
+    testing.assert(!false, "false should be falsy")
 })
 
 testing.done()

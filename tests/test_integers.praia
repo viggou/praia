@@ -58,8 +58,9 @@ testing.test("ternary operator", lam{ in
     testing.assertEqual(x > 3 ? "big" : "small", "big", nil)
 })
 
-testing.test("zero is falsy", lam{ in
-    testing.assert(!0, "0 should be falsy")
+testing.test("zero is truthy", lam{ in
+    // Only nil and false are falsy
+    testing.assert(0, "0 should be truthy")
     testing.assert(1, "1 should be truthy")
     testing.assert(-1, "-1 should be truthy")
 })

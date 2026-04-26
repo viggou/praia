@@ -156,10 +156,6 @@ struct PraiaInstance {
 inline bool Value::isTruthy() const {
     if (isNil()) return false;
     if (isBool()) return asBool();
-    if (isInt()) return asInt() != 0;
-    if (isDouble()) return asNumber() != 0;
-    if (isString()) return !asString().empty();
-    if (isArray()) return !asArray()->elements.empty();
     return true;
 }
 

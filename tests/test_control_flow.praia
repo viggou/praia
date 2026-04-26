@@ -61,18 +61,15 @@ testing.test("continue", lam{ in
 })
 
 testing.test("truthiness", lam{ in
+    // Only nil and false are falsy — everything else is truthy
     testing.assert(1, nil)
     testing.assert("hello", nil)
     testing.assert([1], nil)
-    testing.assert(!0, nil)
-    testing.assert(!nil, nil)
-    testing.assert(!false, nil)
-    // empty string and empty array are falsy
-    testing.assert(!"", "empty string should be falsy")
-    testing.assert(![], "empty array should be falsy")
-    // non-empty are truthy
-    testing.assert("x", "non-empty string should be truthy")
-    testing.assert([0], "non-empty array should be truthy")
+    testing.assert(0, "0 is truthy")
+    testing.assert("", "empty string is truthy")
+    testing.assert([], "empty array is truthy")
+    testing.assert(!nil, "nil is falsy")
+    testing.assert(!false, "false is falsy")
 })
 
 testing.test("short-circuit or", lam{ in

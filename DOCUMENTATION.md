@@ -208,15 +208,21 @@ Praia has 7 types:
 
 ### Truthiness
 
-`nil`, `false`, `0`, `""` (empty string), and `[]` (empty array) are falsy. Everything else is truthy.
+Only `nil` and `false` are falsy. Everything else — including `0`, `""` (empty string), and `[]` (empty array) — is truthy.
 
 ```
-if (1)      { print("truthy") }   // prints
-if ("hello") { print("truthy") }  // prints
-if (0)      { print("truthy") }   // does not print
-if (nil)    { print("truthy") }   // does not print
-if ("")     { print("truthy") }   // does not print
-if ([])     { print("truthy") }   // does not print
+if (0)       { print("truthy") }   // prints (0 is truthy)
+if ("")      { print("truthy") }   // prints (empty string is truthy)
+if ([])      { print("truthy") }   // prints (empty array is truthy)
+if (nil)     { print("truthy") }   // does not print
+if (false)   { print("truthy") }   // does not print
+```
+
+To check for empty strings or arrays, use `len()`:
+
+```
+if (len(name) > 0) { print("has name") }
+if (len(items) > 0) { print("has items") }
 ```
 
 ---
