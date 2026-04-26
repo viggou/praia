@@ -247,10 +247,7 @@ void GcHeap::sweep() {
     toCollect.clear();
 
     // Phase 4: Remove expired entries (dead via refcounting or just cleared)
-    entries_.erase(
-        std::remove_if(entries_.begin(), entries_.end(),
-            [](const GcEntry& e) { return e.weak.expired(); }),
-        entries_.end());
+    std::erase_if(entries_, [](const GcEntry& e) { return e.weak.expired(); });
 
     marked_.clear();
 }

@@ -507,7 +507,7 @@ static int runTestsCommand(const std::string& dir, bool useVm) {
         if (!entry.is_regular_file()) continue;
         auto& p = entry.path();
         if (p.extension() == ".praia" &&
-            p.filename().string().rfind("test_", 0) == 0) {
+            p.filename().string().starts_with("test_")) {
             files.push_back(p.string());
         }
     }
