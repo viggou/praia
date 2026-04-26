@@ -500,7 +500,7 @@ void Interpreter::execute(const Stmt* stmt) {
             try {
                 for (auto& [k, v] : iterable.asMap()->entries) {
                     auto entry = gcNew<PraiaMap>();
-                    entry->entries[Value("key")] = Value(k);
+                    entry->entries[Value("key")] = k;
                     entry->entries[Value("value")] = v;
                     auto iterEnv = gcNew<Environment>(env);
                     defineLoopVar(iterEnv, Value(entry));
@@ -585,7 +585,7 @@ void Interpreter::execute(const Stmt* stmt) {
                     throw RuntimeError("Enum value must be a number", s->line, s->column);
                 nextVal = v.isInt() ? v.asInt() : static_cast<int64_t>(v.asNumber());
             }
-            enumMap->entries[s->members[i]] = Value(nextVal);
+            enumMap->entries[Value(s->members[i])] = Value(nextVal);
             nextVal++;
         }
         env->define(s->name, Value(enumMap));
@@ -868,8 +868,8 @@ Value Interpreter::evaluate(const Expr* expr) {
             }
             if (left.isMap() && right.isMap()) {
                 auto result = gcNew<PraiaMap>();
-                for (auto& [k, v] : left.asMap()->entries) result->entries[Value(k)] = v;
-                for (auto& [k, v] : right.asMap()->entries) result->entries[Value(k)] = v;
+                for (auto& [k, v] : left.asMap()->entries) result->entries[k] = v;
+                for (auto& [k, v] : right.asMap()->entries) result->entries[k] = v;
                 return Value(result);
             }
             if (left.isString() || right.isString())
@@ -1363,7 +1363,7 @@ Value Interpreter::evaluate(const Expr* expr) {
         // Map fields take priority over universal methods
         if (obj.isMap()) {
             auto& entries = obj.asMap()->entries;
-            auto it = entries.find(e->field);
+            auto it = entries.find(Value(e->field));
             if (it != entries.end()) return it->second;
             // Fall through to universal methods below
         }
@@ -1462,7 +1462,7 @@ Value Interpreter::evaluate(const Expr* expr) {
             return val;
         }
         if (obj.isMap()) {
-            obj.asMap()->entries[e->field] = val;
+            obj.asMap()->entries[Value(e->field)] = val;
             return val;
         }
         throw RuntimeError("Can only set fields on instances and maps", e->line, e->column);

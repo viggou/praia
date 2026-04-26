@@ -665,8 +665,8 @@ VM::Result VM::execute(int baseFrameCount_) {
             }
             if (a.isMap() && b.isMap()) {
                 auto r = gcNew<PraiaMap>();
-                for (auto& [k, v] : a.asMap()->entries) r->entries[Value(k)] = v;
-                for (auto& [k, v] : b.asMap()->entries) r->entries[Value(k)] = v; // b overrides a
+                for (auto& [k, v] : a.asMap()->entries) r->entries[k] = v;
+                for (auto& [k, v] : b.asMap()->entries) r->entries[k] = v; // b overrides a
                 push(Value(r)); break;
             }
             if (a.isString() || b.isString()) { push(Value(a.toString() + b.toString())); break; }
@@ -1646,7 +1646,7 @@ VM::Result VM::execute(int baseFrameCount_) {
                     Value result(copy);
                     visited[key] = result; // register before recursing
                     for (auto& [k, val] : v.asMap()->entries)
-                        copy->entries[Value(k)] = deepCopy(val);
+                        copy->entries[k] = deepCopy(val);
                     return result;
                 }
                 if (v.isArray()) {

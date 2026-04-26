@@ -113,7 +113,7 @@ std::shared_ptr<PraiaMap> parseQueryString(const std::string& query) {
             inValue = true;
         } else if (c == '&') {
             if (!key.empty())
-                qmap->entries[urlDecode(key)] = Value(urlDecode(value));
+                qmap->entries[Value(urlDecode(key))] = Value(urlDecode(value));
             key.clear(); value.clear(); inValue = false;
         } else {
             if (inValue) value += c; else key += c;

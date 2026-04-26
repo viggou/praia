@@ -324,7 +324,7 @@ Interpreter::Interpreter() {
                 throw RuntimeError("keys() requires a map", 0);
             auto result = gcNew<PraiaArray>();
             for (auto& [k, v] : args[0].asMap()->entries)
-                result->elements.push_back(Value(k));
+                result->elements.push_back(k);
             return Value(result);
         })));
 

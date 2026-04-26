@@ -118,10 +118,10 @@ struct ValueHash {
     size_t operator()(const Value& v) const {
         if (v.isNil()) return 0;
         if (v.isBool()) return std::hash<bool>{}(v.asBool());
-        if (v.isInt()) return std::hash<int64_t>{}(v.asInt());
-        if (v.isDouble()) return std::hash<double>{}(v.asNumber());
+        // Hash all numbers as double to be consistent with operator==
+        // (which compares int and double via asNumber())
+        if (v.isInt() || v.isDouble()) return std::hash<double>{}(v.asNumber());
         if (v.isString()) return std::hash<std::string>{}(v.asString());
-        // Should never reach here — callers must check isHashable() first
         return 0;
     }
 };
