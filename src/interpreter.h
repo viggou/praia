@@ -37,6 +37,7 @@ struct PraiaFunction : Callable {
     std::string restParam;
     const BlockStmt* body;
     std::shared_ptr<Environment> closure;
+    std::shared_ptr<void> astOwner; // prevents AST deallocation while this callable exists
 
     Value call(Interpreter& interp, const std::vector<Value>& args) override;
     int arity() const override { return restParam.empty() ? static_cast<int>(params.size()) : -1; }
@@ -48,8 +49,9 @@ struct PraiaFunction : Callable {
 struct PraiaLambda : Callable {
     std::vector<std::string> params;
     std::string restParam;
-    const LambdaExpr* expr;  // points into AST (kept alive by grainAsts/astStore)
+    const LambdaExpr* expr;  // points into AST (kept alive by astOwner)
     std::shared_ptr<Environment> closure;
+    std::shared_ptr<void> astOwner;
 
     Value call(Interpreter& interp, const std::vector<Value>& args) override;
     int arity() const override { return restParam.empty() ? static_cast<int>(params.size()) : -1; }
@@ -65,6 +67,7 @@ struct PraiaGeneratorFunction : Callable {
     std::string restParam;
     const BlockStmt* body;
     std::shared_ptr<Environment> closure;
+    std::shared_ptr<void> astOwner;
 
     Value call(Interpreter& interp, const std::vector<Value>& args) override;
     int arity() const override { return restParam.empty() ? static_cast<int>(params.size()) : -1; }
@@ -78,6 +81,7 @@ struct PraiaGeneratorLambda : Callable {
     std::string restParam;
     const LambdaExpr* expr;
     std::shared_ptr<Environment> closure;
+    std::shared_ptr<void> astOwner;
 
     Value call(Interpreter& interp, const std::vector<Value>& args) override;
     int arity() const override { return restParam.empty() ? static_cast<int>(params.size()) : -1; }
@@ -102,6 +106,7 @@ struct PraiaMethod : Callable {
     std::vector<std::string> params;
     const ClassMethod* decl;  // points into the ClassStmt AST
     std::shared_ptr<Environment> closure;
+    std::shared_ptr<void> astOwner;
     std::shared_ptr<PraiaInstance> instance;
     std::shared_ptr<PraiaClass> definingClass;  // class where this method is defined
 
@@ -123,6 +128,7 @@ struct PraiaClass : Callable, std::enable_shared_from_this<PraiaClass> {
     std::unordered_map<std::string, Value> vmMethods;                  // VM: instance methods
     std::unordered_map<std::string, Value> vmStaticMethods;            // VM: static methods
     std::shared_ptr<Environment> closure;
+    std::shared_ptr<void> astOwner;
 
     Value call(Interpreter& interp, const std::vector<Value>& args) override;
     int arity() const override;
@@ -208,8 +214,10 @@ private:
     std::unordered_map<std::string, Value> grainCache;    // resolved path -> cached exports
     std::set<std::string> importedInCurrentFile;          // tracks per-file duplicate imports
 
-    // AST storage to keep grain ASTs alive (function bodies are raw pointers)
-    std::vector<std::vector<StmtPtr>> grainAsts;
+    // AST storage — shared_ptr so callables can co-own the AST they reference
+    using AstProgram = std::shared_ptr<std::vector<StmtPtr>>;
+    std::vector<AstProgram> grainAsts;
+    AstProgram currentAstOwner_; // set during interpret()/loadGrain() so callables can capture it
 
     // Saved environments for GC root tracking — the tree-walker stores caller
     // scopes on the C++ call stack, invisible to GC. This explicit stack

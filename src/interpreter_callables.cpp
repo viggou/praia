@@ -35,6 +35,7 @@ Value PraiaClass::call(Interpreter& interp, const std::vector<Value>& args) {
         while (self && !self->methods.count("init"))
             self = self->superclass;
         method->definingClass = self ? self : shared_from_this();
+        method->astOwner = astOwner;
         method->call(interp, args);
     }
 

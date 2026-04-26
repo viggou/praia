@@ -36,6 +36,7 @@ static std::pair<bool, Value> callDunder(Interpreter& interp,
         walk = walk->superclass;
     bound->definingClass = walk ? walk : inst->klass;
     bound->closure = bound->definingClass->closure;
+    bound->astOwner = inst->klass->astOwner;
     return {true, bound->call(interp, args)};
 }
 
@@ -176,18 +177,24 @@ Value Interpreter::loadGrain(const std::string& importPath, int line) {
     if (parser.hasError())
         throw RuntimeError("Parse error in grain: " + importPath, line);
 
+    // Wrap the AST in a shared_ptr so callables created during execution
+    // can co-own it (prevents dangling if grainAsts is ever modified).
+    auto ast = std::make_shared<std::vector<StmtPtr>>(std::move(program));
+
     // Execute in isolated scope
     auto grainEnv = gcNew<Environment>(globals);
     auto prevEnv = env;
     auto prevFile = currentFile;
     auto prevImports = importedInCurrentFile;
+    auto prevAstOwner = currentAstOwner_;
     env = grainEnv;
     currentFile = resolved;
     importedInCurrentFile.clear();
+    currentAstOwner_ = ast;
 
     Value exports;
     try {
-        for (const auto& stmt : program)
+        for (const auto& stmt : *ast)
             execute(stmt.get());
         // If no export statement was hit, export nothing
         exports = Value(gcNew<PraiaMap>());
@@ -197,14 +204,16 @@ Value Interpreter::loadGrain(const std::string& importPath, int line) {
         env = prevEnv;
         currentFile = prevFile;
         importedInCurrentFile = prevImports;
+        currentAstOwner_ = prevAstOwner;
         throw;
     }
     env = prevEnv;
     currentFile = prevFile;
     importedInCurrentFile = prevImports;
+    currentAstOwner_ = prevAstOwner;
 
     // Keep the AST alive and cache the result
-    grainAsts.push_back(std::move(program));
+    grainAsts.push_back(std::move(ast));
     grainCache[resolved] = exports;
     return exports;
 }
@@ -512,6 +521,7 @@ void Interpreter::execute(const Stmt* stmt) {
             func->restParam = s->restParam;
             func->body = static_cast<const BlockStmt*>(s->body.get());
             func->closure = env;
+            func->astOwner = currentAstOwner_;
             env->define(s->name, Value(std::static_pointer_cast<Callable>(func)));
         } else {
             auto func = std::make_shared<PraiaFunction>();
@@ -521,6 +531,7 @@ void Interpreter::execute(const Stmt* stmt) {
             func->restParam = s->restParam;
             func->body = static_cast<const BlockStmt*>(s->body.get());
             func->closure = env;
+            func->astOwner = currentAstOwner_;
             env->define(s->name, Value(std::static_pointer_cast<Callable>(func)));
         }
         break;
@@ -558,6 +569,7 @@ void Interpreter::execute(const Stmt* stmt) {
         klass->className = s->name;
         klass->superclass = superclass;
         klass->closure = env;
+        klass->astOwner = currentAstOwner_;
         for (auto& m : s->methods) {
             if (m.isStatic)
                 klass->staticMethods[m.name] = &m;
@@ -711,6 +723,7 @@ Value Interpreter::evaluate(const Expr* expr) {
                 walk = walk->superclass;
             if (walk) bound->definingClass = walk;
         }
+        bound->astOwner = super->astOwner;
         return Value(std::static_pointer_cast<Callable>(bound));
     }
     case ExprType::Assign: {
@@ -1146,6 +1159,7 @@ Value Interpreter::evaluate(const Expr* expr) {
             lam->restParam = e->restParam;
             lam->expr = e;
             lam->closure = env;
+            lam->astOwner = currentAstOwner_;
             return Value(std::static_pointer_cast<Callable>(lam));
         }
         auto lam = std::make_shared<PraiaLambda>();
@@ -1153,6 +1167,7 @@ Value Interpreter::evaluate(const Expr* expr) {
         lam->restParam = e->restParam;
         lam->expr = e;
         lam->closure = env;
+        lam->astOwner = currentAstOwner_;
         return Value(std::static_pointer_cast<Callable>(lam));
     }
 
@@ -1315,6 +1330,7 @@ Value Interpreter::evaluate(const Expr* expr) {
                     walk = walk->superclass;
                 bound->definingClass = walk ? walk : inst->klass;
                 bound->closure = bound->definingClass->closure;
+                bound->astOwner = inst->klass->astOwner;
                 Value result = Value(std::static_pointer_cast<Callable>(bound));
                 // Apply decorators if present
                 if (!methodDecl->decorators.empty()) {
@@ -1397,6 +1413,7 @@ Value Interpreter::evaluate(const Expr* expr) {
                         method->closure = walk->closure;
                         method->instance = nullptr;
                         method->definingClass = walk;
+                        method->astOwner = walk->astOwner;
                         Value result = Value(std::static_pointer_cast<Callable>(method));
                         if (!decl->decorators.empty()) {
                             for (int i = static_cast<int>(decl->decorators.size()) - 1; i >= 0; i--) {
