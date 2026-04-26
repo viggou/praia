@@ -488,8 +488,10 @@ void Interpreter::execute(const Stmt* stmt) {
         };
 
         if (iterable.isArray()) {
+            // Snapshot elements to protect against mutation during iteration
+            auto snapshot = iterable.asArray()->elements;
             try {
-                for (const auto& elem : iterable.asArray()->elements) {
+                for (const auto& elem : snapshot) {
                     auto iterEnv = gcNew<Environment>(env);
                     defineLoopVar(iterEnv, elem);
                     try { executeBlock(bodyBlock, iterEnv); }
@@ -497,8 +499,11 @@ void Interpreter::execute(const Stmt* stmt) {
                 }
             } catch (const BreakSignal&) {}
         } else if (iterable.isMap()) {
+            // Snapshot entries to protect against mutation during iteration
+            std::vector<std::pair<Value, Value>> snapshot(
+                iterable.asMap()->entries.begin(), iterable.asMap()->entries.end());
             try {
-                for (auto& [k, v] : iterable.asMap()->entries) {
+                for (auto& [k, v] : snapshot) {
                     auto entry = gcNew<PraiaMap>();
                     entry->entries[Value("key")] = k;
                     entry->entries[Value("value")] = v;

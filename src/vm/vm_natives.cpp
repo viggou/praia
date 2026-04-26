@@ -249,7 +249,12 @@ void vmRegisterNatives(VM& vm) {
         [](const std::vector<Value>& args) -> Value {
             const Value& v = args[0];
             if (v.isGenerator()) return v; // generators are their own iterator
-            if (v.isArray()) return v;
+            if (v.isArray()) {
+                // Snapshot to protect against mutation during iteration
+                auto snapshot = gcNew<PraiaArray>();
+                snapshot->elements = v.asArray()->elements;
+                return Value(snapshot);
+            }
             if (v.isMap()) {
                 auto arr = gcNew<PraiaArray>();
                 for (auto& [k, val] : v.asMap()->entries) {
