@@ -58,6 +58,35 @@ static std::string binaryDunder(TokenType op) {
     }
 }
 
+// Check if a value matches a type (reused by `is` operator and `match` type patterns).
+static bool checkIs(const Value& subject, const Value& typeVal, int line, int column) {
+    if (typeVal.isString()) {
+        auto& tn = typeVal.asString();
+        if (tn == "nil")      return subject.isNil();
+        if (tn == "bool")     return subject.isBool();
+        if (tn == "int")      return subject.isInt();
+        if (tn == "float")    return subject.isDouble();
+        if (tn == "string")   return subject.isString();
+        if (tn == "array")    return subject.isArray();
+        if (tn == "map")      return subject.isMap();
+        if (tn == "function") return subject.isCallable();
+        if (tn == "instance") return subject.isInstance();
+        throw RuntimeError("Unknown type name '" + tn + "'", line, column);
+    }
+    if (typeVal.isCallable()) {
+        auto klass = std::dynamic_pointer_cast<PraiaClass>(typeVal.asCallable());
+        if (!klass) throw RuntimeError("'is' requires a class or type name string", line, column);
+        if (!subject.isInstance()) return false;
+        auto walk = subject.asInstance()->klass;
+        while (walk) {
+            if (walk == klass) return true;
+            walk = walk->superclass;
+        }
+        return false;
+    }
+    throw RuntimeError("'is' requires a type name string or class", line, column);
+}
+
 // Reorder named arguments to match parameter positions.
 // Returns a vector in parameter order with Value() for unfilled positions.
 static std::vector<Value> reorderNamedArgs(
@@ -380,19 +409,28 @@ void Interpreter::execute(const Stmt* stmt) {
         auto* s = static_cast<const MatchStmt*>(stmt);
         Value subject = evaluate(s->subject.get());
         for (auto& c : s->cases) {
-            if (!c.pattern) {
-                execute(c.body.get());
-                break;
-            }
-            Value pattern = evaluate(c.pattern.get());
-            bool eq = false;
-            if (subject.isInstance()) {
-                auto [found, result] = callDunder(*this, subject.asInstance(), "__eq", {pattern});
-                eq = found ? result.isTruthy() : (subject == pattern);
+            bool matched = false;
+            if (!c.pattern && !c.isType && !c.guard) {
+                // Default case
+                matched = true;
+            } else if (c.isType) {
+                // Type pattern: is "typename" or is ClassName
+                Value typeVal = evaluate(c.isType.get());
+                matched = checkIs(subject, typeVal, s->line, s->column);
+            } else if (c.guard) {
+                // Guard clause: when condition
+                matched = evaluate(c.guard.get()).isTruthy();
             } else {
-                eq = (subject == pattern);
+                // Equality pattern
+                Value pattern = evaluate(c.pattern.get());
+                if (subject.isInstance()) {
+                    auto [found, result] = callDunder(*this, subject.asInstance(), "__eq", {pattern});
+                    matched = found ? result.isTruthy() : (subject == pattern);
+                } else {
+                    matched = (subject == pattern);
+                }
             }
-            if (eq) {
+            if (matched) {
                 execute(c.body.get());
                 break;
             }
@@ -906,33 +944,8 @@ Value Interpreter::evaluate(const Expr* expr) {
             throw RuntimeError("Operands of '>=' must be numbers", e->line, e->column);
         case TokenType::EQ:  return Value(left == right);
         case TokenType::NEQ: return Value(left != right);
-        case TokenType::IS: {
-            if (right.isString()) {
-                auto& tn = right.asString();
-                if (tn == "nil")      return Value(left.isNil());
-                if (tn == "bool")     return Value(left.isBool());
-                if (tn == "int")      return Value(left.isInt());
-                if (tn == "float")    return Value(left.isDouble());
-                if (tn == "string")   return Value(left.isString());
-                if (tn == "array")    return Value(left.isArray());
-                if (tn == "map")      return Value(left.isMap());
-                if (tn == "function") return Value(left.isCallable());
-                if (tn == "instance") return Value(left.isInstance());
-                throw RuntimeError("Unknown type name '" + tn + "'", e->line, e->column);
-            }
-            if (right.isCallable()) {
-                auto klass = std::dynamic_pointer_cast<PraiaClass>(right.asCallable());
-                if (!klass) throw RuntimeError("'is' requires a class or type name string", e->line, e->column);
-                if (!left.isInstance()) return Value(false);
-                auto walk = left.asInstance()->klass;
-                while (walk) {
-                    if (walk == klass) return Value(true);
-                    walk = walk->superclass;
-                }
-                return Value(false);
-            }
-            throw RuntimeError("'is' requires a type name string or class", e->line, e->column);
-        }
+        case TokenType::IS:
+            return Value(checkIs(left, right, e->line, e->column));
 
         case TokenType::BIT_AND:
             if (left.isNumber() && right.isNumber())

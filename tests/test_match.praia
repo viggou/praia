@@ -137,4 +137,106 @@ testing.test("match with operator overloading", lam{ in
     testing.assertEqual(result, "one-two", nil)
 })
 
+// ── Type patterns ──
+
+testing.test("match is type string", lam{ in
+    let result = ""
+    match (42) {
+        is "string" { result = "string" }
+        is "int"    { result = "int" }
+        _           { result = "other" }
+    }
+    testing.assertEqual(result, "int", nil)
+})
+
+testing.test("match is type checks all types", lam{ in
+    let types = []
+    let values = ["hello", 42, 3.14, true, nil, [1], {x: 1}]
+    for (v in values) {
+        match (v) {
+            is "string" { push(types, "string") }
+            is "int"    { push(types, "int") }
+            is "float"  { push(types, "float") }
+            is "bool"   { push(types, "bool") }
+            is "nil"    { push(types, "nil") }
+            is "array"  { push(types, "array") }
+            is "map"    { push(types, "map") }
+        }
+    }
+    testing.assertEqual(types, ["string", "int", "float", "bool", "nil", "array", "map"], nil)
+})
+
+testing.test("match is class with inheritance", lam{ in
+    class Animal {
+        func init(name) { this.name = name }
+    }
+    class Dog extends Animal {
+        func init(name) { super.init(name) }
+    }
+    let result = ""
+    match (Dog("Rex")) {
+        is Dog    { result = "dog" }
+        is Animal { result = "animal" }
+    }
+    testing.assertEqual(result, "dog", nil)
+})
+
+// ── Guard clauses ──
+
+testing.test("match when guard", lam{ in
+    let score = 85
+    let result = ""
+    match (score) {
+        when score >= 90 { result = "A" }
+        when score >= 80 { result = "B" }
+        when score >= 70 { result = "C" }
+        _                { result = "F" }
+    }
+    testing.assertEqual(result, "B", nil)
+})
+
+testing.test("match when with default fallthrough", lam{ in
+    let x = 50
+    let result = ""
+    match (x) {
+        when x > 100 { result = "big" }
+        when x > 75  { result = "medium" }
+        _            { result = "small" }
+    }
+    testing.assertEqual(result, "small", nil)
+})
+
+// ── Combined patterns ──
+
+testing.test("match mixed equality and guards", lam{ in
+    let x = -5
+    let result = ""
+    match (x) {
+        0           { result = "zero" }
+        when x > 0  { result = "positive" }
+        when x < 0  { result = "negative" }
+    }
+    testing.assertEqual(result, "negative", nil)
+})
+
+testing.test("match mixed is and equality", lam{ in
+    let result = ""
+    match ("hello") {
+        is "int"  { result = "number" }
+        "hello"   { result = "greeting" }
+        _         { result = "other" }
+    }
+    testing.assertEqual(result, "greeting", nil)
+})
+
+testing.test("match no case hit with guards", lam{ in
+    let x = 0
+    let result = "untouched"
+    match (x) {
+        when x > 10 { result = "big" }
+        when x < 0  { result = "negative" }
+    }
+    testing.assertEqual(result, "untouched", nil)
+})
+
 testing.done()

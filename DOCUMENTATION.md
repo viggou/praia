@@ -634,7 +634,7 @@ match (cmd) {
 }
 ```
 
-Cases can be any expression:
+Cases can be any expression (compared with `==`, which respects `__eq` operator overloading):
 
 ```
 let x = 10
@@ -647,7 +647,53 @@ match (x) {
 // ten
 ```
 
-If no case matches and there's no default, nothing happens. `match` uses `==` for comparison, which respects `__eq` operator overloading on classes.
+#### Type patterns with `is`
+
+Use `is` to match by type name or class:
+
+```
+match (value) {
+    is "int"    { print("integer") }
+    is "string" { print("string") }
+    is "array"  { print("array") }
+    is MyClass  { print("a MyClass instance") }
+    _           { print("something else") }
+}
+```
+
+Type names: `"nil"`, `"bool"`, `"int"`, `"float"`, `"string"`, `"array"`, `"map"`, `"function"`, `"instance"`. Class names check inheritance (matches the class and any subclass).
+
+#### Guard clauses with `when`
+
+Use `when` for conditional matching:
+
+```
+let score = 85
+
+match (score) {
+    when score >= 90 { print("A") }
+    when score >= 80 { print("B") }
+    when score >= 70 { print("C") }
+    _                { print("F") }
+}
+// B
+```
+
+#### Mixing patterns
+
+Equality, type, and guard patterns can be freely mixed in a single match:
+
+```
+let x = -5
+
+match (x) {
+    0           { print("zero") }
+    when x > 0  { print("positive") }
+    when x < 0  { print("negative") }
+}
+```
+
+If no case matches and there's no default, nothing happens.
 
 ---
 

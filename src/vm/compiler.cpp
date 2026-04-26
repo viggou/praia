@@ -300,17 +300,29 @@ void Compiler::compileMatchStmt(const MatchStmt* stmt) {
     bool hasDefault = false;
 
     for (auto& c : stmt->cases) {
-        if (!c.pattern) {
+        if (!c.pattern && !c.isType && !c.guard) {
             // Default case — pop subject, execute body
             emit(OpCode::OP_POP, stmt->line, stmt->column);
             compileStmt(c.body.get());
             hasDefault = true;
             break;
         }
-        // Duplicate subject for comparison
-        emit(OpCode::OP_DUP, stmt->line, stmt->column);
-        compileExpr(c.pattern.get());
-        emit(OpCode::OP_EQUAL, stmt->line, stmt->column);
+
+        if (c.isType) {
+            // Type pattern: dup subject, compile type expr, OP_IS
+            emit(OpCode::OP_DUP, stmt->line, stmt->column);
+            compileExpr(c.isType.get());
+            emit(OpCode::OP_IS, stmt->line, stmt->column);
+        } else if (c.guard) {
+            // Guard: compile condition (doesn't consume subject from stack)
+            compileExpr(c.guard.get());
+        } else {
+            // Equality: dup subject, compile pattern, OP_EQUAL
+            emit(OpCode::OP_DUP, stmt->line, stmt->column);
+            compileExpr(c.pattern.get());
+            emit(OpCode::OP_EQUAL, stmt->line, stmt->column);
+        }
+
         int skipJump = emitJump(OpCode::OP_POP_JUMP_IF_FALSE, stmt->line, stmt->column);
 
         // Match — pop subject, execute body, jump to end

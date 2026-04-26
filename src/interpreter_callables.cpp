@@ -168,7 +168,12 @@ PraiaGenerator::~PraiaGenerator() {
     if (fiber && !fiber->isCompleted() && state == State::SUSPENDED) {
         // Resume the fiber so it can unwind (yield checks gen->done and throws ReturnSignal)
         done = true;
-        fiber->resume();
+        try {
+            fiber->resume();
+        } catch (...) {
+            // Suppress exceptions from destructor — the fiber body's error handlers
+            // should catch everything, but guard against unexpected exceptions.
+        }
     }
 }
 
