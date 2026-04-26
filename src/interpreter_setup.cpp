@@ -441,9 +441,23 @@ Interpreter::Interpreter() {
 
     auto execImpl = makeNative("sys.exec", 1,
         [](const std::vector<Value>& args) -> Value {
-            if (!args[0].isString())
-                throw RuntimeError("sys.exec() requires a string command", 0);
-            const std::string& cmd = args[0].asString();
+            if (!args[0].isString() && !args[0].isArray())
+                throw RuntimeError("sys.exec() requires a string or array of strings", 0);
+
+            // Build argv for the child process
+            bool useShell = args[0].isString();
+            std::string cmd;
+            std::vector<std::string> argv;
+            if (useShell) {
+                cmd = args[0].asString();
+            } else {
+                auto& elems = args[0].asArray()->elements;
+                if (elems.empty()) throw RuntimeError("sys.exec() array must not be empty", 0);
+                for (auto& e : elems) {
+                    if (!e.isString()) throw RuntimeError("sys.exec() array elements must be strings", 0);
+                    argv.push_back(e.asString());
+                }
+            }
 
             int stdoutPipe[2], stderrPipe[2];
             if (pipe(stdoutPipe) != 0 || pipe(stderrPipe) != 0)
@@ -463,7 +477,15 @@ Interpreter::Interpreter() {
                 dup2(stderrPipe[1], STDERR_FILENO);
                 close(stdoutPipe[1]);
                 close(stderrPipe[1]);
-                execl("/bin/sh", "sh", "-c", cmd.c_str(), nullptr);
+                if (useShell) {
+                    execl("/bin/sh", "sh", "-c", cmd.c_str(), nullptr);
+                } else {
+                    // Build C-string array for execvp (no shell, no injection)
+                    std::vector<const char*> cargv;
+                    for (auto& s : argv) cargv.push_back(s.c_str());
+                    cargv.push_back(nullptr);
+                    execvp(cargv[0], const_cast<char* const*>(cargv.data()));
+                }
                 _exit(127);
             }
 

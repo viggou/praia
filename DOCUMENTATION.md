@@ -1897,15 +1897,17 @@ let files = sys.readDir("my/dir")   // returns array of filenames in directory
 
 ### Running Commands
 
-`sys.exec(cmd)` (also available as `sys.run(cmd)`) runs a shell command and returns a map with `stdout`, `stderr`, and `exitCode`:
+`sys.exec(cmd)` (also available as `sys.run(cmd)`) runs a command and returns a map with `stdout`, `stderr`, and `exitCode`. Pass a string for shell execution, or an array for safe argument passing (no shell injection):
 
 ```
+// String form — runs through /bin/sh (supports pipes, redirects, etc.)
 let r = sys.exec("ls -la")
 print(r.stdout)
 print(r.exitCode)          // 0
 
-let r2 = sys.exec("date")
-print("Today is %{r2.stdout}")
+// Array form — runs directly, no shell (safe from injection)
+let r2 = sys.exec(["git", "clone", "--quiet", url, dest])
+print(r2.exitCode)
 
 // Check for errors
 let r3 = sys.exec("cat nonexistent.txt")
