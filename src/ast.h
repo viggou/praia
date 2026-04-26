@@ -3,75 +3,101 @@
 #include "token.h"
 #include <memory>
 #include <string>
+#include <variant>
 #include <vector>
 
-struct Expr;
-struct Stmt;
-using ExprPtr = std::unique_ptr<Expr>;
-using StmtPtr = std::unique_ptr<Stmt>;
+struct ExprNode;
+struct StmtNode;
+using ExprPtr = std::unique_ptr<ExprNode>;
+using StmtPtr = std::unique_ptr<StmtNode>;
 
-// --- Expressions ---
+// --- Helper structs (not in any variant) ---
 
-struct Expr {
-    int line = 0;
-    int column = 0;
-    virtual ~Expr() = default;
+struct PatternEntry {
+    std::string name;
+    std::string key;
+    bool isRest = false;
 };
 
-struct NumberExpr : Expr {
+struct ElifBranch {
+    ExprPtr condition;
+    StmtPtr body;
+};
+
+struct CaseBranch {
+    ExprPtr pattern; // nullptr = default (_)
+    StmtPtr body;
+};
+
+struct ClassMethod {
+    std::string name;
+    std::vector<std::string> params;
+    std::vector<ExprPtr> defaults;
+    std::string restParam;
+    std::vector<ExprPtr> decorators;
+    std::vector<StmtPtr> body;
+    int line = 0;
+    int column = 0;
+    bool isGenerator = false;
+    bool isStatic = false;
+};
+
+// --- Expression types ---
+
+struct NumberExpr {
     double floatValue = 0;
     int64_t intValue = 0;
     bool isInt = false;
 };
 
-struct StringExpr : Expr {
+struct StringExpr {
     std::string value;
 };
 
-struct BoolExpr : Expr {
+struct BoolExpr {
     bool value;
 };
 
-struct NilExpr : Expr {};
+struct NilExpr {};
 
-struct IdentifierExpr : Expr {
+struct IdentifierExpr {
     std::string name;
 };
 
-struct UnaryExpr : Expr {
+struct UnaryExpr {
     TokenType op;
     ExprPtr operand;
 };
 
-struct BinaryExpr : Expr {
+struct BinaryExpr {
     ExprPtr left;
     TokenType op;
     ExprPtr right;
 };
 
-struct PostfixExpr : Expr {
+struct PostfixExpr {
     ExprPtr operand;
     TokenType op;
 };
 
-struct AssignExpr : Expr {
+struct AssignExpr {
     std::string name;
     ExprPtr value;
 };
 
-struct CallExpr : Expr {
+struct CallExpr {
     ExprPtr callee;
     std::vector<ExprPtr> args;
     std::vector<std::string> argNames; // parallel to args; empty string = positional
 };
 
 // Parts alternate: string literal, expression, string literal, expression, ..., string literal
-struct InterpolatedStringExpr : Expr {
+struct InterpolatedStringExpr {
     std::vector<ExprPtr> parts;
 };
 
 // lam{ params in body }
-struct LambdaExpr : Expr {
+struct LambdaExpr {
     std::vector<std::string> params;
     std::vector<ExprPtr> defaults; // parallel to params, nullptr if no default
     std::string restParam;         // empty = no rest param
@@ -79,93 +105,80 @@ struct LambdaExpr : Expr {
     bool isGenerator = false;
 };
 
-struct TernaryExpr : Expr {
+struct TernaryExpr {
     ExprPtr condition;
     ExprPtr thenExpr;
     ExprPtr elseExpr;
 };
 
-struct SpreadExpr : Expr {
+struct SpreadExpr {
     ExprPtr expr;
 };
 
-struct ArrayLiteralExpr : Expr {
+struct ArrayLiteralExpr {
     std::vector<ExprPtr> elements; // may contain SpreadExpr nodes
 };
 
-struct IndexExpr : Expr {
+struct IndexExpr {
     ExprPtr object;
     ExprPtr index;
     bool isOptional = false;
 };
 
-struct IndexAssignExpr : Expr {
+struct IndexAssignExpr {
     ExprPtr object;
     ExprPtr index;
     ExprPtr value;
 };
 
-struct MapLiteralExpr : Expr {
+struct MapLiteralExpr {
     std::vector<std::string> keys;
     std::vector<ExprPtr> values;
 };
 
-struct DotExpr : Expr {
+struct DotExpr {
     ExprPtr object;
     std::string field;
     bool isOptional = false;
 };
 
-struct DotAssignExpr : Expr {
+struct DotAssignExpr {
     ExprPtr object;
     std::string field;
     ExprPtr value;
 };
 
 // a |> f becomes f(a), a |> f(x) becomes f(a, x)
-struct PipeExpr : Expr {
+struct PipeExpr {
     ExprPtr left;
     ExprPtr right;  // function or call expression
 };
 
-struct AsyncExpr : Expr {
+struct AsyncExpr {
     ExprPtr expr;  // the call expression to run async
 };
 
-struct AwaitExpr : Expr {
+struct AwaitExpr {
     ExprPtr expr;  // the future to await
 };
 
-struct YieldExpr : Expr {
+struct YieldExpr {
     ExprPtr value;  // nullptr = yield nil
 };
 
-struct ThisExpr : Expr {};
+struct ThisExpr {};
 
-struct SuperExpr : Expr {
+struct SuperExpr {
     std::string method; // super.method
 };
 
-// --- Statements ---
+// --- Statement types ---
 
-struct Stmt {
-    int line = 0;
-    int column = 0;
-    virtual ~Stmt() = default;
-};
-
-struct ExprStmt : Stmt {
+struct ExprStmt {
     ExprPtr expr;
 };
 
-// Destructuring pattern element
-struct PatternEntry {
-    std::string name;       // variable to bind
-    std::string key;        // for maps: the key to extract (empty = same as name)
-    bool isRest = false;    // ...rest
-};
-
-struct LetStmt : Stmt {
+struct LetStmt {
     // Simple: name is set, pattern is empty
     // Array destructuring: pattern has entries, isArrayPattern = true
     // Map destructuring: pattern has entries, isArrayPattern = false
@@ -175,39 +188,29 @@ struct LetStmt : Stmt {
     ExprPtr initializer;
 };
 
-struct BlockStmt : Stmt {
+struct BlockStmt {
     std::vector<StmtPtr> statements;
 };
 
-struct IfStmt : Stmt {
+struct IfStmt {
     ExprPtr condition;
     StmtPtr thenBranch;
-
-    struct ElifBranch {
-        ExprPtr condition;
-        StmtPtr body;
-    };
     std::vector<ElifBranch> elifBranches;
-
     StmtPtr elseBranch; // nullptr if no else
 };
 
-struct MatchStmt : Stmt {
+struct MatchStmt {
     ExprPtr subject;
-    struct CaseBranch {
-        ExprPtr pattern; // nullptr = default (_)
-        StmtPtr body;
-    };
     std::vector<CaseBranch> cases;
 };
 
-struct WhileStmt : Stmt {
+struct WhileStmt {
     ExprPtr condition;
     StmtPtr body;
 };
 
 // for (varName in start..end) { body }
-struct ForStmt : Stmt {
+struct ForStmt {
     std::string varName;
     ExprPtr start;
     ExprPtr end;
@@ -216,14 +219,14 @@ struct ForStmt : Stmt {
 
 // for (varName in iterable) { body }
 // for ({key, value} in iterable) { body }  — map destructuring
-struct ForInStmt : Stmt {
-    std::string varName;                    // simple: "entry"
+struct ForInStmt {
+    std::string varName;                      // simple: "entry"
     std::vector<std::string> destructureKeys; // destructuring: ["key", "value"]
     ExprPtr iterable;
     StmtPtr body;
 };
 
-struct FuncStmt : Stmt {
+struct FuncStmt {
     std::string name;
     std::vector<std::string> params;
     std::vector<ExprPtr> defaults; // parallel to params, nullptr if no default
@@ -232,45 +235,32 @@ struct FuncStmt : Stmt {
     bool isGenerator = false;
 };
 
-struct ReturnStmt : Stmt {
+struct ReturnStmt {
     ExprPtr value; // nullptr for bare return
 };
 
-struct ClassMethod {
-    std::string name;
-    std::vector<std::string> params;
-    std::vector<ExprPtr> defaults; // parallel to params, nullptr if no default
-    std::string restParam;         // empty = no rest param
-    std::vector<ExprPtr> decorators;
-    std::vector<StmtPtr> body;
-    int line = 0;
-    int column = 0;
-    bool isGenerator = false;
-    bool isStatic = false;
-};
-
-struct ClassStmt : Stmt {
+struct ClassStmt {
     std::string name;
     std::string superclass; // empty if no superclass
     std::vector<ClassMethod> methods;
 };
 
 // enum Name { A, B = 5, C }
-struct EnumStmt : Stmt {
+struct EnumStmt {
     std::string name;
     std::vector<std::string> members;
     std::vector<ExprPtr> values; // nullptr = auto-increment
 };
 
-struct BreakStmt : Stmt {};
-struct ContinueStmt : Stmt {};
+struct BreakStmt {};
+struct ContinueStmt {};
 
-struct ThrowStmt : Stmt {
+struct ThrowStmt {
     ExprPtr value;
 };
 
 // try { body } catch (varName) { handler } finally { cleanup }
-struct TryCatchStmt : Stmt {
+struct TryCatchStmt {
     StmtPtr tryBody;
     std::string errorVar;
     StmtPtr catchBody;
@@ -278,18 +268,93 @@ struct TryCatchStmt : Stmt {
 };
 
 // ensure (condition) else { body }
-struct EnsureStmt : Stmt {
+struct EnsureStmt {
     ExprPtr condition;
     StmtPtr elseBody;
 };
 
 // use "path"  — imports a grain, binds to variable named after the file
-struct UseStmt : Stmt {
+struct UseStmt {
     std::string path;    // the string literal from use "path"
     std::string alias;   // derived variable name (e.g. "math" from "utils/math")
 };
 
 // export { name1, name2, ... }
-struct ExportStmt : Stmt {
+struct ExportStmt {
     std::vector<std::string> names;
 };
+
+// --- Wrapper nodes ---
+
+struct ExprNode {
+    int line = 0;
+    int column = 0;
+
+    using Data = std::variant<
+        NumberExpr,
+        StringExpr,
+        BoolExpr,
+        NilExpr,
+        IdentifierExpr,
+        UnaryExpr,
+        BinaryExpr,
+        PostfixExpr,
+        AssignExpr,
+        CallExpr,
+        InterpolatedStringExpr,
+        LambdaExpr,
+        TernaryExpr,
+        SpreadExpr,
+        ArrayLiteralExpr,
+        IndexExpr,
+        IndexAssignExpr,
+        MapLiteralExpr,
+        DotExpr,
+        DotAssignExpr,
+        PipeExpr,
+        AsyncExpr,
+        AwaitExpr,
+        YieldExpr,
+        ThisExpr,
+        SuperExpr
+    >;
+
+    Data data;
+};
+
+struct StmtNode {
+    int line = 0;
+    int column = 0;
+
+    using Data = std::variant<
+        ExprStmt,
+        LetStmt,
+        BlockStmt,
+        IfStmt,
+        MatchStmt,
+        WhileStmt,
+        ForStmt,
+        ForInStmt,
+        FuncStmt,
+        ReturnStmt,
+        ClassStmt,
+        EnumStmt,
+        BreakStmt,
+        ContinueStmt,
+        ThrowStmt,
+        TryCatchStmt,
+        EnsureStmt,
+        UseStmt,
+        ExportStmt
+    >;
+
+    Data data;
+};
+
+// --- Overloaded helper for std::visit ---
+
+template<class... Ts>
+struct overloaded : Ts... { using Ts::operator()...; };
+
+template<class... Ts>
+overloaded(Ts...) -> overloaded<Ts...>;
