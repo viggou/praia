@@ -1,5 +1,6 @@
 #include "compiler.h"
 #include "vm.h"
+#include "../environment.h"
 #include "../gc_heap.h"
 
 void Compiler::compileExpr(const Expr* expr) {
@@ -74,6 +75,10 @@ void Compiler::compileIdentifierExpr(const IdentifierExpr* expr) {
 }
 
 void Compiler::compileAssignExpr(const AssignExpr* expr) {
+    if (Environment::isConstantName(expr->name))
+        std::cerr << "[line " << expr->line << ":col " << expr->column
+                  << "] Warning: reassigning constant '" << expr->name << "'" << std::endl;
+
     compileExpr(expr->value.get());
 
     int slot = resolveLocal(current, expr->name);

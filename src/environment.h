@@ -1,6 +1,7 @@
 #pragma once
 
 #include "value.h"
+#include <iostream>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -25,9 +26,23 @@ public:
 
     void set(const std::string& name, Value value, int line) {
         auto it = variables.find(name);
-        if (it != variables.end()) { it->second = std::move(value); return; }
+        if (it != variables.end()) {
+            if (isConstantName(name))
+                std::cerr << "[line " << line << "] Warning: reassigning constant '" << name << "'" << std::endl;
+            it->second = std::move(value);
+            return;
+        }
         if (parent) { parent->set(name, std::move(value), line); return; }
         throw RuntimeError("Undefined variable '" + name + "'", line);
+    }
+
+    static bool isConstantName(const std::string& name) {
+        if (name.size() < 2) return false;
+        for (char c : name) {
+            if (c != '_' && !(c >= 'A' && c <= 'Z') && !(c >= '0' && c <= '9'))
+                return false;
+        }
+        return true;
     }
 
 private:

@@ -99,6 +99,19 @@ let score              // nil
 age = 37               // reassignment
 ```
 
+### Constants (convention)
+
+Use `UPPER_SNAKE_CASE` names for values that shouldn't change. Praia warns on reassignment:
+
+```
+let MAX_RETRIES = 3
+let BASE_URL = "https://api.example.com"
+
+MAX_RETRIES = 5        // Warning: reassigning constant 'MAX_RETRIES'
+```
+
+This is a convention, not a hard error — the reassignment still happens, but the warning signals a likely mistake. Single-letter names like `N` or `X` do not trigger the warning.
+
 ---
 
 ## Destructuring
