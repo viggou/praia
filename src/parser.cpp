@@ -651,7 +651,8 @@ ExprPtr Parser::assignment() {
         int lnCol = previous().column;
         auto value = assignment();
 
-        if (auto* ident = dynamic_cast<IdentifierExpr*>(expr.get())) {
+        if (expr->type == ExprType::Identifier) {
+            auto* ident = static_cast<IdentifierExpr*>(expr.get());
             // x += expr → x = x + expr
             auto lhs = std::make_unique<IdentifierExpr>();
             lhs->line = ln;
@@ -679,7 +680,8 @@ ExprPtr Parser::assignment() {
         int lnCol = previous().column;
         auto value = assignment();
 
-        if (auto* ident = dynamic_cast<IdentifierExpr*>(expr.get())) {
+        if (expr->type == ExprType::Identifier) {
+            auto* ident = static_cast<IdentifierExpr*>(expr.get());
             auto assign = std::make_unique<AssignExpr>();
             assign->line = ln;
             assign->column = lnCol;
@@ -688,7 +690,8 @@ ExprPtr Parser::assignment() {
             return assign;
         }
 
-        if (auto* idx = dynamic_cast<IndexExpr*>(expr.get())) {
+        if (expr->type == ExprType::Index) {
+            auto* idx = static_cast<IndexExpr*>(expr.get());
             auto ia = std::make_unique<IndexAssignExpr>();
             ia->line = ln;
             ia->column = lnCol;
@@ -698,7 +701,8 @@ ExprPtr Parser::assignment() {
             return ia;
         }
 
-        if (auto* dot = dynamic_cast<DotExpr*>(expr.get())) {
+        if (expr->type == ExprType::Dot) {
+            auto* dot = static_cast<DotExpr*>(expr.get());
             auto da = std::make_unique<DotAssignExpr>();
             da->line = ln;
             da->column = lnCol;
@@ -1282,7 +1286,8 @@ ExprPtr Parser::primary() {
 
         // If the body is a single expression statement, make it auto-return
         if (lam->body.size() == 1) {
-            if (auto* es = dynamic_cast<ExprStmt*>(lam->body[0].get())) {
+            if (lam->body[0]->type == StmtType::Expr) {
+                auto* es = static_cast<ExprStmt*>(lam->body[0].get());
                 auto ret = std::make_unique<ReturnStmt>();
                 ret->line = es->line;
                 ret->column = es->column;

@@ -3,101 +3,108 @@
 #include "token.h"
 #include <memory>
 #include <string>
-#include <variant>
 #include <vector>
 
-struct ExprNode;
-struct StmtNode;
-using ExprPtr = std::unique_ptr<ExprNode>;
-using StmtPtr = std::unique_ptr<StmtNode>;
+struct Expr;
+struct Stmt;
+using ExprPtr = std::unique_ptr<Expr>;
+using StmtPtr = std::unique_ptr<Stmt>;
 
-// --- Helper structs (not in any variant) ---
+// --- Type tags for dispatch without dynamic_cast ---
 
-struct PatternEntry {
-    std::string name;
-    std::string key;
-    bool isRest = false;
+enum class ExprType {
+    Number, String, Bool, Nil, Identifier,
+    Unary, Binary, Postfix, Assign, Call,
+    InterpolatedString, Lambda, Ternary, Spread,
+    ArrayLiteral, Index, IndexAssign, MapLiteral,
+    Dot, DotAssign, Pipe, Async, Await, Yield,
+    This, Super
 };
 
-struct ElifBranch {
-    ExprPtr condition;
-    StmtPtr body;
+enum class StmtType {
+    Expr, Let, Block, If, Match, While,
+    For, ForIn, Func, Return, Class, Enum,
+    Break, Continue, Throw, TryCatch, Ensure,
+    Use, Export
 };
 
-struct CaseBranch {
-    ExprPtr pattern; // nullptr = default (_)
-    StmtPtr body;
-};
+// --- Expressions ---
 
-struct ClassMethod {
-    std::string name;
-    std::vector<std::string> params;
-    std::vector<ExprPtr> defaults;
-    std::string restParam;
-    std::vector<ExprPtr> decorators;
-    std::vector<StmtPtr> body;
+struct Expr {
+    ExprType type;
     int line = 0;
     int column = 0;
-    bool isGenerator = false;
-    bool isStatic = false;
+    Expr(ExprType t) : type(t) {}
+    virtual ~Expr() = default;
 };
 
-// --- Expression types ---
-
-struct NumberExpr {
+struct NumberExpr : Expr {
+    NumberExpr() : Expr(ExprType::Number) {}
     double floatValue = 0;
     int64_t intValue = 0;
     bool isInt = false;
 };
 
-struct StringExpr {
+struct StringExpr : Expr {
+    StringExpr() : Expr(ExprType::String) {}
     std::string value;
 };
 
-struct BoolExpr {
+struct BoolExpr : Expr {
+    BoolExpr() : Expr(ExprType::Bool) {}
     bool value;
 };
 
-struct NilExpr {};
+struct NilExpr : Expr {
+    NilExpr() : Expr(ExprType::Nil) {}
+};
 
-struct IdentifierExpr {
+struct IdentifierExpr : Expr {
+    IdentifierExpr() : Expr(ExprType::Identifier) {}
     std::string name;
 };
 
-struct UnaryExpr {
+struct UnaryExpr : Expr {
+    UnaryExpr() : Expr(ExprType::Unary) {}
     TokenType op;
     ExprPtr operand;
 };
 
-struct BinaryExpr {
+struct BinaryExpr : Expr {
+    BinaryExpr() : Expr(ExprType::Binary) {}
     ExprPtr left;
     TokenType op;
     ExprPtr right;
 };
 
-struct PostfixExpr {
+struct PostfixExpr : Expr {
+    PostfixExpr() : Expr(ExprType::Postfix) {}
     ExprPtr operand;
     TokenType op;
 };
 
-struct AssignExpr {
+struct AssignExpr : Expr {
+    AssignExpr() : Expr(ExprType::Assign) {}
     std::string name;
     ExprPtr value;
 };
 
-struct CallExpr {
+struct CallExpr : Expr {
+    CallExpr() : Expr(ExprType::Call) {}
     ExprPtr callee;
     std::vector<ExprPtr> args;
     std::vector<std::string> argNames; // parallel to args; empty string = positional
 };
 
 // Parts alternate: string literal, expression, string literal, expression, ..., string literal
-struct InterpolatedStringExpr {
+struct InterpolatedStringExpr : Expr {
+    InterpolatedStringExpr() : Expr(ExprType::InterpolatedString) {}
     std::vector<ExprPtr> parts;
 };
 
 // lam{ params in body }
-struct LambdaExpr {
+struct LambdaExpr : Expr {
+    LambdaExpr() : Expr(ExprType::Lambda) {}
     std::vector<std::string> params;
     std::vector<ExprPtr> defaults; // parallel to params, nullptr if no default
     std::string restParam;         // empty = no rest param
@@ -105,80 +112,112 @@ struct LambdaExpr {
     bool isGenerator = false;
 };
 
-struct TernaryExpr {
+struct TernaryExpr : Expr {
+    TernaryExpr() : Expr(ExprType::Ternary) {}
     ExprPtr condition;
     ExprPtr thenExpr;
     ExprPtr elseExpr;
 };
 
-struct SpreadExpr {
+struct SpreadExpr : Expr {
+    SpreadExpr() : Expr(ExprType::Spread) {}
     ExprPtr expr;
 };
 
-struct ArrayLiteralExpr {
+struct ArrayLiteralExpr : Expr {
+    ArrayLiteralExpr() : Expr(ExprType::ArrayLiteral) {}
     std::vector<ExprPtr> elements; // may contain SpreadExpr nodes
 };
 
-struct IndexExpr {
+struct IndexExpr : Expr {
+    IndexExpr() : Expr(ExprType::Index) {}
     ExprPtr object;
     ExprPtr index;
     bool isOptional = false;
 };
 
-struct IndexAssignExpr {
+struct IndexAssignExpr : Expr {
+    IndexAssignExpr() : Expr(ExprType::IndexAssign) {}
     ExprPtr object;
     ExprPtr index;
     ExprPtr value;
 };
 
-struct MapLiteralExpr {
+struct MapLiteralExpr : Expr {
+    MapLiteralExpr() : Expr(ExprType::MapLiteral) {}
     std::vector<std::string> keys;
     std::vector<ExprPtr> values;
 };
 
-struct DotExpr {
+struct DotExpr : Expr {
+    DotExpr() : Expr(ExprType::Dot) {}
     ExprPtr object;
     std::string field;
     bool isOptional = false;
 };
 
-struct DotAssignExpr {
+struct DotAssignExpr : Expr {
+    DotAssignExpr() : Expr(ExprType::DotAssign) {}
     ExprPtr object;
     std::string field;
     ExprPtr value;
 };
 
 // a |> f becomes f(a), a |> f(x) becomes f(a, x)
-struct PipeExpr {
+struct PipeExpr : Expr {
+    PipeExpr() : Expr(ExprType::Pipe) {}
     ExprPtr left;
     ExprPtr right;  // function or call expression
 };
 
-struct AsyncExpr {
+struct AsyncExpr : Expr {
+    AsyncExpr() : Expr(ExprType::Async) {}
     ExprPtr expr;  // the call expression to run async
 };
 
-struct AwaitExpr {
+struct AwaitExpr : Expr {
+    AwaitExpr() : Expr(ExprType::Await) {}
     ExprPtr expr;  // the future to await
 };
 
-struct YieldExpr {
+struct YieldExpr : Expr {
+    YieldExpr() : Expr(ExprType::Yield) {}
     ExprPtr value;  // nullptr = yield nil
 };
 
-struct ThisExpr {};
+struct ThisExpr : Expr {
+    ThisExpr() : Expr(ExprType::This) {}
+};
 
-struct SuperExpr {
+struct SuperExpr : Expr {
+    SuperExpr() : Expr(ExprType::Super) {}
     std::string method; // super.method
 };
 
-// --- Statement types ---
+// --- Statements ---
 
-struct ExprStmt {
+struct Stmt {
+    StmtType type;
+    int line = 0;
+    int column = 0;
+    Stmt(StmtType t) : type(t) {}
+    virtual ~Stmt() = default;
+};
+
+struct ExprStmt : Stmt {
+    ExprStmt() : Stmt(StmtType::Expr) {}
     ExprPtr expr;
 };
 
-struct LetStmt {
+// Destructuring pattern element
+struct PatternEntry {
+    std::string name;       // variable to bind
+    std::string key;        // for maps: the key to extract (empty = same as name)
+    bool isRest = false;    // ...rest
+};
+
+struct LetStmt : Stmt {
+    LetStmt() : Stmt(StmtType::Let) {}
     // Simple: name is set, pattern is empty
     // Array destructuring: pattern has entries, isArrayPattern = true
     // Map destructuring: pattern has entries, isArrayPattern = false
@@ -188,29 +227,44 @@ struct LetStmt {
     ExprPtr initializer;
 };
 
-struct BlockStmt {
+struct BlockStmt : Stmt {
+    BlockStmt() : Stmt(StmtType::Block) {}
     std::vector<StmtPtr> statements;
 };
 
-struct IfStmt {
+struct IfStmt : Stmt {
+    IfStmt() : Stmt(StmtType::If) {}
     ExprPtr condition;
     StmtPtr thenBranch;
+
+    struct ElifBranch {
+        ExprPtr condition;
+        StmtPtr body;
+    };
     std::vector<ElifBranch> elifBranches;
+
     StmtPtr elseBranch; // nullptr if no else
 };
 
-struct MatchStmt {
+struct MatchStmt : Stmt {
+    MatchStmt() : Stmt(StmtType::Match) {}
     ExprPtr subject;
+    struct CaseBranch {
+        ExprPtr pattern; // nullptr = default (_)
+        StmtPtr body;
+    };
     std::vector<CaseBranch> cases;
 };
 
-struct WhileStmt {
+struct WhileStmt : Stmt {
+    WhileStmt() : Stmt(StmtType::While) {}
     ExprPtr condition;
     StmtPtr body;
 };
 
 // for (varName in start..end) { body }
-struct ForStmt {
+struct ForStmt : Stmt {
+    ForStmt() : Stmt(StmtType::For) {}
     std::string varName;
     ExprPtr start;
     ExprPtr end;
@@ -219,14 +273,16 @@ struct ForStmt {
 
 // for (varName in iterable) { body }
 // for ({key, value} in iterable) { body }  — map destructuring
-struct ForInStmt {
-    std::string varName;                      // simple: "entry"
+struct ForInStmt : Stmt {
+    ForInStmt() : Stmt(StmtType::ForIn) {}
+    std::string varName;                    // simple: "entry"
     std::vector<std::string> destructureKeys; // destructuring: ["key", "value"]
     ExprPtr iterable;
     StmtPtr body;
 };
 
-struct FuncStmt {
+struct FuncStmt : Stmt {
+    FuncStmt() : Stmt(StmtType::Func) {}
     std::string name;
     std::vector<std::string> params;
     std::vector<ExprPtr> defaults; // parallel to params, nullptr if no default
@@ -235,32 +291,54 @@ struct FuncStmt {
     bool isGenerator = false;
 };
 
-struct ReturnStmt {
+struct ReturnStmt : Stmt {
+    ReturnStmt() : Stmt(StmtType::Return) {}
     ExprPtr value; // nullptr for bare return
 };
 
-struct ClassStmt {
+struct ClassMethod {
+    std::string name;
+    std::vector<std::string> params;
+    std::vector<ExprPtr> defaults; // parallel to params, nullptr if no default
+    std::string restParam;         // empty = no rest param
+    std::vector<ExprPtr> decorators;
+    std::vector<StmtPtr> body;
+    int line = 0;
+    int column = 0;
+    bool isGenerator = false;
+    bool isStatic = false;
+};
+
+struct ClassStmt : Stmt {
+    ClassStmt() : Stmt(StmtType::Class) {}
     std::string name;
     std::string superclass; // empty if no superclass
     std::vector<ClassMethod> methods;
 };
 
 // enum Name { A, B = 5, C }
-struct EnumStmt {
+struct EnumStmt : Stmt {
+    EnumStmt() : Stmt(StmtType::Enum) {}
     std::string name;
     std::vector<std::string> members;
     std::vector<ExprPtr> values; // nullptr = auto-increment
 };
 
-struct BreakStmt {};
-struct ContinueStmt {};
+struct BreakStmt : Stmt {
+    BreakStmt() : Stmt(StmtType::Break) {}
+};
+struct ContinueStmt : Stmt {
+    ContinueStmt() : Stmt(StmtType::Continue) {}
+};
 
-struct ThrowStmt {
+struct ThrowStmt : Stmt {
+    ThrowStmt() : Stmt(StmtType::Throw) {}
     ExprPtr value;
 };
 
 // try { body } catch (varName) { handler } finally { cleanup }
-struct TryCatchStmt {
+struct TryCatchStmt : Stmt {
+    TryCatchStmt() : Stmt(StmtType::TryCatch) {}
     StmtPtr tryBody;
     std::string errorVar;
     StmtPtr catchBody;
@@ -268,93 +346,21 @@ struct TryCatchStmt {
 };
 
 // ensure (condition) else { body }
-struct EnsureStmt {
+struct EnsureStmt : Stmt {
+    EnsureStmt() : Stmt(StmtType::Ensure) {}
     ExprPtr condition;
     StmtPtr elseBody;
 };
 
 // use "path"  — imports a grain, binds to variable named after the file
-struct UseStmt {
+struct UseStmt : Stmt {
+    UseStmt() : Stmt(StmtType::Use) {}
     std::string path;    // the string literal from use "path"
     std::string alias;   // derived variable name (e.g. "math" from "utils/math")
 };
 
 // export { name1, name2, ... }
-struct ExportStmt {
+struct ExportStmt : Stmt {
+    ExportStmt() : Stmt(StmtType::Export) {}
     std::vector<std::string> names;
 };
-
-// --- Wrapper nodes ---
-
-struct ExprNode {
-    int line = 0;
-    int column = 0;
-
-    using Data = std::variant<
-        NumberExpr,
-        StringExpr,
-        BoolExpr,
-        NilExpr,
-        IdentifierExpr,
-        UnaryExpr,
-        BinaryExpr,
-        PostfixExpr,
-        AssignExpr,
-        CallExpr,
-        InterpolatedStringExpr,
-        LambdaExpr,
-        TernaryExpr,
-        SpreadExpr,
-        ArrayLiteralExpr,
-        IndexExpr,
-        IndexAssignExpr,
-        MapLiteralExpr,
-        DotExpr,
-        DotAssignExpr,
-        PipeExpr,
-        AsyncExpr,
-        AwaitExpr,
-        YieldExpr,
-        ThisExpr,
-        SuperExpr
-    >;
-
-    Data data;
-};
-
-struct StmtNode {
-    int line = 0;
-    int column = 0;
-
-    using Data = std::variant<
-        ExprStmt,
-        LetStmt,
-        BlockStmt,
-        IfStmt,
-        MatchStmt,
-        WhileStmt,
-        ForStmt,
-        ForInStmt,
-        FuncStmt,
-        ReturnStmt,
-        ClassStmt,
-        EnumStmt,
-        BreakStmt,
-        ContinueStmt,
-        ThrowStmt,
-        TryCatchStmt,
-        EnsureStmt,
-        UseStmt,
-        ExportStmt
-    >;
-
-    Data data;
-};
-
-// --- Overloaded helper for std::visit ---
-
-template<class... Ts>
-struct overloaded : Ts... { using Ts::operator()...; };
-
-template<class... Ts>
-overloaded(Ts...) -> overloaded<Ts...>;

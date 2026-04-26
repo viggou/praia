@@ -125,26 +125,28 @@ std::shared_ptr<CompiledFunction> Compiler::compile(const std::vector<StmtPtr>& 
 // ── Statement compilation ────────────────────────────────────
 
 void Compiler::compileStmt(const Stmt* stmt) {
-    if (auto* s = dynamic_cast<const ExprStmt*>(stmt)) compileExprStmt(s);
-    else if (auto* s = dynamic_cast<const LetStmt*>(stmt)) compileLetStmt(s);
-    else if (auto* s = dynamic_cast<const BlockStmt*>(stmt)) compileBlockStmt(s);
-    else if (auto* s = dynamic_cast<const IfStmt*>(stmt)) compileIfStmt(s);
-    else if (auto* s = dynamic_cast<const MatchStmt*>(stmt)) compileMatchStmt(s);
-    else if (auto* s = dynamic_cast<const WhileStmt*>(stmt)) compileWhileStmt(s);
-    else if (auto* s = dynamic_cast<const ForStmt*>(stmt)) compileForStmt(s);
-    else if (auto* s = dynamic_cast<const ForInStmt*>(stmt)) compileForInStmt(s);
-    else if (auto* s = dynamic_cast<const FuncStmt*>(stmt)) compileFuncStmt(s);
-    else if (auto* s = dynamic_cast<const ReturnStmt*>(stmt)) compileReturnStmt(s);
-    else if (auto* s = dynamic_cast<const BreakStmt*>(stmt)) compileBreakStmt(s);
-    else if (auto* s = dynamic_cast<const ContinueStmt*>(stmt)) compileContinueStmt(s);
-    else if (auto* s = dynamic_cast<const ClassStmt*>(stmt)) compileClassStmt(s);
-    else if (auto* s = dynamic_cast<const EnumStmt*>(stmt)) compileEnumStmt(s);
-    else if (auto* s = dynamic_cast<const ThrowStmt*>(stmt)) compileThrowStmt(s);
-    else if (auto* s = dynamic_cast<const TryCatchStmt*>(stmt)) compileTryCatchStmt(s);
-    else if (auto* s = dynamic_cast<const EnsureStmt*>(stmt)) compileEnsureStmt(s);
-    else if (auto* s = dynamic_cast<const UseStmt*>(stmt)) compileUseStmt(s);
-    else if (auto* s = dynamic_cast<const ExportStmt*>(stmt)) compileExportStmt(s);
-    else error("Unknown statement type", stmt->line);
+    switch (stmt->type) {
+    case StmtType::Expr:    compileExprStmt(static_cast<const ExprStmt*>(stmt)); break;
+    case StmtType::Let:     compileLetStmt(static_cast<const LetStmt*>(stmt)); break;
+    case StmtType::Block:   compileBlockStmt(static_cast<const BlockStmt*>(stmt)); break;
+    case StmtType::If:      compileIfStmt(static_cast<const IfStmt*>(stmt)); break;
+    case StmtType::Match:   compileMatchStmt(static_cast<const MatchStmt*>(stmt)); break;
+    case StmtType::While:   compileWhileStmt(static_cast<const WhileStmt*>(stmt)); break;
+    case StmtType::For:     compileForStmt(static_cast<const ForStmt*>(stmt)); break;
+    case StmtType::ForIn:   compileForInStmt(static_cast<const ForInStmt*>(stmt)); break;
+    case StmtType::Func:    compileFuncStmt(static_cast<const FuncStmt*>(stmt)); break;
+    case StmtType::Return:  compileReturnStmt(static_cast<const ReturnStmt*>(stmt)); break;
+    case StmtType::Break:   compileBreakStmt(static_cast<const BreakStmt*>(stmt)); break;
+    case StmtType::Continue:compileContinueStmt(static_cast<const ContinueStmt*>(stmt)); break;
+    case StmtType::Class:   compileClassStmt(static_cast<const ClassStmt*>(stmt)); break;
+    case StmtType::Enum:    compileEnumStmt(static_cast<const EnumStmt*>(stmt)); break;
+    case StmtType::Throw:   compileThrowStmt(static_cast<const ThrowStmt*>(stmt)); break;
+    case StmtType::TryCatch:compileTryCatchStmt(static_cast<const TryCatchStmt*>(stmt)); break;
+    case StmtType::Ensure:  compileEnsureStmt(static_cast<const EnsureStmt*>(stmt)); break;
+    case StmtType::Use:     compileUseStmt(static_cast<const UseStmt*>(stmt)); break;
+    case StmtType::Export:  compileExportStmt(static_cast<const ExportStmt*>(stmt)); break;
+    default: error("Unknown statement type", stmt->line); break;
+    }
 }
 
 void Compiler::compileExprStmt(const ExprStmt* stmt) {
@@ -556,7 +558,7 @@ void Compiler::compileFuncStmt(const FuncStmt* stmt) {
     }
 
     // Compile body
-    auto* body = dynamic_cast<const BlockStmt*>(stmt->body.get());
+    auto* body = static_cast<const BlockStmt*>(stmt->body.get());
     if (body) {
         for (auto& s : body->statements) compileStmt(s.get());
     }
@@ -822,7 +824,7 @@ void Compiler::compileEnumStmt(const EnumStmt* stmt) {
             // Custom value — compile the expression
             compileExpr(stmt->values[i].get());
             // Try to extract compile-time constant for auto-increment tracking
-            auto* numExpr = dynamic_cast<const NumberExpr*>(stmt->values[i].get());
+            auto* numExpr = static_cast<const NumberExpr*>(stmt->values[i].get());
             if (numExpr && numExpr->isInt) {
                 nextVal = numExpr->intValue + 1;
             } else {
