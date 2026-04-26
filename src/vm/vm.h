@@ -37,12 +37,8 @@ struct ObjClosure {
 // Attached to VMClosureCallable wrappers in the result so the raw pointers
 // survive after the task VM is destroyed.
 struct TaskOwnership {
-    std::vector<ObjClosure*> closures;
-    std::vector<ObjUpvalue*> upvalues;
-    ~TaskOwnership() {
-        for (auto* c : closures) delete c;
-        for (auto* u : upvalues) delete u;
-    }
+    std::vector<std::unique_ptr<ObjClosure>> closures;
+    std::vector<std::unique_ptr<ObjUpvalue>> upvalues;
 };
 
 // Wrapper to store ObjClosure as a Callable in Value
@@ -153,9 +149,9 @@ private:
     };
     std::vector<ExceptionHandler> exceptionHandlers;
 
-    // Closures created during execution (for cleanup)
-    std::vector<ObjClosure*> allClosures;
-    std::vector<ObjUpvalue*> allUpvalues;
+    // Closures created during execution (RAII ownership)
+    std::vector<std::unique_ptr<ObjClosure>> allClosures;
+    std::vector<std::unique_ptr<ObjUpvalue>> allUpvalues;
 
     // Module system
     std::string currentFile;

@@ -98,10 +98,7 @@ Value VMClosureCallable::call(Interpreter&, const std::vector<Value>& args) {
 
 VM::VM() : stack(std::make_unique<Value[]>(STACK_MAX)) {}
 
-VM::~VM() {
-    for (auto* c : allClosures) delete c;
-    for (auto* u : allUpvalues) delete u;
-}
+VM::~VM() = default;
 
 void VM::defineNative(const std::string& name, Value value) {
     globals[name] = std::move(value);
@@ -221,8 +218,8 @@ ObjUpvalue* VM::captureUpvalue(Value* local) {
 
     if (upvalue && upvalue->location == local) return upvalue;
 
-    auto* created = new ObjUpvalue(local);
-    allUpvalues.push_back(created);
+    allUpvalues.push_back(std::make_unique<ObjUpvalue>(local));
+    auto* created = allUpvalues.back().get();
     created->next = upvalue;
 
     if (prevUpvalue) prevUpvalue->next = created;
@@ -501,8 +498,8 @@ Value VM::loadGrain(const std::string& importPath, int line) {
     grainVm.builtinNames_ = builtinNames_;
     grainVm.currentFile = resolved;
 
-    auto* grainClosure = new ObjClosure(script);
-    grainVm.allClosures.push_back(grainClosure);
+    grainVm.allClosures.push_back(std::make_unique<ObjClosure>(script));
+    auto* grainClosure = grainVm.allClosures.back().get();
 
     auto wrapper = std::make_shared<VMClosureCallable>(grainClosure);
     grainVm.push(Value(std::static_pointer_cast<Callable>(wrapper)));
@@ -528,9 +525,9 @@ Value VM::loadGrain(const std::string& importPath, int line) {
     grainAsts.push_back(std::move(program));
 
     // Transfer ownership of closures and upvalues to the parent VM
-    for (auto* c : grainVm.allClosures) allClosures.push_back(c);
+    for (auto& c : grainVm.allClosures) allClosures.push_back(std::move(c));
     grainVm.allClosures.clear();
-    for (auto* u : grainVm.allUpvalues) allUpvalues.push_back(u);
+    for (auto& u : grainVm.allUpvalues) allUpvalues.push_back(std::move(u));
     grainVm.allUpvalues.clear();
 
     // Copy grain's globals to parent VM so exported closures can access
@@ -572,8 +569,8 @@ VM::Result VM::run(std::shared_ptr<CompiledFunction> script) {
     GcHeap::current().setRootMarker([this](GcHeap& h) { gcMarkRoots(h); });
 
     // Create a closure for the top-level script
-    auto* scriptClosure = new ObjClosure(script);
-    allClosures.push_back(scriptClosure);
+    allClosures.push_back(std::make_unique<ObjClosure>(script));
+    auto* scriptClosure = allClosures.back().get();
 
     auto wrapper = std::make_shared<VMClosureCallable>(scriptClosure);
     wrapper->vm = this;
@@ -596,8 +593,8 @@ VM::Result VM::runRepl(std::shared_ptr<CompiledFunction> script) {
     frameCount = 0;
     exceptionHandlers.clear();
 
-    auto* scriptClosure = new ObjClosure(script);
-    allClosures.push_back(scriptClosure);
+    allClosures.push_back(std::make_unique<ObjClosure>(script));
+    auto* scriptClosure = allClosures.back().get();
 
     auto wrapper = std::make_shared<VMClosureCallable>(scriptClosure);
     wrapper->vm = this;
@@ -1017,8 +1014,8 @@ VM::Result VM::execute(int baseFrameCount_) {
                 RUNTIME_ERR("Internal error: OP_CLOSURE constant is not a VM closure");
             }
 
-            auto* closure = new ObjClosure(vmcc->closure->function);
-            allClosures.push_back(closure);
+            allClosures.push_back(std::make_unique<ObjClosure>(vmcc->closure->function));
+            auto* closure = allClosures.back().get();
 
             // Read upvalue descriptors
             for (int i = 0; i < closure->upvalueCount; i++) {
@@ -1791,16 +1788,16 @@ VM::Result VM::execute(int baseFrameCount_) {
                         while (static_cast<int>(paddedArgs.size()) < arity)
                             paddedArgs.push_back(Value());
 
-                        auto* closure = new ObjClosure(fn);
-                        taskVm.allClosures.push_back(closure);
+                        taskVm.allClosures.push_back(std::make_unique<ObjClosure>(fn));
+                        auto* closure = taskVm.allClosures.back().get();
 
                         // Restore upvalues as closed (self-contained) values
                         for (int i = 0; i < closure->upvalueCount && i < static_cast<int>(upvalueSnapshot.size()); i++) {
-                            auto* uv = new ObjUpvalue(nullptr);
+                            taskVm.allUpvalues.push_back(std::make_unique<ObjUpvalue>(nullptr));
+                            auto* uv = taskVm.allUpvalues.back().get();
                             uv->closed = upvalueSnapshot[i];
                             uv->location = &uv->closed;
                             closure->upvalues[i] = uv;
-                            taskVm.allUpvalues.push_back(uv);
                         }
 
                         auto wrapper = std::make_shared<VMClosureCallable>(closure);
@@ -2016,11 +2013,11 @@ void VM::gcMarkRoots(GcHeap& heap) {
     }
 
     // All upvalue closed values
-    for (auto* uv : allUpvalues)
+    for (auto& uv : allUpvalues)
         heap.markValue(uv->closed);
 
     // Function constant pools (may contain callable/container literals)
-    for (auto* c : allClosures) {
+    for (auto& c : allClosures) {
         for (auto& constant : c->function->chunk.constants)
             heap.markValue(constant);
     }
