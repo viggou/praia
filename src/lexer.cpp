@@ -249,6 +249,21 @@ void Lexer::number() {
         while (std::isdigit(peek()) || peek() == '_') advance();
     }
 
+    // Validate underscore placement: not at start/end of digit runs, not doubled
+    std::string lex = source.substr(start, current - start);
+    for (size_t i = 0; i < lex.size(); i++) {
+        if (lex[i] == '_') {
+            if (i == 0 || i == lex.size() - 1 ||
+                lex[i - 1] == '_' || lex[i - 1] == '.' || lex[i - 1] == 'x' ||
+                lex[i - 1] == 'X' || lex[i - 1] == 'b' || lex[i - 1] == 'B' ||
+                lex[i - 1] == 'o' || lex[i - 1] == 'O' || lex[i - 1] == 'e' ||
+                lex[i - 1] == 'E' || lex[i - 1] == '+' || lex[i - 1] == '-') {
+                error("Invalid underscore placement in number literal");
+                return;
+            }
+        }
+    }
+
     addToken(TokenType::NUMBER);
 }
 

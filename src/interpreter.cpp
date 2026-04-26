@@ -819,8 +819,14 @@ Value Interpreter::evaluate(const Expr* expr) {
 
         if (cur.isInt()) {
             int64_t old = cur.asInt();
-            int64_t next = (e->op == TokenType::INCREMENT) ? old + 1 : old - 1;
-            env->set(ident->name, Value(next), e->line);
+            int64_t next;
+            bool overflow = (e->op == TokenType::INCREMENT)
+                ? __builtin_add_overflow(old, (int64_t)1, &next)
+                : __builtin_sub_overflow(old, (int64_t)1, &next);
+            if (overflow)
+                env->set(ident->name, Value(static_cast<double>(old) + (e->op == TokenType::INCREMENT ? 1 : -1)), e->line);
+            else
+                env->set(ident->name, Value(next), e->line);
             return Value(old);
         }
         double old = cur.asNumber();

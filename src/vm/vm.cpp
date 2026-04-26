@@ -858,7 +858,8 @@ VM::Result VM::execute(int baseFrameCount_) {
             Value& val = stack[FRAME.baseSlot + slot];
             if (!val.isNumber()) { RUNTIME_ERR("Postfix operator requires a number"); }
             push(val);
-            if (val.isInt()) val = Value(val.asInt() + 1); else val = Value(val.asNumber() + 1);
+            if (val.isInt()) { int64_t r; if (!__builtin_add_overflow(val.asInt(), (int64_t)1, &r)) val = Value(r); else val = Value(val.asNumber() + 1); }
+            else val = Value(val.asNumber() + 1);
             break;
         }
         case OpCode::OP_POST_DEC_LOCAL: {
@@ -866,7 +867,8 @@ VM::Result VM::execute(int baseFrameCount_) {
             Value& val = stack[FRAME.baseSlot + slot];
             if (!val.isNumber()) { RUNTIME_ERR("Postfix operator requires a number"); }
             push(val);
-            if (val.isInt()) val = Value(val.asInt() - 1); else val = Value(val.asNumber() - 1);
+            if (val.isInt()) { int64_t r; if (!__builtin_sub_overflow(val.asInt(), (int64_t)1, &r)) val = Value(r); else val = Value(val.asNumber() - 1); }
+            else val = Value(val.asNumber() - 1);
             break;
         }
         case OpCode::OP_POST_INC_GLOBAL:
@@ -877,8 +879,12 @@ VM::Result VM::execute(int baseFrameCount_) {
             if (!it->second.isNumber()) { RUNTIME_ERR("Postfix operator requires a number"); }
             push(it->second);
             bool inc = static_cast<OpCode>(instruction) == OpCode::OP_POST_INC_GLOBAL;
-            if (it->second.isInt()) it->second = Value(it->second.asInt() + (inc ? 1 : -1));
-            else it->second = Value(it->second.asNumber() + (inc ? 1 : -1));
+            if (it->second.isInt()) {
+                int64_t r; int64_t delta = inc ? 1 : -1;
+                bool ov = inc ? __builtin_add_overflow(it->second.asInt(), (int64_t)1, &r)
+                              : __builtin_sub_overflow(it->second.asInt(), (int64_t)1, &r);
+                if (!ov) it->second = Value(r); else it->second = Value(it->second.asNumber() + delta);
+            } else it->second = Value(it->second.asNumber() + (inc ? 1 : -1));
             break;
         }
 

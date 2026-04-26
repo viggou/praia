@@ -28,7 +28,7 @@ public:
         auto it = variables.find(name);
         if (it != variables.end()) {
             if (isConstantName(name))
-                std::cerr << "[line " << line << "] Warning: reassigning constant '" << name << "'" << std::endl;
+                std::cerr << formatLocation(line) << " Warning: reassigning constant '" << name << "'" << std::endl;
             it->second = std::move(value);
             return;
         }
@@ -38,11 +38,12 @@ public:
 
     static bool isConstantName(const std::string& name) {
         if (name.size() < 2) return false;
+        bool hasLetter = false;
         for (char c : name) {
-            if (c != '_' && !(c >= 'A' && c <= 'Z') && !(c >= '0' && c <= '9'))
-                return false;
+            if (c >= 'A' && c <= 'Z') hasLetter = true;
+            else if (c != '_' && !(c >= '0' && c <= '9')) return false;
         }
-        return true;
+        return hasLetter;
     }
 
 private:

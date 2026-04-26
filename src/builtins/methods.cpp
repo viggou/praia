@@ -314,10 +314,15 @@ Value getStringMethod(const std::string& str,
             RE2 re(args[0].asString());
             if (!re.ok()) throw RuntimeError("Invalid regex: " + re.error(), 0);
             // Convert $N backreferences to \N for RE2 compatibility
-            std::string rewrite = args[1].asString();
-            for (size_t i = 0; i < rewrite.size(); i++) {
-                if (rewrite[i] == '$' && i + 1 < rewrite.size() && std::isdigit(rewrite[i + 1]))
-                    rewrite[i] = '\\';
+            // $0 → \0 (whole match), $1 → \1, ..., $$ → literal $
+            std::string rewrite;
+            std::string src = args[1].asString();
+            for (size_t i = 0; i < src.size(); i++) {
+                if (src[i] == '$' && i + 1 < src.size()) {
+                    if (src[i + 1] == '$') { rewrite += '$'; i++; } // $$ → $
+                    else if (std::isdigit(src[i + 1])) { rewrite += '\\'; } // $N → \N
+                    else rewrite += src[i];
+                } else rewrite += src[i];
             }
             std::string result = str;
             RE2::GlobalReplace(&result, re, rewrite);
