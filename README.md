@@ -41,13 +41,13 @@ Install dependencies (optional - Praia builds without them, you just won't have 
 
 ```sh
 # macOS
-brew install openssl@3 readline sqlite utf8proc
+brew install openssl@3 readline sqlite utf8proc re2
 
 # Ubuntu / Debian
-sudo apt install g++ make libssl-dev libreadline-dev libsqlite3-dev libutf8proc-dev
+sudo apt install g++ make libssl-dev libreadline-dev libsqlite3-dev libutf8proc-dev libre2-dev
 
 # Fedora / RHEL
-sudo dnf install gcc-c++ make openssl-devel readline-devel sqlite-devel utf8proc-devel
+sudo dnf install gcc-c++ make openssl-devel readline-devel sqlite-devel utf8proc-devel re2-devel
 ```
 
 Build and install:
@@ -89,6 +89,7 @@ make
 | SQLite | `sqlite.open()` built-in | Optional |
 | readline/libedit | REPL history and line editing | Optional |
 | utf8proc | Unicode-aware strings (grapheme splitting, case mapping, emoji) | Optional |
+| RE2 | Safe regex engine (O(n) guaranteed, no catastrophic backtracking) | Optional — falls back to std::regex |
 
 ## Testing
 

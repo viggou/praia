@@ -3,21 +3,15 @@
 #include "../value.h"
 #include "../vm/vm.h"
 #include <algorithm>
-#include <future>
 #include <memory>
-#include <regex>
 #include <string>
 #include "../gc_heap.h"
 
-static constexpr int REGEX_TIMEOUT_MS = 5000;
-
-template<typename F>
-auto regexWithTimeout(F&& fn, const char* funcName) -> decltype(fn()) {
-    auto future = std::async(std::launch::async, std::forward<F>(fn));
-    if (future.wait_for(std::chrono::milliseconds(REGEX_TIMEOUT_MS)) == std::future_status::timeout)
-        throw RuntimeError(std::string(funcName) + " regex timed out (possible catastrophic backtracking)", 0);
-    return future.get();
-}
+#ifdef HAVE_RE2
+#include <re2/re2.h>
+#else
+#include <regex>
+#endif
 
 Value getStringMethod(const std::string& str,
                       const std::string& name, int line) {
@@ -186,89 +180,156 @@ Value getStringMethod(const std::string& str,
         return Value(makeNative("test", 1, [str](const std::vector<Value>& args) -> Value {
             if (!args[0].isString())
                 throw RuntimeError("test() pattern must be a string", 0);
+#ifdef HAVE_RE2
+            RE2 re(args[0].asString());
+            if (!re.ok()) throw RuntimeError("Invalid regex: " + re.error(), 0);
+            return Value(RE2::PartialMatch(str, re));
+#else
             try {
                 std::regex re(args[0].asString());
-                return regexWithTimeout([&] {
-                    return Value(std::regex_search(str, re));
-                }, "test()");
+                return Value(std::regex_search(str, re));
             } catch (const std::regex_error& e) {
                 throw RuntimeError(std::string("Invalid regex: ") + e.what(), 0);
             }
+#endif
         }));
     }
     if (name == "match") {
         return Value(makeNative("match", 1, [str](const std::vector<Value>& args) -> Value {
             if (!args[0].isString())
                 throw RuntimeError("match() pattern must be a string", 0);
+#ifdef HAVE_RE2
+            std::string pattern = args[0].asString();
+            RE2 re(pattern);
+            if (!re.ok()) throw RuntimeError("Invalid regex: " + re.error(), 0);
+            int ngroups = re.NumberOfCapturingGroups();
+            std::vector<re2::StringPiece> groups(ngroups + 1);
+            re2::StringPiece input(str);
+            if (!re.Match(input, 0, str.size(), RE2::UNANCHORED, groups.data(), ngroups + 1))
+                return Value();
+            auto result = gcNew<PraiaMap>();
+            result->entries[Value("match")] = Value(std::string(groups[0]));
+            size_t matchPos = static_cast<size_t>(groups[0].data() - str.data());
+#ifdef HAVE_UTF8PROC
+            result->entries[Value("index")] = Value(static_cast<int64_t>(
+                utf8_byte_to_grapheme_index(str, matchPos)));
+#else
+            result->entries[Value("index")] = Value(static_cast<int64_t>(matchPos));
+#endif
+            auto grpArr = gcNew<PraiaArray>();
+            for (int i = 1; i <= ngroups; i++)
+                grpArr->elements.push_back(Value(std::string(groups[i])));
+            result->entries[Value("groups")] = Value(grpArr);
+            return Value(result);
+#else
             try {
                 std::regex re(args[0].asString());
-                return regexWithTimeout([&]() -> Value {
-                    std::smatch m;
-                    if (!std::regex_search(str, m, re)) return Value();
-                    auto result = gcNew<PraiaMap>();
-                    result->entries[Value("match")] = Value(m[0].str());
+                std::smatch m;
+                if (!std::regex_search(str, m, re)) return Value();
+                auto result = gcNew<PraiaMap>();
+                result->entries[Value("match")] = Value(m[0].str());
 #ifdef HAVE_UTF8PROC
-                    result->entries[Value("index")] = Value(static_cast<int64_t>(
-                        utf8_byte_to_grapheme_index(str, static_cast<size_t>(m.position(0)))));
+                result->entries[Value("index")] = Value(static_cast<int64_t>(
+                    utf8_byte_to_grapheme_index(str, static_cast<size_t>(m.position(0)))));
 #else
-                    result->entries[Value("index")] = Value(static_cast<int64_t>(m.position(0)));
+                result->entries[Value("index")] = Value(static_cast<int64_t>(m.position(0)));
 #endif
-                    auto groups = gcNew<PraiaArray>();
-                    for (size_t i = 1; i < m.size(); i++)
-                        groups->elements.push_back(Value(m[i].str()));
-                    result->entries[Value("groups")] = Value(groups);
-                    return Value(result);
-                }, "match()");
+                auto grpArr = gcNew<PraiaArray>();
+                for (size_t i = 1; i < m.size(); i++)
+                    grpArr->elements.push_back(Value(m[i].str()));
+                result->entries[Value("groups")] = Value(grpArr);
+                return Value(result);
             } catch (const std::regex_error& e) {
                 throw RuntimeError(std::string("Invalid regex: ") + e.what(), 0);
             }
+#endif
         }));
     }
     if (name == "matchAll") {
         return Value(makeNative("matchAll", 1, [str](const std::vector<Value>& args) -> Value {
             if (!args[0].isString())
                 throw RuntimeError("matchAll() pattern must be a string", 0);
+#ifdef HAVE_RE2
+            RE2 re(args[0].asString());
+            if (!re.ok()) throw RuntimeError("Invalid regex: " + re.error(), 0);
+            int ngroups = re.NumberOfCapturingGroups();
+            auto results = gcNew<PraiaArray>();
+            re2::StringPiece input(str);
+            std::vector<re2::StringPiece> groups(ngroups + 1);
+            size_t startPos = 0;
+            while (startPos <= str.size() &&
+                   re.Match(input, startPos, str.size(), RE2::UNANCHORED, groups.data(), ngroups + 1)) {
+                auto entry = gcNew<PraiaMap>();
+                entry->entries[Value("match")] = Value(std::string(groups[0]));
+                size_t matchPos = static_cast<size_t>(groups[0].data() - str.data());
+#ifdef HAVE_UTF8PROC
+                entry->entries[Value("index")] = Value(static_cast<int64_t>(
+                    utf8_byte_to_grapheme_index(str, matchPos)));
+#else
+                entry->entries[Value("index")] = Value(static_cast<int64_t>(matchPos));
+#endif
+                auto grpArr = gcNew<PraiaArray>();
+                for (int i = 1; i <= ngroups; i++)
+                    grpArr->elements.push_back(Value(std::string(groups[i])));
+                entry->entries[Value("groups")] = Value(grpArr);
+                results->elements.push_back(Value(entry));
+                // Advance past this match (avoid infinite loop on zero-length match)
+                size_t matchEnd = matchPos + groups[0].size();
+                startPos = (groups[0].empty()) ? matchEnd + 1 : matchEnd;
+            }
+            return Value(results);
+#else
             try {
                 std::regex re(args[0].asString());
-                return regexWithTimeout([&]() -> Value {
-                    auto results = gcNew<PraiaArray>();
-                    auto begin = std::sregex_iterator(str.begin(), str.end(), re);
-                    auto end = std::sregex_iterator();
-                    for (auto it = begin; it != end; ++it) {
-                        auto entry = gcNew<PraiaMap>();
-                        entry->entries[Value("match")] = Value((*it)[0].str());
+                auto results = gcNew<PraiaArray>();
+                auto begin = std::sregex_iterator(str.begin(), str.end(), re);
+                auto end = std::sregex_iterator();
+                for (auto it = begin; it != end; ++it) {
+                    auto entry = gcNew<PraiaMap>();
+                    entry->entries[Value("match")] = Value((*it)[0].str());
 #ifdef HAVE_UTF8PROC
-                        entry->entries[Value("index")] = Value(static_cast<int64_t>(
-                            utf8_byte_to_grapheme_index(str, static_cast<size_t>(it->position(0)))));
+                    entry->entries[Value("index")] = Value(static_cast<int64_t>(
+                        utf8_byte_to_grapheme_index(str, static_cast<size_t>(it->position(0)))));
 #else
-                        entry->entries[Value("index")] = Value(static_cast<int64_t>(it->position(0)));
+                    entry->entries[Value("index")] = Value(static_cast<int64_t>(it->position(0)));
 #endif
-                        auto groups = gcNew<PraiaArray>();
-                        for (size_t i = 1; i < it->size(); i++)
-                            groups->elements.push_back(Value((*it)[i].str()));
-                        entry->entries[Value("groups")] = Value(groups);
-                        results->elements.push_back(Value(entry));
-                    }
-                    return Value(results);
-                }, "matchAll()");
+                    auto grpArr = gcNew<PraiaArray>();
+                    for (size_t i = 1; i < it->size(); i++)
+                        grpArr->elements.push_back(Value((*it)[i].str()));
+                    entry->entries[Value("groups")] = Value(grpArr);
+                    results->elements.push_back(Value(entry));
+                }
+                return Value(results);
             } catch (const std::regex_error& e) {
                 throw RuntimeError(std::string("Invalid regex: ") + e.what(), 0);
             }
+#endif
         }));
     }
     if (name == "replacePattern") {
         return Value(makeNative("replacePattern", 2, [str](const std::vector<Value>& args) -> Value {
             if (!args[0].isString() || !args[1].isString())
                 throw RuntimeError("replacePattern() requires string arguments", 0);
+#ifdef HAVE_RE2
+            RE2 re(args[0].asString());
+            if (!re.ok()) throw RuntimeError("Invalid regex: " + re.error(), 0);
+            // Convert $N backreferences to \N for RE2 compatibility
+            std::string rewrite = args[1].asString();
+            for (size_t i = 0; i < rewrite.size(); i++) {
+                if (rewrite[i] == '$' && i + 1 < rewrite.size() && std::isdigit(rewrite[i + 1]))
+                    rewrite[i] = '\\';
+            }
+            std::string result = str;
+            RE2::GlobalReplace(&result, re, rewrite);
+            return Value(std::move(result));
+#else
             try {
                 std::regex re(args[0].asString());
-                std::string replacement = args[1].asString();
-                return regexWithTimeout([&] {
-                    return Value(std::regex_replace(str, re, replacement));
-                }, "replacePattern()");
+                return Value(std::regex_replace(str, re, args[1].asString()));
             } catch (const std::regex_error& e) {
                 throw RuntimeError(std::string("Invalid regex: ") + e.what(), 0);
             }
+#endif
         }));
     }
     if (name == "slice") {

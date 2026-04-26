@@ -1646,7 +1646,7 @@ All positional methods (`len`, indexing, `slice`, `split("")`, `indexOf`, `padSt
 
 ## Regex
 
-Regular expressions are available as string methods. Patterns use ECMAScript regex syntax.
+Regular expressions are available as string methods. When built with RE2 (the default on most systems), regex operations are guaranteed O(n) with no risk of catastrophic backtracking. Without RE2, Praia falls back to the C++ standard regex engine.
 
 | Method | Description |
 |--------|-------------|

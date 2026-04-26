@@ -61,6 +61,25 @@ else
   endif
 endif
 
+# Auto-detect RE2 (safe regex engine — O(n) guaranteed, no catastrophic backtracking)
+HAVE_RE2 := $(shell echo 'int main(){}' | $(CXX) -x c++ - -lre2 -o /dev/null 2>/dev/null && echo 1)
+ifeq ($(HAVE_RE2),1)
+  CXXFLAGS += -DHAVE_RE2
+  LDLIBS += -lre2
+else
+  RE2_PREFIX := $(shell brew --prefix re2 2>/dev/null)
+  ifneq ($(RE2_PREFIX),)
+    HAVE_RE2 := 1
+    CXXFLAGS += -DHAVE_RE2 -I$(RE2_PREFIX)/include
+    LDLIBS += -L$(RE2_PREFIX)/lib -lre2
+    # RE2 depends on Abseil on some platforms
+    ABSEIL_PREFIX := $(shell brew --prefix abseil 2>/dev/null)
+    ifneq ($(ABSEIL_PREFIX),)
+      CXXFLAGS += -I$(ABSEIL_PREFIX)/include
+    endif
+  endif
+endif
+
 # Auto-detect -ldl for dlopen (Linux needs it, macOS has it in libSystem)
 HAVE_DL := $(shell echo 'int main(){}' | $(CXX) -x c++ - -ldl -o /dev/null 2>/dev/null && echo 1)
 ifeq ($(HAVE_DL),1)
