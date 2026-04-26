@@ -31,60 +31,109 @@ static void printStmt(const Stmt* stmt, int level);
 static void printExpr(const Expr* expr, int level) {
     if (!expr) { printIndent(level); std::cout << "<null>\n"; return; }
 
-    if (auto* e = dynamic_cast<const NumberExpr*>(expr)) {
+    switch (expr->type) {
+    case ExprType::Number: {
+        auto* e = static_cast<const NumberExpr*>(expr);
         printIndent(level);
         if (e->isInt) std::cout << "Int(" << e->intValue << ")\n";
         else std::cout << "Float(" << e->floatValue << ")\n";
-    } else if (auto* e = dynamic_cast<const StringExpr*>(expr)) {
+        break;
+    }
+    case ExprType::String: {
+        auto* e = static_cast<const StringExpr*>(expr);
         printIndent(level); std::cout << "String(\"" << e->value << "\")\n";
-    } else if (auto* e = dynamic_cast<const BoolExpr*>(expr)) {
+        break;
+    }
+    case ExprType::Bool: {
+        auto* e = static_cast<const BoolExpr*>(expr);
         printIndent(level); std::cout << "Bool(" << (e->value ? "true" : "false") << ")\n";
-    } else if (dynamic_cast<const NilExpr*>(expr)) {
+        break;
+    }
+    case ExprType::Nil:
         printIndent(level); std::cout << "Nil\n";
-    } else if (auto* e = dynamic_cast<const IdentifierExpr*>(expr)) {
+        break;
+    case ExprType::Identifier: {
+        auto* e = static_cast<const IdentifierExpr*>(expr);
         printIndent(level); std::cout << "Ident(" << e->name << ")\n";
-    } else if (auto* e = dynamic_cast<const UnaryExpr*>(expr)) {
+        break;
+    }
+    case ExprType::Unary: {
+        auto* e = static_cast<const UnaryExpr*>(expr);
         printIndent(level); std::cout << "Unary(" << tokenTypeToString(e->op) << ")\n";
         printExpr(e->operand.get(), level + 1);
-    } else if (auto* e = dynamic_cast<const BinaryExpr*>(expr)) {
+        break;
+    }
+    case ExprType::Binary: {
+        auto* e = static_cast<const BinaryExpr*>(expr);
         printIndent(level); std::cout << "Binary(" << tokenTypeToString(e->op) << ")\n";
         printExpr(e->left.get(), level + 1);
         printExpr(e->right.get(), level + 1);
-    } else if (auto* e = dynamic_cast<const PostfixExpr*>(expr)) {
+        break;
+    }
+    case ExprType::Postfix: {
+        auto* e = static_cast<const PostfixExpr*>(expr);
         printIndent(level); std::cout << "Postfix(" << tokenTypeToString(e->op) << ")\n";
         printExpr(e->operand.get(), level + 1);
-    } else if (auto* e = dynamic_cast<const AssignExpr*>(expr)) {
+        break;
+    }
+    case ExprType::Assign: {
+        auto* e = static_cast<const AssignExpr*>(expr);
         printIndent(level); std::cout << "Assign(" << e->name << ")\n";
         printExpr(e->value.get(), level + 1);
-    } else if (auto* e = dynamic_cast<const CallExpr*>(expr)) {
+        break;
+    }
+    case ExprType::Call: {
+        auto* e = static_cast<const CallExpr*>(expr);
         printIndent(level); std::cout << "Call\n";
         printExpr(e->callee.get(), level + 1);
         for (const auto& arg : e->args)
             printExpr(arg.get(), level + 1);
-    } else if (auto* e = dynamic_cast<const TernaryExpr*>(expr)) {
+        break;
+    }
+    case ExprType::Ternary: {
+        auto* e = static_cast<const TernaryExpr*>(expr);
         printIndent(level); std::cout << "Ternary\n";
         printExpr(e->condition.get(), level + 1);
         printExpr(e->thenExpr.get(), level + 1);
         printExpr(e->elseExpr.get(), level + 1);
-    } else if (auto* e = dynamic_cast<const PipeExpr*>(expr)) {
+        break;
+    }
+    case ExprType::Pipe: {
+        auto* e = static_cast<const PipeExpr*>(expr);
         printIndent(level); std::cout << "Pipe\n";
         printExpr(e->left.get(), level + 1);
         printExpr(e->right.get(), level + 1);
-    } else if (auto* e = dynamic_cast<const AsyncExpr*>(expr)) {
+        break;
+    }
+    case ExprType::Async: {
+        auto* e = static_cast<const AsyncExpr*>(expr);
         printIndent(level); std::cout << "Async\n";
         printExpr(e->expr.get(), level + 1);
-    } else if (auto* e = dynamic_cast<const AwaitExpr*>(expr)) {
+        break;
+    }
+    case ExprType::Await: {
+        auto* e = static_cast<const AwaitExpr*>(expr);
         printIndent(level); std::cout << "Await\n";
         printExpr(e->expr.get(), level + 1);
-    } else if (dynamic_cast<const ThisExpr*>(expr)) {
+        break;
+    }
+    case ExprType::This:
         printIndent(level); std::cout << "This\n";
-    } else if (auto* e = dynamic_cast<const SuperExpr*>(expr)) {
+        break;
+    case ExprType::Super: {
+        auto* e = static_cast<const SuperExpr*>(expr);
         printIndent(level); std::cout << "Super." << e->method << "\n";
-    } else if (auto* e = dynamic_cast<const InterpolatedStringExpr*>(expr)) {
+        break;
+    }
+    case ExprType::InterpolatedString: {
+        auto* e = static_cast<const InterpolatedStringExpr*>(expr);
         printIndent(level); std::cout << "InterpString\n";
         for (const auto& part : e->parts)
             printExpr(part.get(), level + 1);
-    } else if (auto* e = dynamic_cast<const LambdaExpr*>(expr)) {
+        break;
+    }
+    case ExprType::Lambda: {
+        auto* e = static_cast<const LambdaExpr*>(expr);
         printIndent(level); std::cout << "Lambda";
         if (!e->params.empty()) {
             std::cout << "(";
@@ -97,49 +146,95 @@ static void printExpr(const Expr* expr, int level) {
         std::cout << "\n";
         for (const auto& s : e->body)
             printStmt(s.get(), level + 1);
-    } else if (auto* e = dynamic_cast<const ArrayLiteralExpr*>(expr)) {
+        break;
+    }
+    case ExprType::ArrayLiteral: {
+        auto* e = static_cast<const ArrayLiteralExpr*>(expr);
         printIndent(level); std::cout << "ArrayLiteral\n";
         for (const auto& elem : e->elements)
             printExpr(elem.get(), level + 1);
-    } else if (auto* e = dynamic_cast<const IndexExpr*>(expr)) {
+        break;
+    }
+    case ExprType::Index: {
+        auto* e = static_cast<const IndexExpr*>(expr);
         printIndent(level); std::cout << "Index\n";
         printExpr(e->object.get(), level + 1);
         printExpr(e->index.get(), level + 1);
-    } else if (auto* e = dynamic_cast<const IndexAssignExpr*>(expr)) {
+        break;
+    }
+    case ExprType::IndexAssign: {
+        auto* e = static_cast<const IndexAssignExpr*>(expr);
         printIndent(level); std::cout << "IndexAssign\n";
         printExpr(e->object.get(), level + 1);
         printExpr(e->index.get(), level + 1);
         printExpr(e->value.get(), level + 1);
-    } else if (auto* e = dynamic_cast<const MapLiteralExpr*>(expr)) {
+        break;
+    }
+    case ExprType::MapLiteral: {
+        auto* e = static_cast<const MapLiteralExpr*>(expr);
         printIndent(level); std::cout << "MapLiteral\n";
         for (size_t i = 0; i < e->keys.size(); i++) {
             printIndent(level + 1); std::cout << e->keys[i] << ":\n";
             printExpr(e->values[i].get(), level + 2);
         }
-    } else if (auto* e = dynamic_cast<const DotExpr*>(expr)) {
+        break;
+    }
+    case ExprType::Dot: {
+        auto* e = static_cast<const DotExpr*>(expr);
         printIndent(level); std::cout << "Dot(." << e->field << ")\n";
         printExpr(e->object.get(), level + 1);
-    } else if (auto* e = dynamic_cast<const DotAssignExpr*>(expr)) {
+        break;
+    }
+    case ExprType::DotAssign: {
+        auto* e = static_cast<const DotAssignExpr*>(expr);
         printIndent(level); std::cout << "DotAssign(." << e->field << ")\n";
         printExpr(e->object.get(), level + 1);
         printExpr(e->value.get(), level + 1);
+        break;
+    }
+    case ExprType::Spread: {
+        auto* e = static_cast<const SpreadExpr*>(expr);
+        printIndent(level); std::cout << "Spread\n";
+        printExpr(e->expr.get(), level + 1);
+        break;
+    }
+    case ExprType::Yield: {
+        auto* e = static_cast<const YieldExpr*>(expr);
+        printIndent(level); std::cout << "Yield\n";
+        if (e->value) printExpr(e->value.get(), level + 1);
+        break;
+    }
+    default:
+        printIndent(level); std::cout << "Unknown\n";
+        break;
     }
 }
 
 static void printStmt(const Stmt* stmt, int level) {
     if (!stmt) { printIndent(level); std::cout << "<null>\n"; return; }
 
-    if (auto* s = dynamic_cast<const ExprStmt*>(stmt)) {
+    switch (stmt->type) {
+    case StmtType::Expr: {
+        auto* s = static_cast<const ExprStmt*>(stmt);
         printIndent(level); std::cout << "ExprStmt\n";
         printExpr(s->expr.get(), level + 1);
-    } else if (auto* s = dynamic_cast<const LetStmt*>(stmt)) {
+        break;
+    }
+    case StmtType::Let: {
+        auto* s = static_cast<const LetStmt*>(stmt);
         printIndent(level); std::cout << "Let(" << s->name << ")\n";
         if (s->initializer) printExpr(s->initializer.get(), level + 1);
-    } else if (auto* s = dynamic_cast<const BlockStmt*>(stmt)) {
+        break;
+    }
+    case StmtType::Block: {
+        auto* s = static_cast<const BlockStmt*>(stmt);
         printIndent(level); std::cout << "Block\n";
         for (const auto& child : s->statements)
             printStmt(child.get(), level + 1);
-    } else if (auto* s = dynamic_cast<const IfStmt*>(stmt)) {
+        break;
+    }
+    case StmtType::If: {
+        auto* s = static_cast<const IfStmt*>(stmt);
         printIndent(level); std::cout << "If\n";
         printIndent(level + 1); std::cout << "cond:\n";
         printExpr(s->condition.get(), level + 2);
@@ -154,13 +249,25 @@ static void printStmt(const Stmt* stmt, int level) {
             printIndent(level + 1); std::cout << "else:\n";
             printStmt(s->elseBranch.get(), level + 2);
         }
-    } else if (auto* s = dynamic_cast<const WhileStmt*>(stmt)) {
+        break;
+    }
+    case StmtType::Match: {
+        auto* s = static_cast<const MatchStmt*>(stmt);
+        printIndent(level); std::cout << "Match\n";
+        printExpr(s->subject.get(), level + 1);
+        break;
+    }
+    case StmtType::While: {
+        auto* s = static_cast<const WhileStmt*>(stmt);
         printIndent(level); std::cout << "While\n";
         printIndent(level + 1); std::cout << "cond:\n";
         printExpr(s->condition.get(), level + 2);
         printIndent(level + 1); std::cout << "body:\n";
         printStmt(s->body.get(), level + 2);
-    } else if (auto* s = dynamic_cast<const ForStmt*>(stmt)) {
+        break;
+    }
+    case StmtType::For: {
+        auto* s = static_cast<const ForStmt*>(stmt);
         printIndent(level); std::cout << "For(" << s->varName << ")\n";
         printIndent(level + 1); std::cout << "from:\n";
         printExpr(s->start.get(), level + 2);
@@ -168,13 +275,19 @@ static void printStmt(const Stmt* stmt, int level) {
         printExpr(s->end.get(), level + 2);
         printIndent(level + 1); std::cout << "body:\n";
         printStmt(s->body.get(), level + 2);
-    } else if (auto* s = dynamic_cast<const ForInStmt*>(stmt)) {
+        break;
+    }
+    case StmtType::ForIn: {
+        auto* s = static_cast<const ForInStmt*>(stmt);
         printIndent(level); std::cout << "ForIn(" << s->varName << ")\n";
         printIndent(level + 1); std::cout << "iterable:\n";
         printExpr(s->iterable.get(), level + 2);
         printIndent(level + 1); std::cout << "body:\n";
         printStmt(s->body.get(), level + 2);
-    } else if (auto* s = dynamic_cast<const FuncStmt*>(stmt)) {
+        break;
+    }
+    case StmtType::Func: {
+        auto* s = static_cast<const FuncStmt*>(stmt);
         printIndent(level); std::cout << "Func(" << s->name << ")";
         if (!s->params.empty()) {
             std::cout << " params:";
@@ -182,9 +295,15 @@ static void printStmt(const Stmt* stmt, int level) {
         }
         std::cout << "\n";
         printStmt(s->body.get(), level + 1);
-    } else if (auto* s = dynamic_cast<const EnumStmt*>(stmt)) {
+        break;
+    }
+    case StmtType::Enum: {
+        auto* s = static_cast<const EnumStmt*>(stmt);
         printIndent(level); std::cout << "Enum(" << s->name << ")\n";
-    } else if (auto* s = dynamic_cast<const ClassStmt*>(stmt)) {
+        break;
+    }
+    case StmtType::Class: {
+        auto* s = static_cast<const ClassStmt*>(stmt);
         printIndent(level); std::cout << "Class(" << s->name << ")";
         if (!s->superclass.empty()) std::cout << " extends " << s->superclass;
         std::cout << "\n";
@@ -196,37 +315,62 @@ static void printStmt(const Stmt* stmt, int level) {
             }
             std::cout << "\n";
         }
-    } else if (auto* s = dynamic_cast<const ReturnStmt*>(stmt)) {
+        break;
+    }
+    case StmtType::Return: {
+        auto* s = static_cast<const ReturnStmt*>(stmt);
         printIndent(level); std::cout << "Return\n";
         if (s->value) printExpr(s->value.get(), level + 1);
-    } else if (dynamic_cast<const BreakStmt*>(stmt)) {
+        break;
+    }
+    case StmtType::Break:
         printIndent(level); std::cout << "Break\n";
-    } else if (dynamic_cast<const ContinueStmt*>(stmt)) {
+        break;
+    case StmtType::Continue:
         printIndent(level); std::cout << "Continue\n";
-    } else if (auto* s = dynamic_cast<const ThrowStmt*>(stmt)) {
+        break;
+    case StmtType::Throw: {
+        auto* s = static_cast<const ThrowStmt*>(stmt);
         printIndent(level); std::cout << "Throw\n";
         printExpr(s->value.get(), level + 1);
-    } else if (auto* s = dynamic_cast<const TryCatchStmt*>(stmt)) {
+        break;
+    }
+    case StmtType::TryCatch: {
+        auto* s = static_cast<const TryCatchStmt*>(stmt);
         printIndent(level); std::cout << "TryCatch(" << s->errorVar << ")\n";
         printIndent(level + 1); std::cout << "try:\n";
         printStmt(s->tryBody.get(), level + 2);
         printIndent(level + 1); std::cout << "catch:\n";
         printStmt(s->catchBody.get(), level + 2);
-    } else if (auto* s = dynamic_cast<const EnsureStmt*>(stmt)) {
+        break;
+    }
+    case StmtType::Ensure: {
+        auto* s = static_cast<const EnsureStmt*>(stmt);
         printIndent(level); std::cout << "Ensure\n";
         printIndent(level + 1); std::cout << "cond:\n";
         printExpr(s->condition.get(), level + 2);
         printIndent(level + 1); std::cout << "else:\n";
         printStmt(s->elseBody.get(), level + 2);
-    } else if (auto* s = dynamic_cast<const UseStmt*>(stmt)) {
+        break;
+    }
+    case StmtType::Use: {
+        auto* s = static_cast<const UseStmt*>(stmt);
         printIndent(level); std::cout << "Use(\"" << s->path << "\") as " << s->alias << "\n";
-    } else if (auto* s = dynamic_cast<const ExportStmt*>(stmt)) {
+        break;
+    }
+    case StmtType::Export: {
+        auto* s = static_cast<const ExportStmt*>(stmt);
         printIndent(level); std::cout << "Export {";
         for (size_t i = 0; i < s->names.size(); i++) {
             if (i > 0) std::cout << ", ";
             std::cout << s->names[i];
         }
         std::cout << "}\n";
+        break;
+    }
+    default:
+        printIndent(level); std::cout << "Unknown\n";
+        break;
     }
 }
 
@@ -420,7 +564,7 @@ static void vmRepl(bool showTokens, bool showAst) {
         if (program.empty()) continue;
 
         // Check if the last statement is a bare expression
-        bool lastIsExpr = dynamic_cast<const ExprStmt*>(program.back().get()) != nullptr;
+        bool lastIsExpr = static_cast<const ExprStmt*>(program.back().get()) != nullptr;
 
         Compiler compiler;
         auto script = compiler.compile(program);
@@ -507,7 +651,7 @@ static int runTestsCommand(const std::string& dir, bool useVm) {
         if (!entry.is_regular_file()) continue;
         auto& p = entry.path();
         if (p.extension() == ".praia" &&
-            p.filename().string().rfind("test_", 0) == 0) {
+            p.filename().string().starts_with("test_")) {
             files.push_back(p.string());
         }
     }

@@ -1,5 +1,5 @@
 CXX = g++
-CXXFLAGS = -std=c++17 -Wall -Wextra -g -MMD -MP
+CXXFLAGS = -std=c++20 -Wall -Wextra -Wno-deprecated-declarations -g -MMD -MP -D_XOPEN_SOURCE=600 -D_DARWIN_C_SOURCE
 SRC_DIR = src
 BUILD_DIR = build
 
@@ -156,6 +156,6 @@ ifeq ($(UNAME_S),Darwin)
   PLUGIN_LDFLAGS = -undefined dynamic_lookup
 endif
 plugin:
-	$(CXX) -std=c++17 -shared -fPIC -I$(SRC_DIR) $(PLUGIN_LDFLAGS) -o $(OUT) $(SRC)
+	$(CXX) -std=c++20 -shared -fPIC -I$(SRC_DIR) $(PLUGIN_LDFLAGS) -o $(OUT) $(SRC)
 
 .PHONY: all clean install uninstall test test-input plugin

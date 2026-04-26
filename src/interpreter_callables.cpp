@@ -1,3 +1,4 @@
+#include "fiber.h"
 #include "gc_heap.h"
 #include "interpreter.h"
 
@@ -159,13 +160,22 @@ Value PraiaFunction::call(Interpreter& interp, const std::vector<Value>& args) {
     return Value(); // implicit nil
 }
 
+// ── PraiaGenerator destructor ────────────────────────────────
+// Defined here because it needs the complete Fiber type.
+
+PraiaGenerator::~PraiaGenerator() {
+    if (fiber && !fiber->isCompleted() && state == State::SUSPENDED) {
+        // Resume the fiber so it can unwind (yield checks gen->done and throws ReturnSignal)
+        done = true;
+        fiber->resume();
+    }
+}
+
 // ── Generator callables ──────────────────────────────────────
 // Calling a generator function returns a PraiaGenerator object.
-// The body runs on a dedicated thread, synchronized via condvars.
+// The body runs on a fiber (lightweight coroutine), suspended/resumed
+// cooperatively via Fiber::suspend() / fiber->resume().
 
-// Declared as friend in interpreter.h via PraiaGeneratorFunction/Lambda
-// which call this helper. Access to private Interpreter members is needed
-// for the generator thread to set env and call execute().
 Value makeGeneratorFromEnv(
     std::shared_ptr<Environment> funcEnv,
     std::shared_ptr<Environment> sharedGlobals,
@@ -174,68 +184,48 @@ Value makeGeneratorFromEnv(
 
     gen->isVM = false;
     gen->state = PraiaGenerator::State::CREATED;
+    gen->fiberEnv = funcEnv; // keep environment alive for GC marking
 
-    // Capture pointer to the AST statements (AST is kept alive by grainAsts/program)
+    // Capture raw pointer to avoid reference cycle (gen owns fiber, fiber captures gen)
+    PraiaGenerator* genRaw = gen.get();
     const auto* stmtsPtr = &bodyStmts;
-    gen->thread = std::thread([gen, funcEnv, stmtsPtr, sharedGlobals]() {
-        GcHeap::current().disable(); // generator threads are short-lived
+
+    gen->fiber = std::make_unique<Fiber>([genRaw, funcEnv, stmtsPtr, sharedGlobals]() {
+        GcHeap::current().disable();
         Interpreter genInterp(sharedGlobals);
         genInterp.env = funcEnv;
 
-        // Wait for first next() call
-        {
-            std::unique_lock<std::mutex> lock(gen->mtx);
-            gen->callerCV.wait(lock, [&] { return gen->resumed; });
-            gen->resumed = false;
-            if (gen->done) return;
-        }
-
-        gen->state = PraiaGenerator::State::RUNNING;
+        genRaw->state = PraiaGenerator::State::RUNNING;
 
         try {
             for (const auto& stmt : *stmtsPtr)
                 genInterp.execute(stmt.get());
         } catch (const ReturnSignal& ret) {
-            std::lock_guard<std::mutex> lock(gen->mtx);
-            gen->lastYielded = ret.value;
-            gen->done = true;
-            gen->hasValue = true;
-            gen->state = PraiaGenerator::State::COMPLETED;
-            gen->genCV.notify_one();
+            genRaw->lastYielded = ret.value;
+            genRaw->done = true;
+            genRaw->state = PraiaGenerator::State::COMPLETED;
             return;
         } catch (const ThrowSignal& ts) {
-            std::lock_guard<std::mutex> lock(gen->mtx);
-            gen->errorMessage = ts.value.toString();
-            gen->done = true;
-            gen->hasValue = true;
-            gen->state = PraiaGenerator::State::COMPLETED;
-            gen->genCV.notify_one();
+            genRaw->errorMessage = ts.value.toString();
+            genRaw->done = true;
+            genRaw->state = PraiaGenerator::State::COMPLETED;
             return;
         } catch (const RuntimeError& err) {
-            std::lock_guard<std::mutex> lock(gen->mtx);
-            gen->errorMessage = err.what();
-            gen->done = true;
-            gen->hasValue = true;
-            gen->state = PraiaGenerator::State::COMPLETED;
-            gen->genCV.notify_one();
+            genRaw->errorMessage = err.what();
+            genRaw->done = true;
+            genRaw->state = PraiaGenerator::State::COMPLETED;
             return;
         } catch (...) {
-            std::lock_guard<std::mutex> lock(gen->mtx);
-            gen->errorMessage = "Generator failed";
-            gen->done = true;
-            gen->hasValue = true;
-            gen->state = PraiaGenerator::State::COMPLETED;
-            gen->genCV.notify_one();
+            genRaw->errorMessage = "Generator failed";
+            genRaw->done = true;
+            genRaw->state = PraiaGenerator::State::COMPLETED;
             return;
         }
 
-        // Body finished without return
-        std::lock_guard<std::mutex> lock(gen->mtx);
-        gen->lastYielded = Value();
-        gen->done = true;
-        gen->hasValue = true;
-        gen->state = PraiaGenerator::State::COMPLETED;
-        gen->genCV.notify_one();
+        // Body finished without explicit return
+        genRaw->lastYielded = Value();
+        genRaw->done = true;
+        genRaw->state = PraiaGenerator::State::COMPLETED;
     });
 
     return Value(gen);

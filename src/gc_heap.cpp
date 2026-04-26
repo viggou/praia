@@ -1,3 +1,4 @@
+#include "fiber.h"
 #include "gc_heap.h"
 #include "environment.h"
 #include "interpreter.h"
@@ -124,6 +125,7 @@ void GcHeap::markGenerator(PraiaGenerator* gen) {
     markValue(gen->lastYielded);
     markValue(gen->sendValue);
     for (auto& v : gen->savedStack) markValue(v);
+    if (gen->fiberEnv) markEnvironment(gen->fiberEnv.get());
 }
 
 void GcHeap::markEnvironment(Environment* env) {
@@ -221,12 +223,12 @@ void GcHeap::sweep() {
             }
             case GcType::Generator: {
                 auto* gen = static_cast<PraiaGenerator*>(item.rawPtr);
-                // Only clear Value-holding fields — thread/mutex cleanup is
-                // handled by ~PraiaGenerator() when refcount hits 0
                 gen->lastYielded = Value();
                 gen->sendValue = Value();
                 gen->savedStack.clear();
                 gen->ownedResources.clear();
+                gen->fiber.reset();
+                gen->fiberEnv.reset();
                 break;
             }
             case GcType::Environment: {
@@ -245,10 +247,7 @@ void GcHeap::sweep() {
     toCollect.clear();
 
     // Phase 4: Remove expired entries (dead via refcounting or just cleared)
-    entries_.erase(
-        std::remove_if(entries_.begin(), entries_.end(),
-            [](const GcEntry& e) { return e.weak.expired(); }),
-        entries_.end());
+    std::erase_if(entries_, [](const GcEntry& e) { return e.weak.expired(); });
 
     marked_.clear();
 }

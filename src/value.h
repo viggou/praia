@@ -1,13 +1,13 @@
 #pragma once
 
-#include <condition_variable>
+// Fiber must be included before system headers (it defines _XOPEN_SOURCE)
+#include "fiber.h"
+
 #include <future>
 #include <memory>
-#include <mutex>
 #include <sstream>
 #include <stdexcept>
 #include <string>
-#include <thread>
 #include <unordered_map>
 #include <variant>
 #include <vector>
@@ -20,6 +20,7 @@ struct PraiaInstance;
 struct PraiaFuture;
 struct PraiaGenerator;
 class Interpreter;
+class Environment;
 
 // Runtime error with line info
 struct RuntimeError : std::runtime_error {
@@ -123,16 +124,12 @@ struct PraiaGenerator {
     Value lastYielded;
     Value sendValue;
     std::string errorMessage; // stores error from generator body for propagation
-
-    // Tree-walker: thread-based coroutine
-    std::thread thread;
-    std::mutex mtx;
-    std::condition_variable genCV;     // generator signals yield/done
-    std::condition_variable callerCV;  // caller signals resume
-    bool hasValue = false;
-    bool resumed = false;
     bool done = false;
     bool isVM = false;
+
+    // Tree-walker: fiber-based coroutine (ucontext)
+    std::unique_ptr<Fiber> fiber;
+    std::shared_ptr<Environment> fiberEnv; // kept alive for GC marking
 
     // VM: snapshot state (filled on yield, restored on next)
     std::vector<Value> savedStack;
@@ -144,21 +141,7 @@ struct PraiaGenerator {
     // prevent GC of closures/upvalues used by the generator
     std::vector<std::shared_ptr<void>> ownedResources;
 
-    ~PraiaGenerator() {
-        if (thread.joinable()) {
-            // Signal the generator thread to finish — it may be blocked
-            // on either condvar (waiting for first next, or suspended in yield)
-            {
-                std::lock_guard<std::mutex> lock(mtx);
-                done = true;
-                resumed = true;
-                hasValue = true; // unblock any caller waiting on genCV
-                callerCV.notify_one();
-                genCV.notify_one();
-            }
-            thread.join();
-        }
-    }
+    ~PraiaGenerator();  // defined in interpreter_callables.cpp (needs Fiber complete type)
 };
 
 struct PraiaClass;  // defined in interpreter.h (it's a Callable)

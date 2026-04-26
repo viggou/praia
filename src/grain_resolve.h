@@ -47,7 +47,7 @@ inline std::string resolveGrainDir(const fs::path& dir, const fs::path& base) {
         std::string line;
         while (std::getline(f, line)) {
             // Simple YAML parse: look for "main: <filename>"
-            if (line.rfind("main:", 0) == 0) {
+            if (line.starts_with("main:")) {
                 std::string mainFile = line.substr(5);
                 // Trim whitespace
                 size_t start = mainFile.find_first_not_of(" \t");
@@ -91,7 +91,7 @@ inline std::string tryResolveGrain(const fs::path& base, const std::string& name
 inline std::string resolveGrainPath(const std::string& importPath,
                                      const std::string& currentFile) {
     // 1. Relative path (starts with ./ or ../)
-    if (importPath.rfind("./", 0) == 0 || importPath.rfind("../", 0) == 0) {
+    if (importPath.starts_with("./") || importPath.starts_with("../")) {
         std::string base = currentFile.empty() ? fs::current_path().string()
                                                 : fs::path(currentFile).parent_path().string();
         std::string resolved = (fs::path(base) / (importPath + ".praia")).string();

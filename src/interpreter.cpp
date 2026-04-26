@@ -1,4 +1,5 @@
 #include "builtins.h"
+#include "fiber.h"
 #include "gc_heap.h"
 #include "grain_resolve.h"
 #include "interpreter.h"
@@ -246,7 +247,8 @@ void Interpreter::interpretRepl(const std::vector<StmtPtr>& program) {
     GcHeap::current().setRootMarker([this](GcHeap& h) { gcMarkRoots(h); });
     try {
         for (const auto& stmt : program) {
-            if (auto* es = dynamic_cast<const ExprStmt*>(stmt.get())) {
+            if (stmt->type == StmtType::Expr) {
+                auto* es = static_cast<const ExprStmt*>(stmt.get());
                 Value val = evaluate(es->expr.get());
                 if (!val.isNil())
                     std::cout << val.toString() << "\n";
@@ -286,10 +288,14 @@ void Interpreter::executeBlock(const BlockStmt* block,
 // ── Statement execution ──────────────────────────────────────
 
 void Interpreter::execute(const Stmt* stmt) {
-    if (auto* s = dynamic_cast<const ExprStmt*>(stmt)) {
+    switch (stmt->type) {
+    case StmtType::Expr: {
+        auto* s = static_cast<const ExprStmt*>(stmt);
         evaluate(s->expr.get());
-
-    } else if (auto* s = dynamic_cast<const LetStmt*>(stmt)) {
+        break;
+    }
+    case StmtType::Let: {
+        auto* s = static_cast<const LetStmt*>(stmt);
         if (!s->pattern.empty()) {
             // Destructuring
             Value val = evaluate(s->initializer.get());
@@ -336,11 +342,15 @@ void Interpreter::execute(const Stmt* stmt) {
             if (s->initializer) val = evaluate(s->initializer.get());
             env->define(s->name, std::move(val));
         }
-
-    } else if (auto* s = dynamic_cast<const BlockStmt*>(stmt)) {
+        break;
+    }
+    case StmtType::Block: {
+        auto* s = static_cast<const BlockStmt*>(stmt);
         executeBlock(s, gcNew<Environment>(env));
-
-    } else if (auto* s = dynamic_cast<const IfStmt*>(stmt)) {
+        break;
+    }
+    case StmtType::If: {
+        auto* s = static_cast<const IfStmt*>(stmt);
         if (evaluate(s->condition.get()).isTruthy()) {
             execute(s->thenBranch.get());
         } else {
@@ -355,8 +365,10 @@ void Interpreter::execute(const Stmt* stmt) {
             if (!handled && s->elseBranch)
                 execute(s->elseBranch.get());
         }
-
-    } else if (auto* s = dynamic_cast<const MatchStmt*>(stmt)) {
+        break;
+    }
+    case StmtType::Match: {
+        auto* s = static_cast<const MatchStmt*>(stmt);
         Value subject = evaluate(s->subject.get());
         for (auto& c : s->cases) {
             if (!c.pattern) {
@@ -376,16 +388,20 @@ void Interpreter::execute(const Stmt* stmt) {
                 break;
             }
         }
-
-    } else if (auto* s = dynamic_cast<const WhileStmt*>(stmt)) {
+        break;
+    }
+    case StmtType::While: {
+        auto* s = static_cast<const WhileStmt*>(stmt);
         try {
             while (evaluate(s->condition.get()).isTruthy()) {
                 try { execute(s->body.get()); }
                 catch (const ContinueSignal&) { /* skip to next iteration */ }
             }
         } catch (const BreakSignal&) { /* exit loop */ }
-
-    } else if (auto* s = dynamic_cast<const ForStmt*>(stmt)) {
+        break;
+    }
+    case StmtType::For: {
+        auto* s = static_cast<const ForStmt*>(stmt);
         Value startVal = evaluate(s->start.get());
         Value endVal   = evaluate(s->end.get());
         if (!startVal.isNumber() || !endVal.isNumber())
@@ -403,8 +419,10 @@ void Interpreter::execute(const Stmt* stmt) {
                 catch (const ContinueSignal&) { /* skip to next iteration */ }
             }
         } catch (const BreakSignal&) { /* exit loop */ }
-
-    } else if (auto* s = dynamic_cast<const ForInStmt*>(stmt)) {
+        break;
+    }
+    case StmtType::ForIn: {
+        auto* s = static_cast<const ForInStmt*>(stmt);
         Value iterable = evaluate(s->iterable.get());
         auto* bodyBlock = static_cast<const BlockStmt*>(s->body.get());
         bool hasDestructure = !s->destructureKeys.empty();
@@ -466,15 +484,9 @@ void Interpreter::execute(const Stmt* stmt) {
             try {
                 while (true) {
                     if (gen->state == PraiaGenerator::State::COMPLETED) break;
-                    // Call .next() inline
-                    {
-                        std::unique_lock<std::mutex> lock(gen->mtx);
-                        gen->sendValue = Value();
-                        gen->resumed = true;
-                        gen->hasValue = false;
-                        gen->callerCV.notify_one();
-                        gen->genCV.wait(lock, [&] { return gen->hasValue; });
-                    }
+                    gen->sendValue = Value();
+                    gen->fiber->resume();
+
                     if (!gen->errorMessage.empty())
                         throw RuntimeError(gen->errorMessage, s->line, s->column);
                     if (gen->done) break;
@@ -488,8 +500,10 @@ void Interpreter::execute(const Stmt* stmt) {
         } else {
             throw RuntimeError("for-in requires an array, map, string, or generator", s->line, s->column);
         }
-
-    } else if (auto* s = dynamic_cast<const FuncStmt*>(stmt)) {
+        break;
+    }
+    case StmtType::Func: {
+        auto* s = static_cast<const FuncStmt*>(stmt);
         if (s->isGenerator) {
             auto func = std::make_shared<PraiaGeneratorFunction>();
             func->funcName = s->name;
@@ -509,8 +523,10 @@ void Interpreter::execute(const Stmt* stmt) {
             func->closure = env;
             env->define(s->name, Value(std::static_pointer_cast<Callable>(func)));
         }
-
-    } else if (auto* s = dynamic_cast<const EnumStmt*>(stmt)) {
+        break;
+    }
+    case StmtType::Enum: {
+        auto* s = static_cast<const EnumStmt*>(stmt);
         auto enumMap = gcNew<PraiaMap>();
         int64_t nextVal = 0;
         for (size_t i = 0; i < s->members.size(); i++) {
@@ -524,8 +540,10 @@ void Interpreter::execute(const Stmt* stmt) {
             nextVal++;
         }
         env->define(s->name, Value(enumMap));
-
-    } else if (auto* s = dynamic_cast<const ClassStmt*>(stmt)) {
+        break;
+    }
+    case StmtType::Class: {
+        auto* s = static_cast<const ClassStmt*>(stmt);
         std::shared_ptr<PraiaClass> superclass;
         if (!s->superclass.empty()) {
             Value superVal = env->get(s->superclass, s->line);
@@ -547,23 +565,27 @@ void Interpreter::execute(const Stmt* stmt) {
                 klass->methods[m.name] = &m;
         }
         env->define(s->name, Value(std::static_pointer_cast<Callable>(klass)));
-
-    } else if (auto* s = dynamic_cast<const ReturnStmt*>(stmt)) {
+        break;
+    }
+    case StmtType::Return: {
+        auto* s = static_cast<const ReturnStmt*>(stmt);
         Value val;
         if (s->value) val = evaluate(s->value.get());
         throw ReturnSignal{std::move(val)};
-
-    } else if (dynamic_cast<const BreakStmt*>(stmt)) {
+    }
+    case StmtType::Break: {
         throw BreakSignal{};
-
-    } else if (dynamic_cast<const ContinueStmt*>(stmt)) {
+    }
+    case StmtType::Continue: {
         throw ContinueSignal{};
-
-    } else if (auto* s = dynamic_cast<const ThrowStmt*>(stmt)) {
+    }
+    case StmtType::Throw: {
+        auto* s = static_cast<const ThrowStmt*>(stmt);
         Value val = evaluate(s->value.get());
         throw ThrowSignal{std::move(val), s->line};
-
-    } else if (auto* s = dynamic_cast<const TryCatchStmt*>(stmt)) {
+    }
+    case StmtType::TryCatch: {
+        auto* s = static_cast<const TryCatchStmt*>(stmt);
         size_t savedStackSize = callStack.size();
         std::exception_ptr pendingException;
         try {
@@ -591,51 +613,68 @@ void Interpreter::execute(const Stmt* stmt) {
         }
         if (s->finallyBody) execute(s->finallyBody.get());
         if (pendingException) std::rethrow_exception(pendingException);
-
-    } else if (auto* s = dynamic_cast<const EnsureStmt*>(stmt)) {
+        break;
+    }
+    case StmtType::Ensure: {
+        auto* s = static_cast<const EnsureStmt*>(stmt);
         Value cond = evaluate(s->condition.get());
         if (!cond.isTruthy())
             execute(s->elseBody.get());
-
-    } else if (auto* s = dynamic_cast<const UseStmt*>(stmt)) {
+        break;
+    }
+    case StmtType::Use: {
+        auto* s = static_cast<const UseStmt*>(stmt);
         Value grain = loadGrain(s->path, s->line);
         env->define(s->alias, grain);
-
-    } else if (auto* s = dynamic_cast<const ExportStmt*>(stmt)) {
+        break;
+    }
+    case StmtType::Export: {
+        auto* s = static_cast<const ExportStmt*>(stmt);
         auto exports = gcNew<PraiaMap>();
         for (auto& name : s->names) {
             exports->entries[name] = env->get(name, s->line);
         }
         throw ExportSignal{exports};
     }
+    default:
+        break;
+    }
 }
 
 // ── Expression evaluation ────────────────────────────────────
 
 Value Interpreter::evaluate(const Expr* expr) {
+    switch (expr->type) {
     // ── Literals ──
 
-    if (auto* e = dynamic_cast<const NumberExpr*>(expr))
+    case ExprType::Number: {
+        auto* e = static_cast<const NumberExpr*>(expr);
         return e->isInt ? Value(e->intValue) : Value(e->floatValue);
-
-    if (auto* e = dynamic_cast<const StringExpr*>(expr))
+    }
+    case ExprType::String: {
+        auto* e = static_cast<const StringExpr*>(expr);
         return Value(e->value);
-
-    if (auto* e = dynamic_cast<const BoolExpr*>(expr))
+    }
+    case ExprType::Bool: {
+        auto* e = static_cast<const BoolExpr*>(expr);
         return Value(e->value);
-
-    if (dynamic_cast<const NilExpr*>(expr))
+    }
+    case ExprType::Nil: {
         return Value();
+    }
 
     // ── Variables ──
 
-    if (auto* e = dynamic_cast<const IdentifierExpr*>(expr))
+    case ExprType::Identifier: {
+        auto* e = static_cast<const IdentifierExpr*>(expr);
         return env->get(e->name, e->line);
-
-    if (auto* e = dynamic_cast<const ThisExpr*>(expr))
+    }
+    case ExprType::This: {
+        auto* e = static_cast<const ThisExpr*>(expr);
         return env->get("this", e->line);
-
-    if (auto* e = dynamic_cast<const SuperExpr*>(expr)) {
+    }
+    case ExprType::Super: {
+        auto* e = static_cast<const SuperExpr*>(expr);
         // Get the instance
         Value thisVal = env->get("this", e->line);
         if (!thisVal.isInstance())
@@ -674,8 +713,8 @@ Value Interpreter::evaluate(const Expr* expr) {
         }
         return Value(std::static_pointer_cast<Callable>(bound));
     }
-
-    if (auto* e = dynamic_cast<const AssignExpr*>(expr)) {
+    case ExprType::Assign: {
+        auto* e = static_cast<const AssignExpr*>(expr);
         Value val = evaluate(e->value.get());
         env->set(e->name, val, e->line);
         return val;
@@ -683,7 +722,8 @@ Value Interpreter::evaluate(const Expr* expr) {
 
     // ── Unary ──
 
-    if (auto* e = dynamic_cast<const UnaryExpr*>(expr)) {
+    case ExprType::Unary: {
+        auto* e = static_cast<const UnaryExpr*>(expr);
         Value operand = evaluate(e->operand.get());
         if (e->op == TokenType::MINUS) {
             if (operand.isInstance()) {
@@ -707,10 +747,11 @@ Value Interpreter::evaluate(const Expr* expr) {
 
     // ── Postfix (i++, i--) ──
 
-    if (auto* e = dynamic_cast<const PostfixExpr*>(expr)) {
-        auto* ident = dynamic_cast<const IdentifierExpr*>(e->operand.get());
-        if (!ident)
+    case ExprType::Postfix: {
+        auto* e = static_cast<const PostfixExpr*>(expr);
+        if (e->operand->type != ExprType::Identifier)
             throw RuntimeError("Postfix operator requires a variable", e->line, e->column);
+        auto* ident = static_cast<const IdentifierExpr*>(e->operand.get());
 
         Value cur = env->get(ident->name, e->line);
         if (!cur.isNumber())
@@ -730,7 +771,8 @@ Value Interpreter::evaluate(const Expr* expr) {
 
     // ── Binary ──
 
-    if (auto* e = dynamic_cast<const BinaryExpr*>(expr)) {
+    case ExprType::Binary: {
+        auto* e = static_cast<const BinaryExpr*>(expr);
         if (e->op == TokenType::NIL_COALESCE) {
             Value left = evaluate(e->left.get());
             return left.isNil() ? evaluate(e->right.get()) : left;
@@ -907,14 +949,16 @@ Value Interpreter::evaluate(const Expr* expr) {
 
     // ── Function call ──
 
-    if (auto* e = dynamic_cast<const CallExpr*>(expr)) {
+    case ExprType::Call: {
+        auto* e = static_cast<const CallExpr*>(expr);
         Value callee = evaluate(e->callee.get());
         if (!callee.isCallable())
             throw RuntimeError("Can only call functions", e->line, e->column);
 
         std::vector<Value> args;
         for (const auto& arg : e->args) {
-            if (auto* spread = dynamic_cast<const SpreadExpr*>(arg.get())) {
+            if (arg->type == ExprType::Spread) {
+                auto* spread = static_cast<const SpreadExpr*>(arg.get());
                 Value val = evaluate(spread->expr.get());
                 if (!val.isArray())
                     throw RuntimeError("Spread argument must be an array", spread->line);
@@ -936,10 +980,12 @@ Value Interpreter::evaluate(const Expr* expr) {
 
     // ── Array literal ──
 
-    if (auto* e = dynamic_cast<const ArrayLiteralExpr*>(expr)) {
+    case ExprType::ArrayLiteral: {
+        auto* e = static_cast<const ArrayLiteralExpr*>(expr);
         auto arr = gcNew<PraiaArray>();
         for (const auto& elem : e->elements) {
-            if (auto* spread = dynamic_cast<const SpreadExpr*>(elem.get())) {
+            if (elem->type == ExprType::Spread) {
+                auto* spread = static_cast<const SpreadExpr*>(elem.get());
                 Value val = evaluate(spread->expr.get());
                 if (!val.isArray())
                     throw RuntimeError("Spread requires an array", spread->line);
@@ -954,18 +1000,21 @@ Value Interpreter::evaluate(const Expr* expr) {
 
     // ── Ternary ──
 
-    if (auto* e = dynamic_cast<const TernaryExpr*>(expr)) {
+    case ExprType::Ternary: {
+        auto* e = static_cast<const TernaryExpr*>(expr);
         Value cond = evaluate(e->condition.get());
         return cond.isTruthy() ? evaluate(e->thenExpr.get()) : evaluate(e->elseExpr.get());
     }
 
     // ── Pipe ──
 
-    if (auto* e = dynamic_cast<const PipeExpr*>(expr)) {
+    case ExprType::Pipe: {
+        auto* e = static_cast<const PipeExpr*>(expr);
         Value leftVal = evaluate(e->left.get());
 
         // If right side is a call: f(x, y) → f(leftVal, x, y)
-        if (auto* call = dynamic_cast<const CallExpr*>(e->right.get())) {
+        if (e->right->type == ExprType::Call) {
+            auto* call = static_cast<const CallExpr*>(e->right.get());
             Value callee = evaluate(call->callee.get());
             if (!callee.isCallable())
                 throw RuntimeError("Pipe target must be a function", e->line, e->column);
@@ -998,11 +1047,12 @@ Value Interpreter::evaluate(const Expr* expr) {
 
     // ── Async / Await ──
 
-    if (auto* e = dynamic_cast<const AsyncExpr*>(expr)) {
+    case ExprType::Async: {
+        auto* e = static_cast<const AsyncExpr*>(expr);
         // The inner expression should be a function call
-        auto* call = dynamic_cast<const CallExpr*>(e->expr.get());
-        if (!call)
+        if (e->expr->type != ExprType::Call)
             throw RuntimeError("async requires a function call", e->line, e->column);
+        auto* call = static_cast<const CallExpr*>(e->expr.get());
 
         // Evaluate callee and args on the current thread
         Value callee = evaluate(call->callee.get());
@@ -1048,8 +1098,8 @@ Value Interpreter::evaluate(const Expr* expr) {
         fut->future = sharedFuture;
         return Value(fut);
     }
-
-    if (auto* e = dynamic_cast<const AwaitExpr*>(expr)) {
+    case ExprType::Await: {
+        auto* e = static_cast<const AwaitExpr*>(expr);
         Value val = evaluate(e->expr.get());
         if (!val.isFuture())
             throw RuntimeError("Can only await a future", e->line, e->column);
@@ -1065,7 +1115,8 @@ Value Interpreter::evaluate(const Expr* expr) {
 
     // ── Yield ──
 
-    if (auto* e = dynamic_cast<const YieldExpr*>(expr)) {
+    case ExprType::Yield: {
+        auto* e = static_cast<const YieldExpr*>(expr);
         Value val;
         if (e->value) val = evaluate(e->value.get());
 
@@ -1077,21 +1128,18 @@ Value Interpreter::evaluate(const Expr* expr) {
             throw RuntimeError("yield outside of generator", e->line, e->column);
         auto gen = genVal.asGenerator();
 
-        std::unique_lock<std::mutex> lock(gen->mtx);
         gen->lastYielded = val;
-        gen->hasValue = true;
         gen->state = PraiaGenerator::State::SUSPENDED;
-        gen->genCV.notify_one();  // wake caller waiting in .next()
-        gen->callerCV.wait(lock, [&] { return gen->resumed; }); // wait for next .next()
-        gen->resumed = false;
-        if (gen->done) throw ReturnSignal{Value()}; // generator was destroyed
+        Fiber::suspend();  // return control to .next() caller
+        if (gen->done) throw ReturnSignal{Value()}; // generator was abandoned
         gen->state = PraiaGenerator::State::RUNNING;
         return gen->sendValue;
     }
 
     // ── Lambda ──
 
-    if (auto* e = dynamic_cast<const LambdaExpr*>(expr)) {
+    case ExprType::Lambda: {
+        auto* e = static_cast<const LambdaExpr*>(expr);
         if (e->isGenerator) {
             auto lam = std::make_shared<PraiaGeneratorLambda>();
             lam->params = e->params;
@@ -1110,11 +1158,12 @@ Value Interpreter::evaluate(const Expr* expr) {
 
     // ── Map literal ──
 
-    if (auto* e = dynamic_cast<const MapLiteralExpr*>(expr)) {
+    case ExprType::MapLiteral: {
+        auto* e = static_cast<const MapLiteralExpr*>(expr);
         auto map = gcNew<PraiaMap>();
         for (size_t i = 0; i < e->keys.size(); i++) {
-            if (e->keys[i].empty() && dynamic_cast<const SpreadExpr*>(e->values[i].get())) {
-                auto* spread = dynamic_cast<const SpreadExpr*>(e->values[i].get());
+            if (e->keys[i].empty() && e->values[i]->type == ExprType::Spread) {
+                auto* spread = static_cast<const SpreadExpr*>(e->values[i].get());
                 Value val = evaluate(spread->expr.get());
                 if (!val.isMap())
                     throw RuntimeError("Spread in map requires a map", spread->line);
@@ -1129,7 +1178,8 @@ Value Interpreter::evaluate(const Expr* expr) {
 
     // ── Index access ──
 
-    if (auto* e = dynamic_cast<const IndexExpr*>(expr)) {
+    case ExprType::Index: {
+        auto* e = static_cast<const IndexExpr*>(expr);
         Value obj = evaluate(e->object.get());
         if (e->isOptional && obj.isNil()) return Value();
         Value idx = evaluate(e->index.get());
@@ -1180,7 +1230,8 @@ Value Interpreter::evaluate(const Expr* expr) {
 
     // ── Index assignment ──
 
-    if (auto* e = dynamic_cast<const IndexAssignExpr*>(expr)) {
+    case ExprType::IndexAssign: {
+        auto* e = static_cast<const IndexAssignExpr*>(expr);
         Value obj = evaluate(e->object.get());
         Value idx = evaluate(e->index.get());
         Value val = evaluate(e->value.get());
@@ -1212,7 +1263,8 @@ Value Interpreter::evaluate(const Expr* expr) {
 
     // ── Dot access ──
 
-    if (auto* e = dynamic_cast<const DotExpr*>(expr)) {
+    case ExprType::Dot: {
+        auto* e = static_cast<const DotExpr*>(expr);
         Value obj = evaluate(e->object.get());
         if (e->isOptional && obj.isNil()) return Value();
 
@@ -1227,14 +1279,9 @@ Value Interpreter::evaluate(const Expr* expr) {
                             result->entries["done"] = Value(true);
                             return Value(result);
                         }
-                        std::unique_lock<std::mutex> lock(gen->mtx);
                         gen->sendValue = args.empty() ? Value() : args[0];
-                        gen->resumed = true;
-                        gen->hasValue = false;
-                        gen->callerCV.notify_one();
-                        gen->genCV.wait(lock, [&] { return gen->hasValue; });
+                        gen->fiber->resume();
 
-                        // Propagate errors from generator body
                         if (!gen->errorMessage.empty())
                             throw RuntimeError(gen->errorMessage, 0);
 
@@ -1374,7 +1421,8 @@ Value Interpreter::evaluate(const Expr* expr) {
 
     // ── Dot assignment ──
 
-    if (auto* e = dynamic_cast<const DotAssignExpr*>(expr)) {
+    case ExprType::DotAssign: {
+        auto* e = static_cast<const DotAssignExpr*>(expr);
         Value obj = evaluate(e->object.get());
         Value val = evaluate(e->value.get());
         if (obj.isInstance()) {
@@ -1390,14 +1438,21 @@ Value Interpreter::evaluate(const Expr* expr) {
 
     // ── String interpolation ──
 
-    if (auto* e = dynamic_cast<const InterpolatedStringExpr*>(expr)) {
+    case ExprType::InterpolatedString: {
+        auto* e = static_cast<const InterpolatedStringExpr*>(expr);
         std::string result;
         for (const auto& part : e->parts)
             result += evaluate(part.get()).toString();
         return Value(std::move(result));
     }
 
-    throw RuntimeError("Unknown expression type", expr->line);
+    case ExprType::Spread: {
+        throw RuntimeError("Unexpected spread expression", expr->line);
+    }
+
+    default:
+        throw RuntimeError("Unknown expression type", expr->line);
+    }
 }
 
 // ── GC root marking ──
