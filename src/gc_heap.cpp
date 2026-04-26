@@ -101,7 +101,7 @@ void GcHeap::markArray(PraiaArray* arr) {
 void GcHeap::markMap(PraiaMap* map) {
     if (!map) return;
     if (!marked_.insert(static_cast<void*>(map)).second) return;
-    for (auto& [k, v] : map->entries) markValue(v);
+    for (auto& [k, v] : map->entries) { markValue(k); markValue(v); }
 }
 
 void GcHeap::markInstance(PraiaInstance* inst) {

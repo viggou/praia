@@ -110,8 +110,24 @@ struct PraiaArray {
     std::vector<Value> elements;
 };
 
+inline bool isHashable(const Value& v) {
+    return v.isNil() || v.isBool() || v.isInt() || v.isDouble() || v.isString();
+}
+
+struct ValueHash {
+    size_t operator()(const Value& v) const {
+        if (v.isNil()) return 0;
+        if (v.isBool()) return std::hash<bool>{}(v.asBool());
+        // Hash all numbers as double to be consistent with operator==
+        // (which compares int and double via asNumber())
+        if (v.isInt() || v.isDouble()) return std::hash<double>{}(v.asNumber());
+        if (v.isString()) return std::hash<std::string>{}(v.asString());
+        return 0;
+    }
+};
+
 struct PraiaMap {
-    std::unordered_map<std::string, Value> entries;
+    std::unordered_map<Value, Value, ValueHash> entries;
 };
 
 struct PraiaFuture {
@@ -188,7 +204,9 @@ inline std::string Value::toString() const {
         for (auto& [k, v] : asMap()->entries) {
             if (!first) o << ", ";
             first = false;
-            o << k << ": ";
+            if (k.isString()) o << k.asString();
+            else o << k.toString();
+            o << ": ";
             if (v.isString()) o << "\"" << v.toString() << "\"";
             else o << v.toString();
         }

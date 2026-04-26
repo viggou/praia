@@ -1322,20 +1322,37 @@ ExprPtr Parser::primary() {
                     spread->line = previous().line;
                     spread->column = previous().column;
                     spread->expr = expression();
-                    map->keys.push_back("");  // empty key = spread
+                    map->keys.push_back(nullptr);  // nullptr key = spread
                     map->values.push_back(std::move(spread));
                     continue;
                 }
-                std::string key;
+                // Computed key: [expr]: value
+                if (match(TokenType::LBRACKET)) {
+                    map->keys.push_back(expression());
+                    consume(TokenType::RBRACKET, "Expected ']' after computed key");
+                    consume(TokenType::COLON, "Expected ':' after computed key");
+                    map->values.push_back(expression());
+                    continue;
+                }
+                // Identifier or string key: name: value or "key": value
+                ExprPtr keyExpr;
                 if (isNameToken(peek().type)) {
-                    key = advance().lexeme;
+                    auto k = std::make_unique<StringExpr>();
+                    k->line = peek().line;
+                    k->column = peek().column;
+                    k->value = advance().lexeme;
+                    keyExpr = std::move(k);
                 } else if (match(TokenType::STRING)) {
-                    key = previous().lexeme;
+                    auto k = std::make_unique<StringExpr>();
+                    k->line = previous().line;
+                    k->column = previous().column;
+                    k->value = previous().lexeme;
+                    keyExpr = std::move(k);
                 } else {
-                    throw error(peek(), "Expected map key (identifier or string)");
+                    throw error(peek(), "Expected map key (identifier, string, or [expr])");
                 }
                 consume(TokenType::COLON, "Expected ':' after map key");
-                map->keys.push_back(key);
+                map->keys.push_back(std::move(keyExpr));
                 map->values.push_back(expression());
             } while (match(TokenType::COMMA));
         }

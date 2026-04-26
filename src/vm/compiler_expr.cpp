@@ -395,14 +395,14 @@ void Compiler::compileArrayLiteralExpr(const ArrayLiteralExpr* expr) {
 void Compiler::compileMapLiteralExpr(const MapLiteralExpr* expr) {
     bool hasSpreads = false;
     for (size_t i = 0; i < expr->keys.size(); i++) {
-        if (expr->keys[i].empty() && expr->values[i]->type == ExprType::Spread) {
+        if (!expr->keys[i] && expr->values[i]->type == ExprType::Spread) {
             hasSpreads = true; break;
         }
     }
 
     if (!hasSpreads) {
         for (size_t i = 0; i < expr->keys.size(); i++) {
-            emitConstant(Value(expr->keys[i]), expr->line, expr->column);
+            compileExpr(expr->keys[i].get());
             compileExpr(expr->values[i].get());
         }
         emit(OpCode::OP_BUILD_MAP, expr->line, expr->column);
@@ -411,25 +411,22 @@ void Compiler::compileMapLiteralExpr(const MapLiteralExpr* expr) {
     }
 
     // With spreads: build segments and merge with OP_ADD (map + map)
-    // Start with empty map
     emit(OpCode::OP_BUILD_MAP, expr->line, expr->column);
     emitU16(0, expr->line, expr->column);
 
     int pending = 0;
     for (size_t i = 0; i < expr->keys.size(); i++) {
-        if (expr->keys[i].empty() && expr->values[i]->type == ExprType::Spread) {
-            // Flush pending key-value pairs as a map, merge
+        if (!expr->keys[i] && expr->values[i]->type == ExprType::Spread) {
             if (pending > 0) {
                 emit(OpCode::OP_BUILD_MAP, expr->line, expr->column);
                 emitU16(static_cast<uint16_t>(pending), expr->line, expr->column);
                 emit(OpCode::OP_ADD, expr->line, expr->column);
                 pending = 0;
             }
-            // Merge spread map
             compileExpr(static_cast<const SpreadExpr*>(expr->values[i].get())->expr.get());
             emit(OpCode::OP_ADD, expr->line, expr->column);
         } else {
-            emitConstant(Value(expr->keys[i]), expr->line, expr->column);
+            compileExpr(expr->keys[i].get());
             compileExpr(expr->values[i].get());
             pending++;
         }

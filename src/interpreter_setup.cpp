@@ -324,7 +324,7 @@ Interpreter::Interpreter() {
                 throw RuntimeError("keys() requires a map", 0);
             auto result = gcNew<PraiaArray>();
             for (auto& [k, v] : args[0].asMap()->entries)
-                result->elements.push_back(Value(k));
+                result->elements.push_back(k);
             return Value(result);
         })));
 
@@ -342,7 +342,7 @@ Interpreter::Interpreter() {
 
     sysMap = gcNew<PraiaMap>();
 
-    sysMap->entries["read"] = Value(makeNative("sys.read", 1,
+    sysMap->entries[Value("read")] = Value(makeNative("sys.read", 1,
         [](const std::vector<Value>& args) -> Value {
             if (!args[0].isString())
                 throw RuntimeError("sys.read() requires a string path", 0);
@@ -354,7 +354,7 @@ Interpreter::Interpreter() {
             return Value(ss.str());
         }));
 
-    sysMap->entries["write"] = Value(makeNative("sys.write", 2,
+    sysMap->entries[Value("write")] = Value(makeNative("sys.write", 2,
         [](const std::vector<Value>& args) -> Value {
             if (!args[0].isString())
                 throw RuntimeError("sys.write() requires a string path", 0);
@@ -365,7 +365,7 @@ Interpreter::Interpreter() {
             return Value();
         }));
 
-    sysMap->entries["append"] = Value(makeNative("sys.append", 2,
+    sysMap->entries[Value("append")] = Value(makeNative("sys.append", 2,
         [](const std::vector<Value>& args) -> Value {
             if (!args[0].isString())
                 throw RuntimeError("sys.append() requires a string path", 0);
@@ -376,14 +376,14 @@ Interpreter::Interpreter() {
             return Value();
         }));
 
-    sysMap->entries["exists"] = Value(makeNative("sys.exists", 1,
+    sysMap->entries[Value("exists")] = Value(makeNative("sys.exists", 1,
         [](const std::vector<Value>& args) -> Value {
             if (!args[0].isString())
                 throw RuntimeError("sys.exists() requires a string path", 0);
             return Value(fs::exists(args[0].asString()));
         }));
 
-    sysMap->entries["mkdir"] = Value(makeNative("sys.mkdir", 1,
+    sysMap->entries[Value("mkdir")] = Value(makeNative("sys.mkdir", 1,
         [](const std::vector<Value>& args) -> Value {
             if (!args[0].isString())
                 throw RuntimeError("sys.mkdir() requires a string path", 0);
@@ -391,7 +391,7 @@ Interpreter::Interpreter() {
             return Value();
         }));
 
-    sysMap->entries["remove"] = Value(makeNative("sys.remove", 1,
+    sysMap->entries[Value("remove")] = Value(makeNative("sys.remove", 1,
         [](const std::vector<Value>& args) -> Value {
             if (!args[0].isString())
                 throw RuntimeError("sys.remove() requires a string path", 0);
@@ -402,7 +402,7 @@ Interpreter::Interpreter() {
             return Value();
         }));
 
-    sysMap->entries["readDir"] = Value(makeNative("sys.readDir", 1,
+    sysMap->entries[Value("readDir")] = Value(makeNative("sys.readDir", 1,
         [](const std::vector<Value>& args) -> Value {
             if (!args[0].isString())
                 throw RuntimeError("sys.readDir() requires a string path", 0);
@@ -415,7 +415,7 @@ Interpreter::Interpreter() {
             return Value(arr);
         }));
 
-    sysMap->entries["copy"] = Value(makeNative("sys.copy", 2,
+    sysMap->entries[Value("copy")] = Value(makeNative("sys.copy", 2,
         [](const std::vector<Value>& args) -> Value {
             if (!args[0].isString() || !args[1].isString())
                 throw RuntimeError("sys.copy() requires two string paths", 0);
@@ -427,7 +427,7 @@ Interpreter::Interpreter() {
             return Value();
         }));
 
-    sysMap->entries["move"] = Value(makeNative("sys.move", 2,
+    sysMap->entries[Value("move")] = Value(makeNative("sys.move", 2,
         [](const std::vector<Value>& args) -> Value {
             if (!args[0].isString() || !args[1].isString())
                 throw RuntimeError("sys.move() requires two string paths", 0);
@@ -504,17 +504,17 @@ Interpreter::Interpreter() {
             int exitCode = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
 
             auto result = gcNew<PraiaMap>();
-            result->entries["stdout"] = Value(std::move(outStr));
-            result->entries["stderr"] = Value(std::move(errStr));
-            result->entries["exitCode"] = Value(static_cast<int64_t>(exitCode));
+            result->entries[Value("stdout")] = Value(std::move(outStr));
+            result->entries[Value("stderr")] = Value(std::move(errStr));
+            result->entries[Value("exitCode")] = Value(static_cast<int64_t>(exitCode));
             return Value(result);
         });
-    sysMap->entries["exec"] = Value(std::static_pointer_cast<Callable>(execImpl));
-    sysMap->entries["run"] = Value(std::static_pointer_cast<Callable>(execImpl));
+    sysMap->entries[Value("exec")] = Value(std::static_pointer_cast<Callable>(execImpl));
+    sysMap->entries[Value("run")] = Value(std::static_pointer_cast<Callable>(execImpl));
 
     // sys.spawn(cmd) — launch a child process with stdin/stdout/stderr pipes.
     // Returns a process handle map with write/read/readErr/readLine/closeStdin/wait methods.
-    sysMap->entries["spawn"] = Value(makeNative("sys.spawn", 1,
+    sysMap->entries[Value("spawn")] = Value(makeNative("sys.spawn", 1,
         [](const std::vector<Value>& args) -> Value {
             if (!args[0].isString())
                 throw RuntimeError("sys.spawn() requires a command string", 0);
@@ -571,10 +571,10 @@ Interpreter::Interpreter() {
 
             auto proc = gcNew<PraiaMap>();
 
-            proc->entries["pid"] = Value(static_cast<int64_t>(pid));
+            proc->entries[Value("pid")] = Value(static_cast<int64_t>(pid));
 
             // proc.write(data) — write to child's stdin
-            proc->entries["write"] = Value(makeNative("proc.write", 1,
+            proc->entries[Value("write")] = Value(makeNative("proc.write", 1,
                 [state](const std::vector<Value>& args) -> Value {
                     if (!args[0].isString())
                         throw RuntimeError("proc.write() requires a string", 0);
@@ -589,7 +589,7 @@ Interpreter::Interpreter() {
                 }));
 
             // proc.closeStdin() — close the write end, signaling EOF to child
-            proc->entries["closeStdin"] = Value(makeNative("proc.closeStdin", 0,
+            proc->entries[Value("closeStdin")] = Value(makeNative("proc.closeStdin", 0,
                 [state](const std::vector<Value>&) -> Value {
                     std::lock_guard<std::mutex> lock(state->mtx);
                     if (state->stdinOpen) {
@@ -610,20 +610,20 @@ Interpreter::Interpreter() {
             };
 
             // proc.read() — read all of child's stdout (blocks until EOF)
-            proc->entries["read"] = Value(makeNative("proc.read", 0,
+            proc->entries[Value("read")] = Value(makeNative("proc.read", 0,
                 [state, readAllFd](const std::vector<Value>&) -> Value {
                     return Value(readAllFd(state->stdoutFd));
                 }));
 
             // proc.readErr() — read all of child's stderr (blocks until EOF)
-            proc->entries["readErr"] = Value(makeNative("proc.readErr", 0,
+            proc->entries[Value("readErr")] = Value(makeNative("proc.readErr", 0,
                 [state, readAllFd](const std::vector<Value>&) -> Value {
                     return Value(readAllFd(state->stderrFd));
                 }));
 
             // proc.readLine() — read one line from stdout (blocks until \n or EOF)
             // Returns nil on EOF.
-            proc->entries["readLine"] = Value(makeNative("proc.readLine", 0,
+            proc->entries[Value("readLine")] = Value(makeNative("proc.readLine", 0,
                 [state](const std::vector<Value>&) -> Value {
                     std::string line;
                     char c;
@@ -640,7 +640,7 @@ Interpreter::Interpreter() {
                 }));
 
             // proc.wait() — wait for child to exit, return exitCode
-            proc->entries["wait"] = Value(makeNative("proc.wait", 0,
+            proc->entries[Value("wait")] = Value(makeNative("proc.wait", 0,
                 [state](const std::vector<Value>&) -> Value {
                     std::lock_guard<std::mutex> lock(state->mtx);
                     if (state->waited)
@@ -658,7 +658,7 @@ Interpreter::Interpreter() {
                 }));
 
             // proc.kill(signal?) — send a signal to the child (default SIGTERM)
-            proc->entries["kill"] = Value(makeNative("proc.kill", -1,
+            proc->entries[Value("kill")] = Value(makeNative("proc.kill", -1,
                 [state](const std::vector<Value>& args) -> Value {
                     int sig = SIGTERM;
                     if (!args.empty() && args[0].isString()) {
@@ -675,7 +675,7 @@ Interpreter::Interpreter() {
             return Value(proc);
         }));
 
-    sysMap->entries["exit"] = Value(makeNative("sys.exit", 1,
+    sysMap->entries[Value("exit")] = Value(makeNative("sys.exit", 1,
         [](const std::vector<Value>& args) -> Value {
             int code = 0;
             if (!args.empty() && args[0].isNumber())
@@ -684,7 +684,7 @@ Interpreter::Interpreter() {
         }));
 
     // sys.input(prompt?) — read a line from stdin. Returns nil on EOF.
-    sysMap->entries["input"] = Value(makeNative("sys.input", -1,
+    sysMap->entries[Value("input")] = Value(makeNative("sys.input", -1,
         [](const std::vector<Value>& args) -> Value {
             if (!args.empty() && args[0].isString()) {
                 std::cout << args[0].asString() << std::flush;
@@ -696,7 +696,7 @@ Interpreter::Interpreter() {
 
     // sys.args — defaults to empty, set via setArgs()
     auto emptyArgs = gcNew<PraiaArray>();
-    sysMap->entries["args"] = Value(emptyArgs);
+    sysMap->entries[Value("args")] = Value(emptyArgs);
 
     globals->define("sys", Value(sysMap));
 
@@ -704,14 +704,14 @@ Interpreter::Interpreter() {
 
     auto httpMap = gcNew<PraiaMap>();
 
-    httpMap->entries["get"] = Value(makeNative("http.get", 1,
+    httpMap->entries[Value("get")] = Value(makeNative("http.get", 1,
         [](const std::vector<Value>& args) -> Value {
             if (!args[0].isString())
                 throw RuntimeError("http.get() requires a URL string", 0);
             return doHttpRequest("GET", args[0].asString(), "", {});
         }));
 
-    httpMap->entries["post"] = Value(makeNative("http.post", 2,
+    httpMap->entries[Value("post")] = Value(makeNative("http.post", 2,
         [](const std::vector<Value>& args) -> Value {
             if (!args[0].isString())
                 throw RuntimeError("http.post() requires a URL string", 0);
@@ -724,13 +724,13 @@ Interpreter::Interpreter() {
                 if (e.count("body")) body = e.at("body").toString();
                 if (e.count("headers") && e.at("headers").isMap()) {
                     for (auto& [k, v] : e.at("headers").asMap()->entries)
-                        headers[k] = v.toString();
+                        headers[k.toString()] = v.toString();
                 }
             }
             return doHttpRequest("POST", args[0].asString(), body, headers);
         }));
 
-    httpMap->entries["request"] = Value(makeNative("http.request", 1,
+    httpMap->entries[Value("request")] = Value(makeNative("http.request", 1,
         [](const std::vector<Value>& args) -> Value {
             if (!args[0].isMap())
                 throw RuntimeError("http.request() requires an options map", 0);
@@ -743,19 +743,19 @@ Interpreter::Interpreter() {
             if (opts.count("body")) body = opts.at("body").toString();
             if (opts.count("headers") && opts.at("headers").isMap()) {
                 for (auto& [k, v] : opts.at("headers").asMap()->entries)
-                    headers[k] = v.toString();
+                    headers[k.toString()] = v.toString();
             }
             return doHttpRequest(method, url, body, headers);
         }));
 
-    httpMap->entries["createServer"] = Value(makeNative("http.createServer", 1,
+    httpMap->entries[Value("createServer")] = Value(makeNative("http.createServer", 1,
         [self](const std::vector<Value>& args) -> Value {
             if (!args[0].isCallable())
                 throw RuntimeError("http.createServer() requires a handler function", 0);
             auto handler = args[0].asCallable();
 
             auto server = gcNew<PraiaMap>();
-            server->entries["listen"] = Value(makeNative("listen", 1,
+            server->entries[Value("listen")] = Value(makeNative("listen", 1,
                 [handler, self](const std::vector<Value>& args) -> Value {
                     if (!args[0].isNumber())
                         throw RuntimeError("listen() requires a port number", 0);
@@ -768,7 +768,7 @@ Interpreter::Interpreter() {
     // http.sse(req, callback) — Server-Sent Events
     // callback receives a send function: send(data, event?)
     // The connection stays open until the callback returns.
-    httpMap->entries["sse"] = Value(makeNative("http.sse", 2,
+    httpMap->entries[Value("sse")] = Value(makeNative("http.sse", 2,
         [self](const std::vector<Value>& args) -> Value {
             if (!args[0].isMap())
                 throw RuntimeError("http.sse() requires a request object", 0);
@@ -819,11 +819,11 @@ Interpreter::Interpreter() {
 
             // Return a marker so the server loop knows not to send a response
             auto marker = gcNew<PraiaMap>();
-            marker->entries["__sse"] = Value(true);
+            marker->entries[Value("__sse")] = Value(true);
             return Value(marker);
         }));
 
-    httpMap->entries["encodeURI"] = Value(makeNative("http.encodeURI", 1,
+    httpMap->entries[Value("encodeURI")] = Value(makeNative("http.encodeURI", 1,
         [](const std::vector<Value>& args) -> Value {
             if (!args[0].isString())
                 throw RuntimeError("http.encodeURI() requires a string", 0);
@@ -842,7 +842,7 @@ Interpreter::Interpreter() {
             return Value(std::move(result));
         }));
 
-    httpMap->entries["decodeURI"] = Value(makeNative("http.decodeURI", 1,
+    httpMap->entries[Value("decodeURI")] = Value(makeNative("http.decodeURI", 1,
         [](const std::vector<Value>& args) -> Value {
             if (!args[0].isString())
                 throw RuntimeError("http.decodeURI() requires a string", 0);
@@ -872,7 +872,7 @@ Interpreter::Interpreter() {
     // ── Response helpers ──
 
     // http.json(obj, status?) → {status, body, headers}
-    httpMap->entries["json"] = Value(makeNative("http.json", -1,
+    httpMap->entries[Value("json")] = Value(makeNative("http.json", -1,
         [](const std::vector<Value>& args) -> Value {
             if (args.empty())
                 throw RuntimeError("http.json() requires a value", 0);
@@ -880,16 +880,16 @@ Interpreter::Interpreter() {
             if (args.size() > 1 && args[1].isNumber())
                 status = static_cast<int>(args[1].asNumber());
             auto res = gcNew<PraiaMap>();
-            res->entries["status"] = Value(static_cast<double>(status));
-            res->entries["body"] = Value(jsonStringify(args[0], 0, 0));
+            res->entries[Value("status")] = Value(static_cast<double>(status));
+            res->entries[Value("body")] = Value(jsonStringify(args[0], 0, 0));
             auto hdrs = gcNew<PraiaMap>();
-            hdrs->entries["Content-Type"] = Value("application/json");
-            res->entries["headers"] = Value(hdrs);
+            hdrs->entries[Value("Content-Type")] = Value("application/json");
+            res->entries[Value("headers")] = Value(hdrs);
             return Value(res);
         }));
 
     // http.text(str, status?) → {status, body, headers}
-    httpMap->entries["text"] = Value(makeNative("http.text", -1,
+    httpMap->entries[Value("text")] = Value(makeNative("http.text", -1,
         [](const std::vector<Value>& args) -> Value {
             if (args.empty())
                 throw RuntimeError("http.text() requires a string", 0);
@@ -897,16 +897,16 @@ Interpreter::Interpreter() {
             if (args.size() > 1 && args[1].isNumber())
                 status = static_cast<int>(args[1].asNumber());
             auto res = gcNew<PraiaMap>();
-            res->entries["status"] = Value(static_cast<double>(status));
-            res->entries["body"] = Value(args[0].toString());
+            res->entries[Value("status")] = Value(static_cast<double>(status));
+            res->entries[Value("body")] = Value(args[0].toString());
             auto hdrs = gcNew<PraiaMap>();
-            hdrs->entries["Content-Type"] = Value("text/plain");
-            res->entries["headers"] = Value(hdrs);
+            hdrs->entries[Value("Content-Type")] = Value("text/plain");
+            res->entries[Value("headers")] = Value(hdrs);
             return Value(res);
         }));
 
     // http.html(str, status?) → {status, body, headers}
-    httpMap->entries["html"] = Value(makeNative("http.html", -1,
+    httpMap->entries[Value("html")] = Value(makeNative("http.html", -1,
         [](const std::vector<Value>& args) -> Value {
             if (args.empty())
                 throw RuntimeError("http.html() requires a string", 0);
@@ -914,16 +914,16 @@ Interpreter::Interpreter() {
             if (args.size() > 1 && args[1].isNumber())
                 status = static_cast<int>(args[1].asNumber());
             auto res = gcNew<PraiaMap>();
-            res->entries["status"] = Value(static_cast<double>(status));
-            res->entries["body"] = Value(args[0].toString());
+            res->entries[Value("status")] = Value(static_cast<double>(status));
+            res->entries[Value("body")] = Value(args[0].toString());
             auto hdrs = gcNew<PraiaMap>();
-            hdrs->entries["Content-Type"] = Value("text/html; charset=utf-8");
-            res->entries["headers"] = Value(hdrs);
+            hdrs->entries[Value("Content-Type")] = Value("text/html; charset=utf-8");
+            res->entries[Value("headers")] = Value(hdrs);
             return Value(res);
         }));
 
     // http.redirect(url, status?) → {status, body, headers}
-    httpMap->entries["redirect"] = Value(makeNative("http.redirect", -1,
+    httpMap->entries[Value("redirect")] = Value(makeNative("http.redirect", -1,
         [](const std::vector<Value>& args) -> Value {
             if (args.empty() || !args[0].isString())
                 throw RuntimeError("http.redirect() requires a URL string", 0);
@@ -931,16 +931,16 @@ Interpreter::Interpreter() {
             if (args.size() > 1 && args[1].isNumber())
                 status = static_cast<int>(args[1].asNumber());
             auto res = gcNew<PraiaMap>();
-            res->entries["status"] = Value(static_cast<double>(status));
-            res->entries["body"] = Value(std::string(""));
+            res->entries[Value("status")] = Value(static_cast<double>(status));
+            res->entries[Value("body")] = Value(std::string(""));
             auto hdrs = gcNew<PraiaMap>();
-            hdrs->entries["Location"] = Value(args[0].asString());
-            res->entries["headers"] = Value(hdrs);
+            hdrs->entries[Value("Location")] = Value(args[0].asString());
+            res->entries[Value("headers")] = Value(hdrs);
             return Value(res);
         }));
 
     // http.file(path, status?) → {status, body, headers} with MIME detection
-    httpMap->entries["file"] = Value(makeNative("http.file", -1,
+    httpMap->entries[Value("file")] = Value(makeNative("http.file", -1,
         [](const std::vector<Value>& args) -> Value {
             if (args.empty() || !args[0].isString())
                 throw RuntimeError("http.file() requires a file path", 0);
@@ -984,11 +984,11 @@ Interpreter::Interpreter() {
             }
 
             auto res = gcNew<PraiaMap>();
-            res->entries["status"] = Value(static_cast<double>(status));
-            res->entries["body"] = Value(ss.str());
+            res->entries[Value("status")] = Value(static_cast<double>(status));
+            res->entries[Value("body")] = Value(ss.str());
             auto hdrs = gcNew<PraiaMap>();
-            hdrs->entries["Content-Type"] = Value(mime);
-            res->entries["headers"] = Value(hdrs);
+            hdrs->entries[Value("Content-Type")] = Value(mime);
+            res->entries[Value("headers")] = Value(hdrs);
             return Value(res);
         }));
 
@@ -998,14 +998,14 @@ Interpreter::Interpreter() {
 
     auto jsonMap = gcNew<PraiaMap>();
 
-    jsonMap->entries["parse"] = Value(makeNative("json.parse", 1,
+    jsonMap->entries[Value("parse")] = Value(makeNative("json.parse", 1,
         [](const std::vector<Value>& args) -> Value {
             if (!args[0].isString())
                 throw RuntimeError("json.parse() requires a string", 0);
             return jsonParse(args[0].asString());
         }));
 
-    jsonMap->entries["stringify"] = Value(makeNative("json.stringify", -1,
+    jsonMap->entries[Value("stringify")] = Value(makeNative("json.stringify", -1,
         [](const std::vector<Value>& args) -> Value {
             if (args.empty())
                 throw RuntimeError("json.stringify() requires a value", 0);
@@ -1021,14 +1021,14 @@ Interpreter::Interpreter() {
 
     auto yamlMap = gcNew<PraiaMap>();
 
-    yamlMap->entries["parse"] = Value(makeNative("yaml.parse", 1,
+    yamlMap->entries[Value("parse")] = Value(makeNative("yaml.parse", 1,
         [](const std::vector<Value>& args) -> Value {
             if (!args[0].isString())
                 throw RuntimeError("yaml.parse() requires a string", 0);
             return yamlParse(args[0].asString());
         }));
 
-    yamlMap->entries["stringify"] = Value(makeNative("yaml.stringify", 1,
+    yamlMap->entries[Value("stringify")] = Value(makeNative("yaml.stringify", 1,
         [](const std::vector<Value>& args) -> Value {
             if (args.empty())
                 throw RuntimeError("yaml.stringify() requires a value", 0);
@@ -1041,7 +1041,7 @@ Interpreter::Interpreter() {
 
     auto base64Map = gcNew<PraiaMap>();
 
-    base64Map->entries["encode"] = Value(makeNative("base64.encode", 1,
+    base64Map->entries[Value("encode")] = Value(makeNative("base64.encode", 1,
         [](const std::vector<Value>& args) -> Value {
             if (!args[0].isString())
                 throw RuntimeError("base64.encode() requires a string", 0);
@@ -1062,7 +1062,7 @@ Interpreter::Interpreter() {
             return Value(std::move(result));
         }));
 
-    base64Map->entries["decode"] = Value(makeNative("base64.decode", 1,
+    base64Map->entries[Value("decode")] = Value(makeNative("base64.decode", 1,
         [](const std::vector<Value>& args) -> Value {
             if (!args[0].isString())
                 throw RuntimeError("base64.decode() requires a string", 0);
@@ -1092,7 +1092,7 @@ Interpreter::Interpreter() {
         }));
 
     // base64.encodeURL — URL-safe base64 (RFC 4648 §5): +/ replaced with -_, no padding
-    base64Map->entries["encodeURL"] = Value(makeNative("base64.encodeURL", 1,
+    base64Map->entries[Value("encodeURL")] = Value(makeNative("base64.encodeURL", 1,
         [](const std::vector<Value>& args) -> Value {
             if (!args[0].isString())
                 throw RuntimeError("base64.encodeURL() requires a string", 0);
@@ -1114,7 +1114,7 @@ Interpreter::Interpreter() {
         }));
 
     // base64.decodeURL — decode URL-safe base64
-    base64Map->entries["decodeURL"] = Value(makeNative("base64.decodeURL", 1,
+    base64Map->entries[Value("decodeURL")] = Value(makeNative("base64.decodeURL", 1,
         [](const std::vector<Value>& args) -> Value {
             if (!args[0].isString())
                 throw RuntimeError("base64.decodeURL() requires a string", 0);
@@ -1149,7 +1149,7 @@ Interpreter::Interpreter() {
 
     auto pathMap = gcNew<PraiaMap>();
 
-    pathMap->entries["join"] = Value(makeNative("path.join", -1,
+    pathMap->entries[Value("join")] = Value(makeNative("path.join", -1,
         [](const std::vector<Value>& args) -> Value {
             if (args.empty()) return Value(std::string(""));
             fs::path result;
@@ -1162,32 +1162,32 @@ Interpreter::Interpreter() {
             return Value(result.string());
         }));
 
-    pathMap->entries["dirname"] = Value(makeNative("path.dirname", 1,
+    pathMap->entries[Value("dirname")] = Value(makeNative("path.dirname", 1,
         [](const std::vector<Value>& args) -> Value {
             if (!args[0].isString()) throw RuntimeError("path.dirname() requires a string", 0);
             return Value(fs::path(args[0].asString()).parent_path().string());
         }));
 
-    pathMap->entries["basename"] = Value(makeNative("path.basename", 1,
+    pathMap->entries[Value("basename")] = Value(makeNative("path.basename", 1,
         [](const std::vector<Value>& args) -> Value {
             if (!args[0].isString()) throw RuntimeError("path.basename() requires a string", 0);
             return Value(fs::path(args[0].asString()).filename().string());
         }));
 
-    pathMap->entries["ext"] = Value(makeNative("path.ext", 1,
+    pathMap->entries[Value("ext")] = Value(makeNative("path.ext", 1,
         [](const std::vector<Value>& args) -> Value {
             if (!args[0].isString()) throw RuntimeError("path.ext() requires a string", 0);
             return Value(fs::path(args[0].asString()).extension().string());
         }));
 
-    pathMap->entries["resolve"] = Value(makeNative("path.resolve", 1,
+    pathMap->entries[Value("resolve")] = Value(makeNative("path.resolve", 1,
         [](const std::vector<Value>& args) -> Value {
             if (!args[0].isString()) throw RuntimeError("path.resolve() requires a string", 0);
             return Value(fs::absolute(args[0].asString()).string());
         }));
 
     // path.walk(dir) — recursively list all files as relative paths
-    pathMap->entries["walk"] = Value(makeNative("path.walk", 1,
+    pathMap->entries[Value("walk")] = Value(makeNative("path.walk", 1,
         [](const std::vector<Value>& args) -> Value {
             if (!args[0].isString())
                 throw RuntimeError("path.walk() requires a string path", 0);
@@ -1203,7 +1203,7 @@ Interpreter::Interpreter() {
         }));
 
     // path.glob(dir, pattern) — match files by extension pattern (e.g. "*.praia", "*.cpp")
-    pathMap->entries["glob"] = Value(makeNative("path.glob", 2,
+    pathMap->entries[Value("glob")] = Value(makeNative("path.glob", 2,
         [](const std::vector<Value>& args) -> Value {
             if (!args[0].isString() || !args[1].isString())
                 throw RuntimeError("path.glob() requires (directory, pattern)", 0);
@@ -1240,21 +1240,21 @@ Interpreter::Interpreter() {
         }));
 
     // path.isDir(path) — check if path is a directory
-    pathMap->entries["isDir"] = Value(makeNative("path.isDir", 1,
+    pathMap->entries[Value("isDir")] = Value(makeNative("path.isDir", 1,
         [](const std::vector<Value>& args) -> Value {
             if (!args[0].isString()) throw RuntimeError("path.isDir() requires a string", 0);
             return Value(fs::is_directory(args[0].asString()));
         }));
 
     // path.isFile(path) — check if path is a regular file
-    pathMap->entries["isFile"] = Value(makeNative("path.isFile", 1,
+    pathMap->entries[Value("isFile")] = Value(makeNative("path.isFile", 1,
         [](const std::vector<Value>& args) -> Value {
             if (!args[0].isString()) throw RuntimeError("path.isFile() requires a string", 0);
             return Value(fs::is_regular_file(args[0].asString()));
         }));
 
     // path.size(path) — file size in bytes
-    pathMap->entries["size"] = Value(makeNative("path.size", 1,
+    pathMap->entries[Value("size")] = Value(makeNative("path.size", 1,
         [](const std::vector<Value>& args) -> Value {
             if (!args[0].isString()) throw RuntimeError("path.size() requires a string", 0);
             auto& p = args[0].asString();
@@ -1269,7 +1269,7 @@ Interpreter::Interpreter() {
 
     auto urlMap = gcNew<PraiaMap>();
 
-    urlMap->entries["parse"] = Value(makeNative("url.parse", 1,
+    urlMap->entries[Value("parse")] = Value(makeNative("url.parse", 1,
         [](const std::vector<Value>& args) -> Value {
             if (!args[0].isString()) throw RuntimeError("url.parse() requires a string", 0);
             auto& input = args[0].asString();
@@ -1278,10 +1278,10 @@ Interpreter::Interpreter() {
 
             auto schemeEnd = rest.find("://");
             if (schemeEnd != std::string::npos) {
-                result->entries["scheme"] = Value(rest.substr(0, schemeEnd));
+                result->entries[Value("scheme")] = Value(rest.substr(0, schemeEnd));
                 rest = rest.substr(schemeEnd + 3);
             } else {
-                result->entries["scheme"] = Value(std::string(""));
+                result->entries[Value("scheme")] = Value(std::string(""));
             }
 
             auto slashPos = rest.find('/');
@@ -1290,21 +1290,21 @@ Interpreter::Interpreter() {
 
             auto colonPos = hostPort.find(':');
             if (colonPos != std::string::npos) {
-                result->entries["host"] = Value(hostPort.substr(0, colonPos));
-                try { result->entries["port"] = Value(static_cast<double>(std::stoi(hostPort.substr(colonPos + 1)))); }
-                catch (...) { result->entries["port"] = Value(0.0); }
+                result->entries[Value("host")] = Value(hostPort.substr(0, colonPos));
+                try { result->entries[Value("port")] = Value(static_cast<double>(std::stoi(hostPort.substr(colonPos + 1)))); }
+                catch (...) { result->entries[Value("port")] = Value(0.0); }
             } else {
-                result->entries["host"] = Value(hostPort);
-                result->entries["port"] = Value(0.0);
+                result->entries[Value("host")] = Value(hostPort);
+                result->entries[Value("port")] = Value(0.0);
             }
 
             auto queryPos = pathAndQuery.find('?');
             if (queryPos != std::string::npos) {
-                result->entries["path"] = Value(pathAndQuery.substr(0, queryPos));
-                result->entries["query"] = Value(pathAndQuery.substr(queryPos + 1));
+                result->entries[Value("path")] = Value(pathAndQuery.substr(0, queryPos));
+                result->entries[Value("query")] = Value(pathAndQuery.substr(queryPos + 1));
             } else {
-                result->entries["path"] = Value(pathAndQuery);
-                result->entries["query"] = Value(std::string(""));
+                result->entries[Value("path")] = Value(pathAndQuery);
+                result->entries[Value("query")] = Value(std::string(""));
             }
 
             return Value(result);
@@ -1332,7 +1332,7 @@ Interpreter::Interpreter() {
     auto randomMap = gcNew<PraiaMap>();
     auto rng = std::make_shared<std::mt19937>(std::random_device{}());
 
-    randomMap->entries["int"] = Value(makeNative("random.int", 2,
+    randomMap->entries[Value("int")] = Value(makeNative("random.int", 2,
         [rng](const std::vector<Value>& args) -> Value {
             if (!args[0].isNumber() || !args[1].isNumber())
                 throw RuntimeError("random.int() requires two numbers", 0);
@@ -1342,13 +1342,13 @@ Interpreter::Interpreter() {
             return Value(static_cast<int64_t>(dist(*rng)));
         }));
 
-    randomMap->entries["float"] = Value(makeNative("random.float", 0,
+    randomMap->entries[Value("float")] = Value(makeNative("random.float", 0,
         [rng](const std::vector<Value>&) -> Value {
             std::uniform_real_distribution<double> dist(0.0, 1.0);
             return Value(dist(*rng));
         }));
 
-    randomMap->entries["choice"] = Value(makeNative("random.choice", 1,
+    randomMap->entries[Value("choice")] = Value(makeNative("random.choice", 1,
         [rng](const std::vector<Value>& args) -> Value {
             if (!args[0].isArray())
                 throw RuntimeError("random.choice() requires an array", 0);
@@ -1359,7 +1359,7 @@ Interpreter::Interpreter() {
             return elems[dist(*rng)];
         }));
 
-    randomMap->entries["shuffle"] = Value(makeNative("random.shuffle", 1,
+    randomMap->entries[Value("shuffle")] = Value(makeNative("random.shuffle", 1,
         [rng](const std::vector<Value>& args) -> Value {
             if (!args[0].isArray())
                 throw RuntimeError("random.shuffle() requires an array", 0);
@@ -1368,7 +1368,7 @@ Interpreter::Interpreter() {
             return args[0];
         }));
 
-    randomMap->entries["seed"] = Value(makeNative("random.seed", 1,
+    randomMap->entries[Value("seed")] = Value(makeNative("random.seed", 1,
         [rng](const std::vector<Value>& args) -> Value {
             if (!args[0].isNumber())
                 throw RuntimeError("random.seed() requires a number", 0);
@@ -1382,7 +1382,7 @@ Interpreter::Interpreter() {
 
     auto timeMap = gcNew<PraiaMap>();
 
-    timeMap->entries["now"] = Value(makeNative("time.now", 0,
+    timeMap->entries[Value("now")] = Value(makeNative("time.now", 0,
         [](const std::vector<Value>&) -> Value {
             auto now = std::chrono::system_clock::now();
             auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -1390,7 +1390,7 @@ Interpreter::Interpreter() {
             return Value(static_cast<int64_t>(ms));
         }));
 
-    timeMap->entries["sleep"] = Value(makeNative("time.sleep", 1,
+    timeMap->entries[Value("sleep")] = Value(makeNative("time.sleep", 1,
         [](const std::vector<Value>& args) -> Value {
             if (!args[0].isNumber())
                 throw RuntimeError("time.sleep() requires milliseconds", 0);
@@ -1399,7 +1399,7 @@ Interpreter::Interpreter() {
             return Value();
         }));
 
-    timeMap->entries["format"] = Value(makeNative("time.format", -1,
+    timeMap->entries[Value("format")] = Value(makeNative("time.format", -1,
         [](const std::vector<Value>& args) -> Value {
             std::string fmt = "%Y-%m-%d %H:%M:%S";
             double timestamp = 0;
@@ -1421,7 +1421,7 @@ Interpreter::Interpreter() {
             return Value(oss.str());
         }));
 
-    timeMap->entries["epoch"] = Value(makeNative("time.epoch", 0,
+    timeMap->entries[Value("epoch")] = Value(makeNative("time.epoch", 0,
         [](const std::vector<Value>&) -> Value {
             return Value(static_cast<int64_t>(std::time(nullptr)));
         }));
@@ -1432,12 +1432,12 @@ Interpreter::Interpreter() {
 
     auto mathMap = gcNew<PraiaMap>();
 
-    mathMap->entries["PI"] = Value(3.14159265358979323846);
-    mathMap->entries["E"] = Value(2.71828182845904523536);
-    mathMap->entries["INF"] = Value(std::numeric_limits<double>::infinity());
+    mathMap->entries[Value("PI")] = Value(3.14159265358979323846);
+    mathMap->entries[Value("E")] = Value(2.71828182845904523536);
+    mathMap->entries[Value("INF")] = Value(std::numeric_limits<double>::infinity());
 
     auto mathFn1 = [&](const std::string& name, double(*fn)(double)) {
-        mathMap->entries[name] = Value(makeNative("math." + name, 1,
+        mathMap->entries[Value(name)] = Value(makeNative("math." + name, 1,
             [fn](const std::vector<Value>& args) -> Value {
                 if (!args[0].isNumber())
                     throw RuntimeError("math function requires a number", 0);
@@ -1456,14 +1456,14 @@ Interpreter::Interpreter() {
     mathFn1("ceil", std::ceil);
     mathFn1("round", std::round);
 
-    mathMap->entries["trunc"] = Value(makeNative("math.trunc", 1,
+    mathMap->entries[Value("trunc")] = Value(makeNative("math.trunc", 1,
         [](const std::vector<Value>& args) -> Value {
             if (!args[0].isNumber())
                 throw RuntimeError("math.trunc() requires a number", 0);
             return Value(static_cast<int64_t>(args[0].asNumber()));
         }));
 
-    mathMap->entries["idiv"] = Value(makeNative("math.idiv", 2,
+    mathMap->entries[Value("idiv")] = Value(makeNative("math.idiv", 2,
         [](const std::vector<Value>& args) -> Value {
             if (!args[0].isNumber() || !args[1].isNumber())
                 throw RuntimeError("math.idiv() requires two numbers", 0);
@@ -1478,28 +1478,28 @@ Interpreter::Interpreter() {
     mathFn1("log10", std::log10);
     mathFn1("exp", std::exp);
 
-    mathMap->entries["pow"] = Value(makeNative("math.pow", 2,
+    mathMap->entries[Value("pow")] = Value(makeNative("math.pow", 2,
         [](const std::vector<Value>& args) -> Value {
             if (!args[0].isNumber() || !args[1].isNumber())
                 throw RuntimeError("math.pow() requires two numbers", 0);
             return Value(std::pow(args[0].asNumber(), args[1].asNumber()));
         }));
 
-    mathMap->entries["min"] = Value(makeNative("math.min", 2,
+    mathMap->entries[Value("min")] = Value(makeNative("math.min", 2,
         [](const std::vector<Value>& args) -> Value {
             if (!args[0].isNumber() || !args[1].isNumber())
                 throw RuntimeError("math.min() requires two numbers", 0);
             return Value(std::fmin(args[0].asNumber(), args[1].asNumber()));
         }));
 
-    mathMap->entries["max"] = Value(makeNative("math.max", 2,
+    mathMap->entries[Value("max")] = Value(makeNative("math.max", 2,
         [](const std::vector<Value>& args) -> Value {
             if (!args[0].isNumber() || !args[1].isNumber())
                 throw RuntimeError("math.max() requires two numbers", 0);
             return Value(std::fmax(args[0].asNumber(), args[1].asNumber()));
         }));
 
-    mathMap->entries["clamp"] = Value(makeNative("math.clamp", 3,
+    mathMap->entries[Value("clamp")] = Value(makeNative("math.clamp", 3,
         [](const std::vector<Value>& args) -> Value {
             if (!args[0].isNumber() || !args[1].isNumber() || !args[2].isNumber())
                 throw RuntimeError("math.clamp() requires three numbers", 0);
@@ -1511,7 +1511,7 @@ Interpreter::Interpreter() {
 
     // ── OS extras on sys ──
 
-    sysMap->entries["currentFile"] = Value(makeNative("sys.currentFile", 0,
+    sysMap->entries[Value("currentFile")] = Value(makeNative("sys.currentFile", 0,
         [this](const std::vector<Value>&) -> Value {
             // Check VM first (bytecode engine), then tree-walker
             VM* vm = VM::current();
@@ -1521,7 +1521,7 @@ Interpreter::Interpreter() {
             return Value();
         }));
 
-    sysMap->entries["env"] = Value(makeNative("sys.env", 1,
+    sysMap->entries[Value("env")] = Value(makeNative("sys.env", 1,
         [](const std::vector<Value>& args) -> Value {
             if (!args[0].isString())
                 throw RuntimeError("sys.env() requires a string", 0);
@@ -1530,7 +1530,7 @@ Interpreter::Interpreter() {
             return Value(std::string(val));
         }));
 
-    sysMap->entries["setenv"] = Value(makeNative("sys.setenv", 2,
+    sysMap->entries[Value("setenv")] = Value(makeNative("sys.setenv", 2,
         [](const std::vector<Value>& args) -> Value {
             if (!args[0].isString() || !args[1].isString())
                 throw RuntimeError("sys.setenv() requires two strings (key, value)", 0);
@@ -1539,29 +1539,29 @@ Interpreter::Interpreter() {
             return Value();
         }));
 
-    sysMap->entries["cwd"] = Value(makeNative("sys.cwd", 0,
+    sysMap->entries[Value("cwd")] = Value(makeNative("sys.cwd", 0,
         [](const std::vector<Value>&) -> Value {
             return Value(fs::current_path().string());
         }));
 
 #if defined(__APPLE__)
-    sysMap->entries["platform"] = Value("darwin");
+    sysMap->entries[Value("platform")] = Value("darwin");
 #elif defined(__linux__)
-    sysMap->entries["platform"] = Value("linux");
+    sysMap->entries[Value("platform")] = Value("linux");
 #elif defined(_WIN32)
-    sysMap->entries["platform"] = Value("windows");
+    sysMap->entries[Value("platform")] = Value("windows");
 #else
-    sysMap->entries["platform"] = Value("unknown");
+    sysMap->entries[Value("platform")] = Value("unknown");
 #endif
 
     // sys.libdir — the library directory (where grains/stdlib live), or nil in dev mode
     if (g_praiaLibDir) {
-        sysMap->entries["libdir"] = Value(std::string(g_praiaLibDir));
+        sysMap->entries[Value("libdir")] = Value(std::string(g_praiaLibDir));
     } else {
-        sysMap->entries["libdir"] = Value();
+        sysMap->entries[Value("libdir")] = Value();
     }
 
-    sysMap->entries["stdout"] = Value(makeNative("sys.stdout", 1,
+    sysMap->entries[Value("stdout")] = Value(makeNative("sys.stdout", 1,
         [](const std::vector<Value>& args) -> Value {
             if (!args[0].isString())
                 throw RuntimeError("sys.stdout() requires a string", 0);
@@ -1571,12 +1571,12 @@ Interpreter::Interpreter() {
 
     // ── Process identity ──
 
-    sysMap->entries["uid"] = Value(makeNative("sys.uid", 0,
+    sysMap->entries[Value("uid")] = Value(makeNative("sys.uid", 0,
         [](const std::vector<Value>&) -> Value {
             return Value(static_cast<int64_t>(geteuid()));
         }));
 
-    sysMap->entries["isRoot"] = Value(makeNative("sys.isRoot", 0,
+    sysMap->entries[Value("isRoot")] = Value(makeNative("sys.isRoot", 0,
         [](const std::vector<Value>&) -> Value {
             return Value(geteuid() == 0);
         }));
@@ -1585,7 +1585,7 @@ Interpreter::Interpreter() {
 
     // sys.onSignal(name, handler) — register a callback for a signal
     // handler receives the signal name as an argument
-    sysMap->entries["onSignal"] = Value(makeNative("sys.onSignal", 2,
+    sysMap->entries[Value("onSignal")] = Value(makeNative("sys.onSignal", 2,
         [](const std::vector<Value>& args) -> Value {
             if (!args[0].isString())
                 throw RuntimeError("sys.onSignal() first argument must be a signal name string", 0);
@@ -1614,7 +1614,7 @@ Interpreter::Interpreter() {
         }));
 
     // sys.signal(name) — send a signal to the current process (for testing)
-    sysMap->entries["signal"] = Value(makeNative("sys.signal", 1,
+    sysMap->entries[Value("signal")] = Value(makeNative("sys.signal", 1,
         [](const std::vector<Value>& args) -> Value {
             if (!args[0].isString())
                 throw RuntimeError("sys.signal() requires a signal name string", 0);
@@ -1627,7 +1627,7 @@ Interpreter::Interpreter() {
 
     // sys.checkSignals() — process any pending signals by calling registered handlers.
     // Call this in long-running loops to allow signal callbacks to run.
-    sysMap->entries["checkSignals"] = Value(makeNative("sys.checkSignals", 0,
+    sysMap->entries[Value("checkSignals")] = Value(makeNative("sys.checkSignals", 0,
         [self](const std::vector<Value>&) -> Value {
             uint32_t pending = g_pendingSignals.exchange(0);
             if (pending == 0) return Value(false);
@@ -1661,7 +1661,7 @@ Interpreter::Interpreter() {
     auto rawModeActive = std::make_shared<bool>(false);
     tcgetattr(STDIN_FILENO, origTermios.get());
 
-    sysMap->entries["rawMode"] = Value(makeNative("sys.rawMode", 1,
+    sysMap->entries[Value("rawMode")] = Value(makeNative("sys.rawMode", 1,
         [origTermios, rawModeActive](const std::vector<Value>& args) -> Value {
             if (!args[0].isBool())
                 throw RuntimeError("sys.rawMode() requires a boolean", 0);
@@ -1680,7 +1680,7 @@ Interpreter::Interpreter() {
             return Value();
         }));
 
-    sysMap->entries["readKey"] = Value(makeNative("sys.readKey", 0,
+    sysMap->entries[Value("readKey")] = Value(makeNative("sys.readKey", 0,
         [](const std::vector<Value>&) -> Value {
             // Block until at least one byte
             struct termios prev;
@@ -1718,18 +1718,18 @@ Interpreter::Interpreter() {
             return Value(std::string(1, c));
         }));
 
-    sysMap->entries["termSize"] = Value(makeNative("sys.termSize", 0,
+    sysMap->entries[Value("termSize")] = Value(makeNative("sys.termSize", 0,
         [](const std::vector<Value>&) -> Value {
             struct winsize ws;
             if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) < 0) {
                 auto result = gcNew<PraiaMap>();
-                result->entries["rows"] = Value(static_cast<int64_t>(24));
-                result->entries["cols"] = Value(static_cast<int64_t>(80));
+                result->entries[Value("rows")] = Value(static_cast<int64_t>(24));
+                result->entries[Value("cols")] = Value(static_cast<int64_t>(80));
                 return Value(result);
             }
             auto result = gcNew<PraiaMap>();
-            result->entries["rows"] = Value(static_cast<int64_t>(ws.ws_row));
-            result->entries["cols"] = Value(static_cast<int64_t>(ws.ws_col));
+            result->entries[Value("rows")] = Value(static_cast<int64_t>(ws.ws_row));
+            result->entries[Value("cols")] = Value(static_cast<int64_t>(ws.ws_col));
             return Value(result);
         }));
 
@@ -1738,7 +1738,7 @@ Interpreter::Interpreter() {
 #ifdef HAVE_SQLITE
     auto sqliteMap = gcNew<PraiaMap>();
 
-    sqliteMap->entries["open"] = Value(makeNative("sqlite.open", 1,
+    sqliteMap->entries[Value("open")] = Value(makeNative("sqlite.open", 1,
         [](const std::vector<Value>& args) -> Value {
             if (!args[0].isString())
                 throw RuntimeError("sqlite.open() requires a path string", 0);
@@ -1757,7 +1757,7 @@ Interpreter::Interpreter() {
             auto dbMap = gcNew<PraiaMap>();
 
             // db.query(sql, params?) → array of maps
-            dbMap->entries["query"] = Value(makeNative("query", -1,
+            dbMap->entries[Value("query")] = Value(makeNative("query", -1,
                 [db](const std::vector<Value>& args) -> Value {
                     if (args.empty() || !args[0].isString())
                         throw RuntimeError("query() requires a SQL string", 0);
@@ -1796,16 +1796,16 @@ Interpreter::Interpreter() {
                             int type = sqlite3_column_type(stmt, c);
                             switch (type) {
                                 case SQLITE_NULL:
-                                    row->entries[name] = Value();
+                                    row->entries[Value(name)] = Value();
                                     break;
                                 case SQLITE_INTEGER:
-                                    row->entries[name] = Value(static_cast<double>(sqlite3_column_int64(stmt, c)));
+                                    row->entries[Value(name)] = Value(static_cast<double>(sqlite3_column_int64(stmt, c)));
                                     break;
                                 case SQLITE_FLOAT:
-                                    row->entries[name] = Value(sqlite3_column_double(stmt, c));
+                                    row->entries[Value(name)] = Value(sqlite3_column_double(stmt, c));
                                     break;
                                 default:
-                                    row->entries[name] = Value(std::string(
+                                    row->entries[Value(name)] = Value(std::string(
                                         reinterpret_cast<const char*>(sqlite3_column_text(stmt, c))));
                                     break;
                             }
@@ -1818,7 +1818,7 @@ Interpreter::Interpreter() {
                 }));
 
             // db.run(sql, params?) → {changes, lastId}
-            dbMap->entries["run"] = Value(makeNative("run", -1,
+            dbMap->entries[Value("run")] = Value(makeNative("run", -1,
                 [db](const std::vector<Value>& args) -> Value {
                     if (args.empty() || !args[0].isString())
                         throw RuntimeError("run() requires a SQL string", 0);
@@ -1855,13 +1855,13 @@ Interpreter::Interpreter() {
                     }
 
                     auto result = gcNew<PraiaMap>();
-                    result->entries["changes"] = Value(static_cast<int64_t>(sqlite3_changes(*db)));
-                    result->entries["lastId"] = Value(static_cast<int64_t>(sqlite3_last_insert_rowid(*db)));
+                    result->entries[Value("changes")] = Value(static_cast<int64_t>(sqlite3_changes(*db)));
+                    result->entries[Value("lastId")] = Value(static_cast<int64_t>(sqlite3_last_insert_rowid(*db)));
                     return Value(result);
                 }));
 
             // db.close()
-            dbMap->entries["close"] = Value(makeNative("close", 0,
+            dbMap->entries[Value("close")] = Value(makeNative("close", 0,
                 [db](const std::vector<Value>&) -> Value {
                     if (*db) {
                         sqlite3_close(*db);
@@ -1953,7 +1953,7 @@ void Interpreter::setArgs(const std::vector<std::string>& args) {
     auto arr = gcNew<PraiaArray>();
     for (auto& a : args)
         arr->elements.push_back(Value(a));
-    sysMap->entries["args"] = Value(arr);
+    sysMap->entries[Value("args")] = Value(arr);
 }
 
 void Interpreter::setCurrentFile(const std::string& path) {

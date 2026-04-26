@@ -158,7 +158,7 @@ class JsonParser {
             skipWhitespace();
             if (peek() != ':') fail("Expected ':' after key in JSON object");
             advance();
-            map->entries[key.asString()] = parseValue();
+            map->entries[Value(key.asString())] = parseValue();
             skipWhitespace();
             if (peek() == '}') { pos++; break; }
             if (peek() != ',') fail("Expected ',' or '}' in JSON object");
@@ -259,9 +259,11 @@ std::string jsonStringify(const Value& val, int indent, int depth) {
         std::string r = "{" + nl;
         bool first = true;
         for (auto& [k, v] : entries) {
+            if (!k.isString())
+                throw RuntimeError("JSON keys must be strings", 0);
             if (!first) r += "," + nl;
             first = false;
-            r += childPad + jsonQuote(k) + ":" + (pretty ? " " : "");
+            r += childPad + jsonQuote(k.asString()) + ":" + (pretty ? " " : "");
             r += jsonStringify(v, indent, depth + 1);
         }
         return r + nl + pad + "}";

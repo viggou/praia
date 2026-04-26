@@ -254,8 +254,8 @@ void vmRegisterNatives(VM& vm) {
                 auto arr = gcNew<PraiaArray>();
                 for (auto& [k, val] : v.asMap()->entries) {
                     auto entry = gcNew<PraiaMap>();
-                    entry->entries["key"] = Value(k);
-                    entry->entries["value"] = val;
+                    entry->entries[Value("key")] = Value(k);
+                    entry->entries[Value("value")] = val;
                     arr->elements.push_back(Value(entry));
                 }
                 return Value(arr);
@@ -291,17 +291,17 @@ void vmRegisterNatives(VM& vm) {
                 auto& elems = args[0].asArray()->elements;
                 int idx = static_cast<int>(args[1].asNumber());
                 if (idx >= static_cast<int>(elems.size())) {
-                    result->entries["value"] = Value();
-                    result->entries["done"] = Value(true);
+                    result->entries[Value("value")] = Value();
+                    result->entries[Value("done")] = Value(true);
                 } else {
-                    result->entries["value"] = elems[idx];
-                    result->entries["done"] = Value(false);
+                    result->entries[Value("value")] = elems[idx];
+                    result->entries[Value("done")] = Value(false);
                 }
                 return Value(result);
             }
             // Nil or unknown — done
-            result->entries["value"] = Value();
-            result->entries["done"] = Value(true);
+            result->entries[Value("value")] = Value();
+            result->entries[Value("done")] = Value(true);
             return Value(result);
         }));
 
@@ -327,7 +327,7 @@ void vmRegisterNatives(VM& vm) {
             }
             auto rest = gcNew<PraiaMap>();
             for (auto& [k, v] : entries) {
-                if (!exclude.count(k)) rest->entries[k] = v;
+                if (!k.isString() || !exclude.count(k.asString())) rest->entries[k] = v;
             }
             return Value(rest);
         }));

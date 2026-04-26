@@ -45,7 +45,7 @@ void registerBytesBuiltins(std::shared_ptr<PraiaMap> bytesMap) {
     };
 
     // bytes.pack(format, values)
-    bytesMap->entries["pack"] = Value(makeNative("bytes.pack", 2,
+    bytesMap->entries[Value("pack")] = Value(makeNative("bytes.pack", 2,
         [parseStructFmt](const std::vector<Value>& args) -> Value {
             if (!args[0].isString() || !args[1].isArray())
                 throw RuntimeError("bytes.pack(format, values) requires a format string and array", 0);
@@ -88,7 +88,7 @@ void registerBytesBuiltins(std::shared_ptr<PraiaMap> bytesMap) {
         }));
 
     // bytes.unpack(format, data) — returns array of numbers
-    bytesMap->entries["unpack"] = Value(makeNative("bytes.unpack", 2,
+    bytesMap->entries[Value("unpack")] = Value(makeNative("bytes.unpack", 2,
         [parseStructFmt](const std::vector<Value>& args) -> Value {
             if (!args[0].isString() || !args[1].isString())
                 throw RuntimeError("bytes.unpack(format, data) requires strings", 0);
@@ -146,7 +146,7 @@ void registerBytesBuiltins(std::shared_ptr<PraiaMap> bytesMap) {
         }));
 
     // bytes.calcsize(format) — return total byte size of a struct format
-    bytesMap->entries["calcsize"] = Value(makeNative("bytes.calcsize", 1,
+    bytesMap->entries[Value("calcsize")] = Value(makeNative("bytes.calcsize", 1,
         [parseStructFmt](const std::vector<Value>& args) -> Value {
             if (!args[0].isString())
                 throw RuntimeError("bytes.calcsize() requires a format string", 0);
@@ -158,7 +158,7 @@ void registerBytesBuiltins(std::shared_ptr<PraiaMap> bytesMap) {
         }));
 
     // bytes.from([72, 101, 108]) → "Hel" — array of byte values to string
-    bytesMap->entries["from"] = Value(makeNative("bytes.from", 1,
+    bytesMap->entries[Value("from")] = Value(makeNative("bytes.from", 1,
         [](const std::vector<Value>& args) -> Value {
             if (!args[0].isArray())
                 throw RuntimeError("bytes.from() requires an array of numbers", 0);
@@ -172,7 +172,7 @@ void registerBytesBuiltins(std::shared_ptr<PraiaMap> bytesMap) {
         }));
 
     // bytes.toArray("Hel") → [72, 101, 108] — string to array of byte values
-    bytesMap->entries["toArray"] = Value(makeNative("bytes.toArray", 1,
+    bytesMap->entries[Value("toArray")] = Value(makeNative("bytes.toArray", 1,
         [](const std::vector<Value>& args) -> Value {
             if (!args[0].isString())
                 throw RuntimeError("bytes.toArray() requires a string", 0);
@@ -183,7 +183,7 @@ void registerBytesBuiltins(std::shared_ptr<PraiaMap> bytesMap) {
         }));
 
     // bytes.hex("AB") → "4142" — string to hex representation
-    bytesMap->entries["hex"] = Value(makeNative("bytes.hex", 1,
+    bytesMap->entries[Value("hex")] = Value(makeNative("bytes.hex", 1,
         [](const std::vector<Value>& args) -> Value {
             if (!args[0].isString())
                 throw RuntimeError("bytes.hex() requires a string", 0);
@@ -197,7 +197,7 @@ void registerBytesBuiltins(std::shared_ptr<PraiaMap> bytesMap) {
         }));
 
     // bytes.fromHex("4142") → "AB" — hex string to raw bytes
-    bytesMap->entries["fromHex"] = Value(makeNative("bytes.fromHex", 1,
+    bytesMap->entries[Value("fromHex")] = Value(makeNative("bytes.fromHex", 1,
         [](const std::vector<Value>& args) -> Value {
             if (!args[0].isString())
                 throw RuntimeError("bytes.fromHex() requires a string", 0);
@@ -217,7 +217,7 @@ void registerBytesBuiltins(std::shared_ptr<PraiaMap> bytesMap) {
         }));
 
     // bytes.len(str) — byte length (same as len() but semantically clear for binary data)
-    bytesMap->entries["len"] = Value(makeNative("bytes.len", 1,
+    bytesMap->entries[Value("len")] = Value(makeNative("bytes.len", 1,
         [](const std::vector<Value>& args) -> Value {
             if (!args[0].isString())
                 throw RuntimeError("bytes.len() requires a string", 0);

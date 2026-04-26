@@ -174,7 +174,10 @@ static void printExpr(const Expr* expr, int level) {
         auto* e = static_cast<const MapLiteralExpr*>(expr);
         printIndent(level); std::cout << "MapLiteral\n";
         for (size_t i = 0; i < e->keys.size(); i++) {
-            printIndent(level + 1); std::cout << e->keys[i] << ":\n";
+            printIndent(level + 1); std::cout << "key:\n";
+            if (e->keys[i]) printExpr(e->keys[i].get(), level + 2);
+            else { printIndent(level + 2); std::cout << "<spread>\n"; }
+            printIndent(level + 1); std::cout << "value:\n";
             printExpr(e->values[i].get(), level + 2);
         }
         break;
