@@ -273,7 +273,7 @@ static std::string generateRandomBytes(int count) {
 void registerCryptoBuiltins(std::shared_ptr<PraiaMap> cryptoMap) {
 
     // MD5 (hand-rolled, RFC 1321)
-    cryptoMap->entries["md5"] = Value(makeNative("crypto.md5", 1,
+    cryptoMap->entries[Value("md5")] = Value(makeNative("crypto.md5", 1,
         [](const std::vector<Value>& args) -> Value {
             if (!args[0].isString())
                 throw RuntimeError("crypto.md5() requires a string", 0);
@@ -336,7 +336,7 @@ void registerCryptoBuiltins(std::shared_ptr<PraiaMap> cryptoMap) {
         }));
 
     // SHA-1 (hand-rolled, RFC 3174)
-    cryptoMap->entries["sha1"] = Value(makeNative("crypto.sha1", 1,
+    cryptoMap->entries[Value("sha1")] = Value(makeNative("crypto.sha1", 1,
         [](const std::vector<Value>& args) -> Value {
             if (!args[0].isString())
                 throw RuntimeError("crypto.sha1() requires a string", 0);
@@ -344,7 +344,7 @@ void registerCryptoBuiltins(std::shared_ptr<PraiaMap> cryptoMap) {
         }));
 
     // SHA-256 (hand-rolled, FIPS 180-4)
-    cryptoMap->entries["sha256"] = Value(makeNative("crypto.sha256", 1,
+    cryptoMap->entries[Value("sha256")] = Value(makeNative("crypto.sha256", 1,
         [](const std::vector<Value>& args) -> Value {
             if (!args[0].isString())
                 throw RuntimeError("crypto.sha256() requires a string", 0);
@@ -352,7 +352,7 @@ void registerCryptoBuiltins(std::shared_ptr<PraiaMap> cryptoMap) {
         }));
 
     // SHA-512 (hand-rolled, FIPS 180-4)
-    cryptoMap->entries["sha512"] = Value(makeNative("crypto.sha512", 1,
+    cryptoMap->entries[Value("sha512")] = Value(makeNative("crypto.sha512", 1,
         [](const std::vector<Value>& args) -> Value {
             if (!args[0].isString())
                 throw RuntimeError("crypto.sha512() requires a string", 0);
@@ -360,7 +360,7 @@ void registerCryptoBuiltins(std::shared_ptr<PraiaMap> cryptoMap) {
         }));
 
     // HMAC (key, message, algorithm)
-    cryptoMap->entries["hmac"] = Value(makeNative("crypto.hmac", 3,
+    cryptoMap->entries[Value("hmac")] = Value(makeNative("crypto.hmac", 3,
         [](const std::vector<Value>& args) -> Value {
             if (!args[0].isString() || !args[1].isString() || !args[2].isString())
                 throw RuntimeError("crypto.hmac() requires (key, message, algorithm) as strings", 0);
@@ -371,7 +371,7 @@ void registerCryptoBuiltins(std::shared_ptr<PraiaMap> cryptoMap) {
         }));
 
     // Random bytes — returns raw binary string
-    cryptoMap->entries["randomBytes"] = Value(makeNative("crypto.randomBytes", 1,
+    cryptoMap->entries[Value("randomBytes")] = Value(makeNative("crypto.randomBytes", 1,
         [](const std::vector<Value>& args) -> Value {
             if (!args[0].isNumber())
                 throw RuntimeError("crypto.randomBytes() requires a number", 0);
@@ -385,7 +385,7 @@ void registerCryptoBuiltins(std::shared_ptr<PraiaMap> cryptoMap) {
 
 #ifdef HAVE_OPENSSL
     // crypto.encrypt(plaintext, key, iv) — AES-256-CBC, returns raw ciphertext
-    cryptoMap->entries["encrypt"] = Value(makeNative("crypto.encrypt", 3,
+    cryptoMap->entries[Value("encrypt")] = Value(makeNative("crypto.encrypt", 3,
         [](const std::vector<Value>& args) -> Value {
             if (!args[0].isString() || !args[1].isString() || !args[2].isString())
                 throw RuntimeError("crypto.encrypt() requires (plaintext, key, iv) as strings", 0);
@@ -428,7 +428,7 @@ void registerCryptoBuiltins(std::shared_ptr<PraiaMap> cryptoMap) {
         }));
 
     // crypto.decrypt(ciphertext, key, iv) — AES-256-CBC, returns plaintext
-    cryptoMap->entries["decrypt"] = Value(makeNative("crypto.decrypt", 3,
+    cryptoMap->entries[Value("decrypt")] = Value(makeNative("crypto.decrypt", 3,
         [](const std::vector<Value>& args) -> Value {
             if (!args[0].isString() || !args[1].isString() || !args[2].isString())
                 throw RuntimeError("crypto.decrypt() requires (ciphertext, key, iv) as strings", 0);
@@ -475,7 +475,7 @@ void registerCryptoBuiltins(std::shared_ptr<PraiaMap> cryptoMap) {
 
 #ifdef HAVE_OPENSSL
     // crypto.hashPassword(password, salt?, iterations?) — PBKDF2-SHA256
-    cryptoMap->entries["hashPassword"] = Value(makeNative("crypto.hashPassword", -1,
+    cryptoMap->entries[Value("hashPassword")] = Value(makeNative("crypto.hashPassword", -1,
         [](const std::vector<Value>& args) -> Value {
             if (args.empty() || !args[0].isString())
                 throw RuntimeError("crypto.hashPassword() requires a password string", 0);
@@ -503,14 +503,14 @@ void registerCryptoBuiltins(std::shared_ptr<PraiaMap> cryptoMap) {
             }
 
             auto result = gcNew<PraiaMap>();
-            result->entries["hash"] = Value(toHexString(derived, 32));
-            result->entries["salt"] = Value(toHexString(reinterpret_cast<const uint8_t*>(salt.data()), salt.size()));
-            result->entries["iterations"] = Value(static_cast<int64_t>(iterations));
+            result->entries[Value("hash")] = Value(toHexString(derived, 32));
+            result->entries[Value("salt")] = Value(toHexString(reinterpret_cast<const uint8_t*>(salt.data()), salt.size()));
+            result->entries[Value("iterations")] = Value(static_cast<int64_t>(iterations));
             return Value(result);
         }));
 
     // crypto.verifyPassword(password, hash, salt, iterations?) — verify PBKDF2
-    cryptoMap->entries["verifyPassword"] = Value(makeNative("crypto.verifyPassword", -1,
+    cryptoMap->entries[Value("verifyPassword")] = Value(makeNative("crypto.verifyPassword", -1,
         [](const std::vector<Value>& args) -> Value {
             if (args.size() < 3 || !args[0].isString() || !args[1].isString() || !args[2].isString())
                 throw RuntimeError("crypto.verifyPassword() requires (password, hash, salt)", 0);

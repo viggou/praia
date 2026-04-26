@@ -145,7 +145,7 @@ struct IndexAssignExpr : Expr {
 
 struct MapLiteralExpr : Expr {
     MapLiteralExpr() : Expr(ExprType::MapLiteral) {}
-    std::vector<std::string> keys;
+    std::vector<ExprPtr> keys;   // StringExpr for name:/string, expression for [expr]:, nullptr for spread
     std::vector<ExprPtr> values;
 };
 

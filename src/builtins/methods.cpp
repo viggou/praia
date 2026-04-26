@@ -206,17 +206,17 @@ Value getStringMethod(const std::string& str,
                     std::smatch m;
                     if (!std::regex_search(str, m, re)) return Value();
                     auto result = gcNew<PraiaMap>();
-                    result->entries["match"] = Value(m[0].str());
+                    result->entries[Value("match")] = Value(m[0].str());
 #ifdef HAVE_UTF8PROC
-                    result->entries["index"] = Value(static_cast<int64_t>(
+                    result->entries[Value("index")] = Value(static_cast<int64_t>(
                         utf8_byte_to_grapheme_index(str, static_cast<size_t>(m.position(0)))));
 #else
-                    result->entries["index"] = Value(static_cast<int64_t>(m.position(0)));
+                    result->entries[Value("index")] = Value(static_cast<int64_t>(m.position(0)));
 #endif
                     auto groups = gcNew<PraiaArray>();
                     for (size_t i = 1; i < m.size(); i++)
                         groups->elements.push_back(Value(m[i].str()));
-                    result->entries["groups"] = Value(groups);
+                    result->entries[Value("groups")] = Value(groups);
                     return Value(result);
                 }, "match()");
             } catch (const std::regex_error& e) {
@@ -236,17 +236,17 @@ Value getStringMethod(const std::string& str,
                     auto end = std::sregex_iterator();
                     for (auto it = begin; it != end; ++it) {
                         auto entry = gcNew<PraiaMap>();
-                        entry->entries["match"] = Value((*it)[0].str());
+                        entry->entries[Value("match")] = Value((*it)[0].str());
 #ifdef HAVE_UTF8PROC
-                        entry->entries["index"] = Value(static_cast<int64_t>(
+                        entry->entries[Value("index")] = Value(static_cast<int64_t>(
                             utf8_byte_to_grapheme_index(str, static_cast<size_t>(it->position(0)))));
 #else
-                        entry->entries["index"] = Value(static_cast<int64_t>(it->position(0)));
+                        entry->entries[Value("index")] = Value(static_cast<int64_t>(it->position(0)));
 #endif
                         auto groups = gcNew<PraiaArray>();
                         for (size_t i = 1; i < it->size(); i++)
                             groups->elements.push_back(Value((*it)[i].str()));
-                        entry->entries["groups"] = Value(groups);
+                        entry->entries[Value("groups")] = Value(groups);
                         results->elements.push_back(Value(entry));
                     }
                     return Value(results);

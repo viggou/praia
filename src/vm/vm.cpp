@@ -110,7 +110,7 @@ void VM::setArgs(const std::vector<std::string>& args) {
     for (auto& a : args)
         arr->elements.push_back(Value(a));
     if (globals.count("sys") && globals["sys"].isMap())
-        globals["sys"].asMap()->entries["args"] = Value(arr);
+        globals["sys"].asMap()->entries[Value("args")] = Value(arr);
 }
 
 void VM::push(Value value) {
@@ -143,8 +143,8 @@ void VM::resetStack() { stackTop = 0; frameCount = 0; }
 Value VM::resumeGenerator(std::shared_ptr<PraiaGenerator> gen, Value sendVal) {
     if (gen->state == PraiaGenerator::State::COMPLETED) {
         auto result = gcNew<PraiaMap>();
-        result->entries["value"] = Value();
-        result->entries["done"] = Value(true);
+        result->entries[Value("value")] = Value();
+        result->entries[Value("done")] = Value(true);
         return Value(result);
     }
 
@@ -665,8 +665,8 @@ VM::Result VM::execute(int baseFrameCount_) {
             }
             if (a.isMap() && b.isMap()) {
                 auto r = gcNew<PraiaMap>();
-                for (auto& [k, v] : a.asMap()->entries) r->entries[k] = v;
-                for (auto& [k, v] : b.asMap()->entries) r->entries[k] = v; // b overrides a
+                for (auto& [k, v] : a.asMap()->entries) r->entries[Value(k)] = v;
+                for (auto& [k, v] : b.asMap()->entries) r->entries[Value(k)] = v; // b overrides a
                 push(Value(r)); break;
             }
             if (a.isString() || b.isString()) { push(Value(a.toString() + b.toString())); break; }
@@ -958,8 +958,8 @@ VM::Result VM::execute(int baseFrameCount_) {
                 frameCount = genBaseFrame_;
                 stackTop = genBaseStackTop_;
                 auto doneResult = gcNew<PraiaMap>();
-                doneResult->entries["value"] = result;
-                doneResult->entries["done"] = Value(true);
+                doneResult->entries[Value("value")] = result;
+                doneResult->entries[Value("done")] = Value(true);
                 push(Value(doneResult));
                 return Result::OK;
             }
@@ -1193,7 +1193,7 @@ VM::Result VM::execute(int baseFrameCount_) {
             // Map fields take priority over universal methods
             if (obj.isMap()) {
                 auto& entries = obj.asMap()->entries;
-                auto it = entries.find(name);
+                auto it = entries.find(Value(name));
                 if (it != entries.end()) { push(it->second); break; }
                 // Fall through to universal methods below
             }
@@ -1303,7 +1303,7 @@ VM::Result VM::execute(int baseFrameCount_) {
                 break;
             }
             if (obj.isMap()) {
-                obj.asMap()->entries[name] = val;
+                obj.asMap()->entries[Value(name)] = val;
                 push(val);
                 break;
             }
@@ -1389,12 +1389,12 @@ VM::Result VM::execute(int baseFrameCount_) {
             auto map = gcNew<PraiaMap>();
             // Stack has count pairs: key, value, key, value, ...
             // Pop in reverse
-            std::vector<std::pair<std::string, Value>> pairs(count);
+            std::vector<std::pair<Value, Value>> pairs(count);
             for (int i = count - 1; i >= 0; i--) {
                 Value val = pop();
                 Value key = pop();
-                if (!key.isString()) { RUNTIME_ERR("Map key must be a string"); }
-                pairs[i] = {key.asString(), std::move(val)};
+                if (!isHashable(key)) { RUNTIME_ERR("Unhashable type used as map key"); }
+                pairs[i] = {std::move(key), std::move(val)};
             }
             for (auto& [k, v] : pairs) map->entries[k] = std::move(v);
             push(Value(map));
@@ -1430,10 +1430,9 @@ VM::Result VM::execute(int baseFrameCount_) {
                 push(Value(std::string(1, str[i])));
 #endif
             } else if (obj.isMap()) {
-                if (!idx.isString()) { RUNTIME_ERR("Map key must be a string"); }
                 auto& entries = obj.asMap()->entries;
-                auto it = entries.find(idx.asString());
-                if (it == entries.end()) { RUNTIME_ERR("Map has no key '" + idx.asString() + "'"); }
+                auto it = entries.find(idx);
+                if (it == entries.end()) { RUNTIME_ERR("Map has no key '" + idx.toString() + "'"); }
                 push(it->second);
             } else if (obj.isInstance()) {
                 auto [ok, r] = vmCallDunder(*this, obj, "__index", {idx});
@@ -1463,8 +1462,8 @@ VM::Result VM::execute(int baseFrameCount_) {
                 elems[i] = val;
                 push(val);
             } else if (obj.isMap()) {
-                if (!idx.isString()) { RUNTIME_ERR("Map key must be a string"); }
-                obj.asMap()->entries[idx.asString()] = val;
+                if (!isHashable(idx)) { RUNTIME_ERR("Unhashable type used as map key"); }
+                obj.asMap()->entries[idx] = val;
                 push(val);
             } else {
                 RUNTIME_ERR("Can only assign to array or map indices");
@@ -1647,7 +1646,7 @@ VM::Result VM::execute(int baseFrameCount_) {
                     Value result(copy);
                     visited[key] = result; // register before recursing
                     for (auto& [k, val] : v.asMap()->entries)
-                        copy->entries[k] = deepCopy(val);
+                        copy->entries[Value(k)] = deepCopy(val);
                     return result;
                 }
                 if (v.isArray()) {
@@ -1956,8 +1955,8 @@ VM::Result VM::execute(int baseFrameCount_) {
 
             // Push {value, done: false} result
             auto result = gcNew<PraiaMap>();
-            result->entries["value"] = yieldedValue;
-            result->entries["done"] = Value(false);
+            result->entries[Value("value")] = yieldedValue;
+            result->entries[Value("done")] = Value(false);
             push(Value(result));
             return Result::OK;
         }

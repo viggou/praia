@@ -11,19 +11,19 @@ void registerConcurrencyBuiltins(Interpreter* self, std::shared_ptr<Environment>
             auto mtx = std::make_shared<std::recursive_mutex>();
             auto lock = gcNew<PraiaMap>();
 
-            lock->entries["acquire"] = Value(makeNative("acquire", 0,
+            lock->entries[Value("acquire")] = Value(makeNative("acquire", 0,
                 [mtx](const std::vector<Value>&) -> Value {
                     mtx->lock();
                     return Value();
                 }));
 
-            lock->entries["release"] = Value(makeNative("release", 0,
+            lock->entries[Value("release")] = Value(makeNative("release", 0,
                 [mtx](const std::vector<Value>&) -> Value {
                     mtx->unlock();
                     return Value();
                 }));
 
-            lock->entries["withLock"] = Value(makeNative("withLock", 1,
+            lock->entries[Value("withLock")] = Value(makeNative("withLock", 1,
                 [mtx, self](const std::vector<Value>& args) -> Value {
                     if (!args[0].isCallable())
                         throw RuntimeError("withLock() requires a function", 0);
@@ -52,7 +52,7 @@ void registerConcurrencyBuiltins(Interpreter* self, std::shared_ptr<Environment>
 
             auto ch = gcNew<PraiaMap>();
 
-            ch->entries["send"] = Value(makeNative("send", 1,
+            ch->entries[Value("send")] = Value(makeNative("send", 1,
                 [state, capacity](const std::vector<Value>& args) -> Value {
                     std::unique_lock<std::mutex> lock(state->mtx);
                     if (state->closed)
@@ -69,7 +69,7 @@ void registerConcurrencyBuiltins(Interpreter* self, std::shared_ptr<Environment>
                     return Value();
                 }));
 
-            ch->entries["recv"] = Value(makeNative("recv", 0,
+            ch->entries[Value("recv")] = Value(makeNative("recv", 0,
                 [state](const std::vector<Value>&) -> Value {
                     std::unique_lock<std::mutex> lock(state->mtx);
                     state->cv.wait(lock, [&] {
@@ -82,7 +82,7 @@ void registerConcurrencyBuiltins(Interpreter* self, std::shared_ptr<Environment>
                     return val;
                 }));
 
-            ch->entries["tryRecv"] = Value(makeNative("tryRecv", 0,
+            ch->entries[Value("tryRecv")] = Value(makeNative("tryRecv", 0,
                 [state](const std::vector<Value>&) -> Value {
                     std::lock_guard<std::mutex> lock(state->mtx);
                     if (state->buffer.empty()) return Value(); // nil
@@ -92,7 +92,7 @@ void registerConcurrencyBuiltins(Interpreter* self, std::shared_ptr<Environment>
                     return val;
                 }));
 
-            ch->entries["close"] = Value(makeNative("close", 0,
+            ch->entries[Value("close")] = Value(makeNative("close", 0,
                 [state](const std::vector<Value>&) -> Value {
                     std::lock_guard<std::mutex> lock(state->mtx);
                     state->closed = true;
@@ -100,7 +100,7 @@ void registerConcurrencyBuiltins(Interpreter* self, std::shared_ptr<Environment>
                     return Value();
                 }));
 
-            ch->entries["closed"] = Value(makeNative("closed", 0,
+            ch->entries[Value("closed")] = Value(makeNative("closed", 0,
                 [state](const std::vector<Value>&) -> Value {
                     std::lock_guard<std::mutex> lock(state->mtx);
                     return Value(state->closed && state->buffer.empty());
@@ -113,7 +113,7 @@ void registerConcurrencyBuiltins(Interpreter* self, std::shared_ptr<Environment>
 
     auto asyncMap = gcNew<PraiaMap>();
 
-    asyncMap->entries["all"] = Value(makeNative("futures.all", 1,
+    asyncMap->entries[Value("all")] = Value(makeNative("futures.all", 1,
         [](const std::vector<Value>& args) -> Value {
             if (!args[0].isArray())
                 throw RuntimeError("async.all() requires an array of futures", 0);
@@ -127,7 +127,7 @@ void registerConcurrencyBuiltins(Interpreter* self, std::shared_ptr<Environment>
             return Value(results);
         }));
 
-    asyncMap->entries["race"] = Value(makeNative("futures.race", 1,
+    asyncMap->entries[Value("race")] = Value(makeNative("futures.race", 1,
         [](const std::vector<Value>& args) -> Value {
             if (!args[0].isArray())
                 throw RuntimeError("async.race() requires an array of futures", 0);

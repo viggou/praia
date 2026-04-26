@@ -362,7 +362,7 @@ void Interpreter::execute(const Stmt* stmt) {
                     if (p.isRest) {
                         auto rest = gcNew<PraiaMap>();
                         for (auto& [k, v] : entries) {
-                            if (!extracted.count(k))
+                            if (!k.isString() || !extracted.count(k.asString()))
                                 rest->entries[k] = v;
                         }
                         env->define(p.name, Value(rest));
@@ -370,7 +370,7 @@ void Interpreter::execute(const Stmt* stmt) {
                     }
                     std::string key = p.key.empty() ? p.name : p.key;
                     extracted.insert(key);
-                    auto it = entries.find(key);
+                    auto it = entries.find(Value(key));
                     env->define(p.name, it != entries.end() ? it->second : Value());
                 }
             }
@@ -479,7 +479,7 @@ void Interpreter::execute(const Stmt* stmt) {
             if (hasDestructure && elem.isMap()) {
                 auto& entries = elem.asMap()->entries;
                 for (auto& dk : s->destructureKeys) {
-                    auto it = entries.find(dk);
+                    auto it = entries.find(Value(dk));
                     iterEnv->define(dk, it != entries.end() ? it->second : Value());
                 }
             } else {
@@ -500,8 +500,8 @@ void Interpreter::execute(const Stmt* stmt) {
             try {
                 for (auto& [k, v] : iterable.asMap()->entries) {
                     auto entry = gcNew<PraiaMap>();
-                    entry->entries["key"] = Value(k);
-                    entry->entries["value"] = v;
+                    entry->entries[Value("key")] = Value(k);
+                    entry->entries[Value("value")] = v;
                     auto iterEnv = gcNew<Environment>(env);
                     defineLoopVar(iterEnv, Value(entry));
                     try { executeBlock(bodyBlock, iterEnv); }
@@ -682,7 +682,7 @@ void Interpreter::execute(const Stmt* stmt) {
         auto* s = static_cast<const ExportStmt*>(stmt);
         auto exports = gcNew<PraiaMap>();
         for (auto& name : s->names) {
-            exports->entries[name] = env->get(name, s->line);
+            exports->entries[Value(name)] = env->get(name, s->line);
         }
         throw ExportSignal{exports};
     }
@@ -868,8 +868,8 @@ Value Interpreter::evaluate(const Expr* expr) {
             }
             if (left.isMap() && right.isMap()) {
                 auto result = gcNew<PraiaMap>();
-                for (auto& [k, v] : left.asMap()->entries) result->entries[k] = v;
-                for (auto& [k, v] : right.asMap()->entries) result->entries[k] = v;
+                for (auto& [k, v] : left.asMap()->entries) result->entries[Value(k)] = v;
+                for (auto& [k, v] : right.asMap()->entries) result->entries[Value(k)] = v;
                 return Value(result);
             }
             if (left.isString() || right.isString())
@@ -1190,7 +1190,8 @@ Value Interpreter::evaluate(const Expr* expr) {
         auto* e = static_cast<const MapLiteralExpr*>(expr);
         auto map = gcNew<PraiaMap>();
         for (size_t i = 0; i < e->keys.size(); i++) {
-            if (e->keys[i].empty() && e->values[i]->type == ExprType::Spread) {
+            if (!e->keys[i] && e->values[i]->type == ExprType::Spread) {
+                // Spread: {...other}
                 auto* spread = static_cast<const SpreadExpr*>(e->values[i].get());
                 Value val = evaluate(spread->expr.get());
                 if (!val.isMap())
@@ -1198,7 +1199,10 @@ Value Interpreter::evaluate(const Expr* expr) {
                 for (auto& [k, v] : val.asMap()->entries)
                     map->entries[k] = v;
             } else {
-                map->entries[e->keys[i]] = evaluate(e->values[i].get());
+                Value key = evaluate(e->keys[i].get());
+                if (!isHashable(key))
+                    throw RuntimeError("Unhashable type used as map key", e->line, e->column);
+                map->entries[key] = evaluate(e->values[i].get());
             }
         }
         return Value(map);
@@ -1241,12 +1245,10 @@ Value Interpreter::evaluate(const Expr* expr) {
 #endif
         }
         if (obj.isMap()) {
-            if (!idx.isString())
-                throw RuntimeError("Map key must be a string", e->line, e->column);
             auto& entries = obj.asMap()->entries;
-            auto it = entries.find(idx.asString());
+            auto it = entries.find(idx);
             if (it == entries.end())
-                throw RuntimeError("Map has no key '" + idx.asString() + "'", e->line);
+                throw RuntimeError("Map has no key '" + idx.toString() + "'", e->line);
             return it->second;
         }
         if (obj.isInstance()) {
@@ -1275,9 +1277,9 @@ Value Interpreter::evaluate(const Expr* expr) {
             return val;
         }
         if (obj.isMap()) {
-            if (!idx.isString())
-                throw RuntimeError("Map key must be a string", e->line, e->column);
-            obj.asMap()->entries[idx.asString()] = val;
+            if (!isHashable(idx))
+                throw RuntimeError("Unhashable type used as map key", e->line, e->column);
+            obj.asMap()->entries[idx] = val;
             return val;
         }
         if (obj.isInstance()) {
@@ -1303,8 +1305,8 @@ Value Interpreter::evaluate(const Expr* expr) {
                     [gen](const std::vector<Value>& args) -> Value {
                         if (gen->state == PraiaGenerator::State::COMPLETED) {
                             auto result = gcNew<PraiaMap>();
-                            result->entries["value"] = Value();
-                            result->entries["done"] = Value(true);
+                            result->entries[Value("value")] = Value();
+                            result->entries[Value("done")] = Value(true);
                             return Value(result);
                         }
                         gen->sendValue = args.empty() ? Value() : args[0];
@@ -1314,8 +1316,8 @@ Value Interpreter::evaluate(const Expr* expr) {
                             throw RuntimeError(gen->errorMessage, 0);
 
                         auto result = gcNew<PraiaMap>();
-                        result->entries["value"] = gen->lastYielded;
-                        result->entries["done"] = Value(gen->done);
+                        result->entries[Value("value")] = gen->lastYielded;
+                        result->entries[Value("done")] = Value(gen->done);
                         return Value(result);
                     }));
             }

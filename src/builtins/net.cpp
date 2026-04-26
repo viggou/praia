@@ -27,7 +27,7 @@ static int validatePort(double val, const char* funcName) {
 }
 
 void registerNetBuiltins(std::shared_ptr<PraiaMap> netMap) {
-    netMap->entries["connect"] = Value(makeNative("net.connect", 2,
+    netMap->entries[Value("connect")] = Value(makeNative("net.connect", 2,
         [](const std::vector<Value>& args) -> Value {
             if (!args[0].isString())
                 throw RuntimeError("net.connect() requires a host string", 0);
@@ -56,7 +56,7 @@ void registerNetBuiltins(std::shared_ptr<PraiaMap> netMap) {
             return Value(static_cast<int64_t>(sock));
         }));
 
-    netMap->entries["listen"] = Value(makeNative("net.listen", 1,
+    netMap->entries[Value("listen")] = Value(makeNative("net.listen", 1,
         [](const std::vector<Value>& args) -> Value {
             if (!args[0].isNumber())
                 throw RuntimeError("net.listen() requires a port number", 0);
@@ -104,7 +104,7 @@ void registerNetBuiltins(std::shared_ptr<PraiaMap> netMap) {
             return Value(static_cast<int64_t>(fd));
         }));
 
-    netMap->entries["accept"] = Value(makeNative("net.accept", 1,
+    netMap->entries[Value("accept")] = Value(makeNative("net.accept", 1,
         [](const std::vector<Value>& args) -> Value {
             if (!args[0].isNumber())
                 throw RuntimeError("net.accept() requires a socket", 0);
@@ -117,7 +117,7 @@ void registerNetBuiltins(std::shared_ptr<PraiaMap> netMap) {
             return Value(static_cast<int64_t>(client));
         }));
 
-    netMap->entries["send"] = Value(makeNative("net.send", 2,
+    netMap->entries[Value("send")] = Value(makeNative("net.send", 2,
         [](const std::vector<Value>& args) -> Value {
             if (!args[0].isNumber())
                 throw RuntimeError("net.send() requires a socket", 0);
@@ -131,7 +131,7 @@ void registerNetBuiltins(std::shared_ptr<PraiaMap> netMap) {
             return Value(static_cast<int64_t>(sent));
         }));
 
-    netMap->entries["recv"] = Value(makeNative("net.recv", -1,
+    netMap->entries[Value("recv")] = Value(makeNative("net.recv", -1,
         [](const std::vector<Value>& args) -> Value {
             if (args.empty() || !args[0].isNumber())
                 throw RuntimeError("net.recv() requires a socket", 0);
@@ -148,7 +148,7 @@ void registerNetBuiltins(std::shared_ptr<PraiaMap> netMap) {
             return Value(std::string(buf.data(), n));
         }));
 
-    netMap->entries["recvAll"] = Value(makeNative("net.recvAll", 1,
+    netMap->entries[Value("recvAll")] = Value(makeNative("net.recvAll", 1,
         [](const std::vector<Value>& args) -> Value {
             if (!args[0].isNumber())
                 throw RuntimeError("net.recvAll() requires a socket", 0);
@@ -161,7 +161,7 @@ void registerNetBuiltins(std::shared_ptr<PraiaMap> netMap) {
             return Value(std::move(data));
         }));
 
-    netMap->entries["close"] = Value(makeNative("net.close", 1,
+    netMap->entries[Value("close")] = Value(makeNative("net.close", 1,
         [](const std::vector<Value>& args) -> Value {
             if (!args[0].isNumber())
                 throw RuntimeError("net.close() requires a socket", 0);
@@ -174,7 +174,7 @@ void registerNetBuiltins(std::shared_ptr<PraiaMap> netMap) {
     // net.udp() creates an IPv4 socket (portable default).
     // IPv6 dual-stack behavior varies by OS (Linux defaults to v6only=1),
     // so client sockets use IPv4 for reliability. Servers (udpBind) use dual-stack.
-    netMap->entries["udp"] = Value(makeNative("net.udp", 0,
+    netMap->entries[Value("udp")] = Value(makeNative("net.udp", 0,
         [](const std::vector<Value>&) -> Value {
             int sock = socket(AF_INET, SOCK_DGRAM, 0);
             if (sock < 0)
@@ -183,7 +183,7 @@ void registerNetBuiltins(std::shared_ptr<PraiaMap> netMap) {
         }));
 
     // net.udp6() creates an IPv6 UDP socket
-    netMap->entries["udp6"] = Value(makeNative("net.udp6", 0,
+    netMap->entries[Value("udp6")] = Value(makeNative("net.udp6", 0,
         [](const std::vector<Value>&) -> Value {
             int sock = socket(AF_INET6, SOCK_DGRAM, 0);
             if (sock < 0)
@@ -191,7 +191,7 @@ void registerNetBuiltins(std::shared_ptr<PraiaMap> netMap) {
             return Value(static_cast<int64_t>(sock));
         }));
 
-    netMap->entries["udpBind"] = Value(makeNative("net.udpBind", 1,
+    netMap->entries[Value("udpBind")] = Value(makeNative("net.udpBind", 1,
         [](const std::vector<Value>& args) -> Value {
             if (!args[0].isNumber())
                 throw RuntimeError("net.udpBind() requires a port number", 0);
@@ -229,7 +229,7 @@ void registerNetBuiltins(std::shared_ptr<PraiaMap> netMap) {
             return Value(static_cast<int64_t>(sock));
         }));
 
-    netMap->entries["sendTo"] = Value(makeNative("net.sendTo", 4,
+    netMap->entries[Value("sendTo")] = Value(makeNative("net.sendTo", 4,
         [](const std::vector<Value>& args) -> Value {
             if (!args[0].isNumber()) throw RuntimeError("net.sendTo() requires a socket", 0);
             if (!args[1].isString()) throw RuntimeError("net.sendTo() requires a host string", 0);
@@ -267,7 +267,7 @@ void registerNetBuiltins(std::shared_ptr<PraiaMap> netMap) {
             return Value(static_cast<int64_t>(sent));
         }));
 
-    netMap->entries["recvFrom"] = Value(makeNative("net.recvFrom", -1,
+    netMap->entries[Value("recvFrom")] = Value(makeNative("net.recvFrom", -1,
         [](const std::vector<Value>& args) -> Value {
             if (args.empty() || !args[0].isNumber())
                 throw RuntimeError("net.recvFrom() requires a socket", 0);
@@ -302,15 +302,15 @@ void registerNetBuiltins(std::shared_ptr<PraiaMap> netMap) {
             }
 
             auto result = gcNew<PraiaMap>();
-            result->entries["data"] = Value(std::string(buf.data(), n));
-            result->entries["host"] = Value(std::string(addrBuf));
-            result->entries["port"] = Value(static_cast<int64_t>(port));
+            result->entries[Value("data")] = Value(std::string(buf.data(), n));
+            result->entries[Value("host")] = Value(std::string(addrBuf));
+            result->entries[Value("port")] = Value(static_cast<int64_t>(port));
             return Value(result);
         }));
 
     // ── DNS + socket options ──
 
-    netMap->entries["resolve"] = Value(makeNative("net.resolve", 1,
+    netMap->entries[Value("resolve")] = Value(makeNative("net.resolve", 1,
         [](const std::vector<Value>& args) -> Value {
             if (!args[0].isString())
                 throw RuntimeError("net.resolve() requires a hostname string", 0);
@@ -337,7 +337,7 @@ void registerNetBuiltins(std::shared_ptr<PraiaMap> netMap) {
             return Value(result);
         }));
 
-    netMap->entries["setTimeout"] = Value(makeNative("net.setTimeout", 2,
+    netMap->entries[Value("setTimeout")] = Value(makeNative("net.setTimeout", 2,
         [](const std::vector<Value>& args) -> Value {
             if (!args[0].isNumber() || !args[1].isNumber())
                 throw RuntimeError("net.setTimeout(socket, ms) requires two numbers", 0);
@@ -366,7 +366,7 @@ void registerNetBuiltins(std::shared_ptr<PraiaMap> netMap) {
     // net.rawSocket(protocol) — create a raw socket.
     // protocol: "icmp", "icmp6", "tcp", "udp", "raw", or a number.
     // Requires root/CAP_NET_RAW. On macOS, ICMP falls back to SOCK_DGRAM (unprivileged).
-    netMap->entries["rawSocket"] = Value(makeNative("net.rawSocket", 1,
+    netMap->entries[Value("rawSocket")] = Value(makeNative("net.rawSocket", 1,
         [protoFromName](const std::vector<Value>& args) -> Value {
             int proto;
             if (args[0].isString()) {
@@ -400,7 +400,7 @@ void registerNetBuiltins(std::shared_ptr<PraiaMap> netMap) {
         }));
 
     // net.rawSend(sock, host, data) — send raw data to a host
-    netMap->entries["rawSend"] = Value(makeNative("net.rawSend", 3,
+    netMap->entries[Value("rawSend")] = Value(makeNative("net.rawSend", 3,
         [](const std::vector<Value>& args) -> Value {
             if (!args[0].isNumber()) throw RuntimeError("net.rawSend() requires a socket", 0);
             if (!args[1].isString()) throw RuntimeError("net.rawSend() requires a host string", 0);
@@ -428,7 +428,7 @@ void registerNetBuiltins(std::shared_ptr<PraiaMap> netMap) {
         }));
 
     // net.rawRecv(sock, maxBytes?) — receive raw data, returns {data, host}
-    netMap->entries["rawRecv"] = Value(makeNative("net.rawRecv", -1,
+    netMap->entries[Value("rawRecv")] = Value(makeNative("net.rawRecv", -1,
         [](const std::vector<Value>& args) -> Value {
             if (args.empty() || !args[0].isNumber())
                 throw RuntimeError("net.rawRecv() requires a socket", 0);
@@ -457,8 +457,8 @@ void registerNetBuiltins(std::shared_ptr<PraiaMap> netMap) {
             }
 
             auto result = gcNew<PraiaMap>();
-            result->entries["data"] = Value(std::string(buf.data(), n));
-            result->entries["host"] = Value(std::string(addrBuf));
+            result->entries[Value("data")] = Value(std::string(buf.data(), n));
+            result->entries[Value("host")] = Value(std::string(addrBuf));
             return Value(result);
         }));
 }

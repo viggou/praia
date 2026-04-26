@@ -212,14 +212,14 @@ Value parseHttpResponse(const std::string& raw) {
         if (c != std::string::npos) {
             std::string key = line.substr(0, c);
             std::transform(key.begin(), key.end(), key.begin(), ::tolower);
-            hdrs->entries[key] = Value(line.substr(c + 2));
+            hdrs->entries[Value(key)] = Value(line.substr(c + 2));
         }
     }
 
     auto result = gcNew<PraiaMap>();
-    result->entries["status"] = Value(static_cast<double>(status));
-    result->entries["body"] = Value(body);
-    result->entries["headers"] = Value(hdrs);
+    result->entries[Value("status")] = Value(static_cast<double>(status));
+    result->entries[Value("body")] = Value(body);
+    result->entries[Value("headers")] = Value(hdrs);
     return Value(result);
 }
 
@@ -335,18 +335,18 @@ std::shared_ptr<PraiaMap> readAndParseRequest(int client) {
             std::transform(key.begin(), key.end(), key.begin(), ::tolower);
             size_t valStart = c + 1;
             while (valStart < line.size() && line[valStart] == ' ') valStart++;
-            reqHeaders->entries[key] = Value(line.substr(valStart));
+            reqHeaders->entries[Value(key)] = Value(line.substr(valStart));
         }
     }
 
     std::string reqBody = (hend != std::string::npos) ? data.substr(hend + 4) : "";
 
     auto req = gcNew<PraiaMap>();
-    req->entries["method"] = Value(method);
-    req->entries["path"] = Value(path);
-    req->entries["query"] = Value(parseQueryString(query));
-    req->entries["headers"] = Value(reqHeaders);
-    req->entries["body"] = Value(reqBody);
+    req->entries[Value("method")] = Value(method);
+    req->entries[Value("path")] = Value(path);
+    req->entries[Value("query")] = Value(parseQueryString(query));
+    req->entries[Value("headers")] = Value(reqHeaders);
+    req->entries[Value("body")] = Value(reqBody);
     return req;
 }
 
@@ -488,13 +488,13 @@ void httpServerListen(int port, std::shared_ptr<Callable> handler, Interpreter& 
         bool sseHandled = false;
         try {
             // Attach the raw client fd to the request so http.sse can use it
-            req->entries["__clientFd"] = Value(static_cast<double>(client));
+            req->entries[Value("__clientFd")] = Value(static_cast<double>(client));
 
             std::vector<Value> args = {Value(req)};
             Value result = handler->call(interp, args);
 
             // Check if SSE handled the response (it sends headers itself)
-            if (result.isMap() && result.asMap()->entries.count("__sse")) {
+            if (result.isMap() && result.asMap()->entries.count(Value("__sse"))) {
                 sseHandled = true;
             }
 
@@ -510,7 +510,7 @@ void httpServerListen(int port, std::shared_ptr<Callable> handler, Interpreter& 
                     respBody = "";
                 if (e.count("headers") && e["headers"].isMap()) {
                     for (auto& [k, v] : e["headers"].asMap()->entries)
-                        respHeaders[k] = v.toString();
+                        respHeaders[k.toString()] = v.toString();
                 }
                 if (respHeaders.find("Content-Type") == respHeaders.end() &&
                     respHeaders.find("content-type") == respHeaders.end())

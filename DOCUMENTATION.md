@@ -498,7 +498,7 @@ print(a)            // [1, 2, 3, 4]
 
 ## Maps
 
-Maps hold key-value pairs with string keys. Keys can be identifiers or quoted strings.
+Maps hold key-value pairs. Keys can be any hashable value: strings, integers, floats, booleans, or nil.
 
 ```
 let person = {name: "Ada", age: 36}
@@ -506,17 +506,33 @@ let config = {"api-key": "abc123"}
 let empty = {}
 ```
 
+### Computed Keys
+
+Use `[expr]` for computed or non-string keys in map literals:
+
+```
+let m = {[42]: "answer", [true]: "yes", name: "Ada"}
+print(m[42])       // answer
+print(m[true])     // yes
+print(m.name)      // Ada
+```
+
+Identifier keys like `name:` are sugar for the string key `"name":`.
+
 ### Access and Assignment
 
 ```
-// Dot notation
+// Dot notation (string keys only)
 print(person.name)          // Ada
 person.email = "ada@ex.com"
 
-// Bracket notation
+// Bracket notation (any key type)
 print(person["name"])       // Ada
 person["city"] = "London"
+person[1] = "one"           // integer key
 ```
+
+Arrays, maps, instances, and functions cannot be used as keys (they are not hashable).
 
 ### Reference Semantics
 

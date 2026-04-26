@@ -10,7 +10,7 @@
 //   #include "praia_plugin.h"
 //
 //   extern "C" void praia_register(PraiaMap* module) {
-//       module->entries["double"] = Value(makeNative("mymod.double", 1,
+//       module->entries[Value("double")] = Value(makeNative("mymod.double", 1,
 //           [](const std::vector<Value>& args) -> Value {
 //               if (!args[0].isNumber())
 //                   throw RuntimeError("expected a number", 0);

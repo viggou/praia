@@ -64,4 +64,59 @@ testing.test("for-in loops", lam{ in
     testing.assertEqual(sum, 15, nil)
 })
 
+// ── Value keys for maps ──
+
+testing.test("integer map keys", lam{ in
+    let m = {}
+    m[1] = "one"
+    m[2] = "two"
+    testing.assertEqual(m[1], "one", nil)
+    testing.assertEqual(m[2], "two", nil)
+})
+
+testing.test("boolean and nil map keys", lam{ in
+    let m = {}
+    m[true] = "yes"
+    m[false] = "no"
+    m[nil] = "nothing"
+    testing.assertEqual(m[true], "yes", nil)
+    testing.assertEqual(m[false], "no", nil)
+    testing.assertEqual(m[nil], "nothing", nil)
+})
+
+testing.test("computed keys in map literals", lam{ in
+    let x = 10
+    let m = {[x]: "ten", [x + 1]: "eleven", name: "test"}
+    testing.assertEqual(m[10], "ten", nil)
+    testing.assertEqual(m[11], "eleven", nil)
+    testing.assertEqual(m.name, "test", nil)
+})
+
+testing.test("mixed key types", lam{ in
+    let m = {[1]: "int", [true]: "bool", name: "string"}
+    testing.assertEqual(len(keys(m)), 3, nil)
+})
+
+testing.test("for-in with non-string keys", lam{ in
+    let m = {[1]: "a", [2]: "b"}
+    let result = []
+    for ({key, value} in m) {
+        push(result, value)
+    }
+    testing.assertEqual(len(result), 2, nil)
+})
+
+testing.test("unhashable key throws", lam{ in
+    testing.assertThrows(lam{ in
+        let m = {}
+        m[[1, 2]] = "array key"
+    }, nil)
+})
+
+testing.test("keys() returns value keys", lam{ in
+    let m = {[42]: "answer", name: "Ada"}
+    let k = keys(m)
+    testing.assertEqual(len(k), 2, nil)
+})
+
 testing.done()

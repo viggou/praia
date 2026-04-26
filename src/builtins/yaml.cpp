@@ -198,7 +198,7 @@ class YamlParser {
 
             if (colonAtEnd || colonPos + 2 >= line.size()) {
                 // Value is on next lines
-                map->entries[key] = parseValue(indent + 1);
+                map->entries[Value(key)] = parseValue(indent + 1);
             } else {
                 std::string val = line.substr(colonPos + 2);
                 // Check for inline flow sequence [a, b]
@@ -212,9 +212,9 @@ class YamlParser {
                         while (!item.empty() && item.back() == ' ') item.pop_back();
                         arr->elements.push_back(parseScalar(item));
                     }
-                    map->entries[key] = Value(arr);
+                    map->entries[Value(key)] = Value(arr);
                 } else {
-                    map->entries[key] = parseScalar(val);
+                    map->entries[Value(key)] = parseScalar(val);
                 }
             }
         }
@@ -308,8 +308,10 @@ std::string yamlStringify(const Value& val, int depth) {
 
         std::string r;
         for (auto& [k, v] : entries) {
+            if (!k.isString())
+                throw RuntimeError("YAML keys must be strings", 0);
             if (depth > 0) r += pad;
-            r += yamlQuoteKey(k) + ":";
+            r += yamlQuoteKey(k.asString()) + ":";
             if (v.isMap() || v.isArray()) {
                 r += "\n" + yamlStringify(v, depth + 1);
             } else {
