@@ -212,12 +212,36 @@ Praia has 7 types:
 |------|---------|-------|
 | `nil` | `nil` | The absence of a value |
 | `bool` | `true`, `false` | |
-| `int` | `42`, `0`, `-7` | 64-bit integer (exact up to 2^63) |
-| `float` | `3.14`, `0.5` | Double-precision float |
+| `int` | `42`, `0xFF`, `0b1010`, `0o17` | 64-bit integer (exact up to 2^63). Supports hex, binary, octal. |
+| `float` | `3.14`, `1e3`, `2.5e-4` | Double-precision float. Supports scientific notation. |
 | `string` | `"hello"` | UTF-8, supports interpolation, escape sequences, and Unicode (`\u{...}`) |
 | `array` | `[1, 2, 3]` | Ordered, mixed-type, reference semantics |
 | `map` | `{name: "Ada"}` | String keys, reference semantics |
 | `function` | `func add(a, b) { ... }` | First-class, supports closures |
+
+### Number Literals
+
+Integers support multiple bases and underscores as visual separators:
+
+```
+42                // decimal
+0xFF              // hex
+0b1010            // binary
+0o755             // octal
+1_000_000         // underscores ignored (readability)
+0xFF_FF           // works in any base
+```
+
+Floats support decimal points and scientific notation:
+
+```
+3.14              // decimal float
+1e3               // 1000.0 (scientific notation)
+2.5e-4            // 0.00025
+1_000.5           // separators in floats too
+```
+
+Integer overflow automatically promotes to float rather than wrapping.
 
 ### Truthiness
 

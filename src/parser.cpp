@@ -1080,10 +1080,29 @@ ExprPtr Parser::primary() {
         e->line = previous().line;
         e->column = previous().column;
         std::string lex = previous().lexeme;
-        if (lex.find('.') == std::string::npos) {
+        // Strip underscores (number separators: 1_000_000)
+        std::string clean;
+        clean.reserve(lex.size());
+        for (char c : lex) if (c != '_') clean += c;
+        // Float if contains '.', 'e', or 'E' (but not 0x hex which also has 'e')
+        bool isFloat = false;
+        if (!clean.starts_with("0x") && !clean.starts_with("0X") &&
+            !clean.starts_with("0b") && !clean.starts_with("0B") &&
+            !clean.starts_with("0o") && !clean.starts_with("0O")) {
+            for (char c : clean) {
+                if (c == '.' || c == 'e' || c == 'E') { isFloat = true; break; }
+            }
+        }
+        if (!isFloat) {
             try {
                 e->isInt = true;
-                e->intValue = std::stoll(lex, nullptr, 0); // base 0: auto-detect hex/oct/dec
+                // stoll base 0 handles 0x; manually handle 0b and 0o
+                if (clean.starts_with("0b") || clean.starts_with("0B"))
+                    e->intValue = std::stoll(clean.substr(2), nullptr, 2);
+                else if (clean.starts_with("0o") || clean.starts_with("0O"))
+                    e->intValue = std::stoll(clean.substr(2), nullptr, 8);
+                else
+                    e->intValue = std::stoll(clean, nullptr, 0);
             } catch (const std::out_of_range&) {
                 error(previous(), "Integer literal too large: " + lex);
                 e->isInt = true;
@@ -1092,7 +1111,7 @@ ExprPtr Parser::primary() {
         } else {
             try {
                 e->isInt = false;
-                e->floatValue = std::stod(lex);
+                e->floatValue = std::stod(clean);
             } catch (const std::out_of_range&) {
                 error(previous(), "Float literal too large: " + lex);
                 e->isInt = false;

@@ -201,16 +201,52 @@ void Lexer::number() {
             error("Expected hex digit after '0x'");
             return;
         }
-        while (std::isxdigit(peek())) advance();
+        while (std::isxdigit(peek()) || peek() == '_') advance();
         addToken(TokenType::NUMBER);
         return;
     }
 
-    while (std::isdigit(peek())) advance();
+    // Binary literal: 0b or 0B
+    if (source[start] == '0' && (peek() == 'b' || peek() == 'B')) {
+        advance(); // consume 'b'
+        if (peek() != '0' && peek() != '1') {
+            error("Expected binary digit after '0b'");
+            return;
+        }
+        while (peek() == '0' || peek() == '1' || peek() == '_') advance();
+        addToken(TokenType::NUMBER);
+        return;
+    }
+
+    // Octal literal: 0o or 0O
+    if (source[start] == '0' && (peek() == 'o' || peek() == 'O')) {
+        advance(); // consume 'o'
+        if (peek() < '0' || peek() > '7') {
+            error("Expected octal digit after '0o'");
+            return;
+        }
+        while ((peek() >= '0' && peek() <= '7') || peek() == '_') advance();
+        addToken(TokenType::NUMBER);
+        return;
+    }
+
+    // Decimal integer or float
+    while (std::isdigit(peek()) || peek() == '_') advance();
 
     if (peek() == '.' && std::isdigit(peekNext())) {
         advance(); // consume '.'
-        while (std::isdigit(peek())) advance();
+        while (std::isdigit(peek()) || peek() == '_') advance();
+    }
+
+    // Scientific notation: e or E followed by optional +/- and digits
+    if (peek() == 'e' || peek() == 'E') {
+        advance(); // consume 'e'
+        if (peek() == '+' || peek() == '-') advance();
+        if (!std::isdigit(peek())) {
+            error("Expected digit in exponent");
+            return;
+        }
+        while (std::isdigit(peek()) || peek() == '_') advance();
     }
 
     addToken(TokenType::NUMBER);
