@@ -274,6 +274,13 @@ nil == nil           // true
 1 == "1"             // false
 ```
 
+**Floating-point note:** `==` uses exact equality for numbers, like all major languages. Due to IEEE 754 representation, `0.1 + 0.2 != 0.3`. Use `math.approx()` for approximate comparison:
+
+```
+0.1 + 0.2 == 0.3              // false (floating-point)
+math.approx(0.1 + 0.2, 0.3)   // true
+```
+
 ### Logical
 
 `&&` and `||` short-circuit and return the deciding value, not just `true`/`false`.
@@ -3164,6 +3171,7 @@ The `math` namespace provides mathematical constants and functions.
 | `math.min(a, b)` | Minimum |
 | `math.max(a, b)` | Maximum |
 | `math.clamp(x, lo, hi)` | Clamp x between lo and hi |
+| `math.approx(a, b, epsilon?)` | Approximate equality (default epsilon: 1e-9) |
 | `math.sin(x)`, `cos`, `tan` | Trigonometry (radians) |
 | `math.asin(x)`, `acos`, `atan` | Inverse trig |
 | `math.log(x)` | Natural log |

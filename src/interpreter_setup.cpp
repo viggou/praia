@@ -1507,6 +1507,15 @@ Interpreter::Interpreter() {
             return Value(std::fmax(lo, std::fmin(x, hi)));
         }));
 
+    mathMap->entries[Value("approx")] = Value(makeNative("math.approx", -1,
+        [](const std::vector<Value>& args) -> Value {
+            if (args.size() < 2 || !args[0].isNumber() || !args[1].isNumber())
+                throw RuntimeError("math.approx() requires two numbers and an optional epsilon", 0);
+            double a = args[0].asNumber(), b = args[1].asNumber();
+            double epsilon = (args.size() >= 3 && args[2].isNumber()) ? args[2].asNumber() : 1e-9;
+            return Value(std::fabs(a - b) < epsilon);
+        }));
+
     globals->define("math", Value(mathMap));
 
     // ── OS extras on sys ──
