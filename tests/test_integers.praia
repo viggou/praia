@@ -65,4 +65,14 @@ testing.test("zero is truthy", lam{ in
     testing.assert(-1, "-1 should be truthy")
 })
 
+testing.test("overflow promotes to float", lam{ in
+    let MAX = 9223372036854775807
+    testing.assertEqual(type(MAX), "int", nil)
+    testing.assertEqual(type(MAX + 1), "float", nil)
+    testing.assertEqual(type(MAX * 2), "float", nil)
+    // Normal arithmetic stays int
+    testing.assertEqual(type(100 + 200), "int", nil)
+    testing.assertEqual(type(50 * 30), "int", nil)
+})
+
 testing.done()

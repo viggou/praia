@@ -655,7 +655,10 @@ VM::Result VM::execute(int baseFrameCount_) {
         case OpCode::OP_ADD: {
             Value b = pop(), a = pop();
             if (a.isInstance()) { auto [ok, r] = vmCallDunder(*this, a, "__add", {b}); if (ok) { push(r); break; } }
-            if (a.isInt() && b.isInt()) { push(Value(a.asInt() + b.asInt())); break; }
+            if (a.isInt() && b.isInt()) {
+                int64_t r; if (!__builtin_add_overflow(a.asInt(), b.asInt(), &r)) { push(Value(r)); break; }
+                push(Value(a.asNumber() + b.asNumber())); break;
+            }
             if (a.isNumber() && b.isNumber()) { push(Value(a.asNumber() + b.asNumber())); break; }
             if (a.isArray() && b.isArray()) {
                 auto r = gcNew<PraiaArray>();
@@ -675,14 +678,20 @@ VM::Result VM::execute(int baseFrameCount_) {
         case OpCode::OP_SUBTRACT: {
             Value b = pop(), a = pop();
             if (a.isInstance()) { auto [ok, r] = vmCallDunder(*this, a, "__sub", {b}); if (ok) { push(r); break; } }
-            if (a.isInt() && b.isInt()) { push(Value(a.asInt() - b.asInt())); break; }
+            if (a.isInt() && b.isInt()) {
+                int64_t r; if (!__builtin_sub_overflow(a.asInt(), b.asInt(), &r)) { push(Value(r)); break; }
+                push(Value(a.asNumber() - b.asNumber())); break;
+            }
             if (a.isNumber() && b.isNumber()) { push(Value(a.asNumber() - b.asNumber())); break; }
             RUNTIME_ERR("Operands of '-' must be numbers");
         }
         case OpCode::OP_MULTIPLY: {
             Value b = pop(), a = pop();
             if (a.isInstance()) { auto [ok, r] = vmCallDunder(*this, a, "__mul", {b}); if (ok) { push(r); break; } }
-            if (a.isInt() && b.isInt()) { push(Value(a.asInt() * b.asInt())); break; }
+            if (a.isInt() && b.isInt()) {
+                int64_t r; if (!__builtin_mul_overflow(a.asInt(), b.asInt(), &r)) { push(Value(r)); break; }
+                push(Value(a.asNumber() * b.asNumber())); break;
+            }
             if (a.isNumber() && b.isNumber()) { push(Value(a.asNumber() * b.asNumber())); break; }
             if ((a.isString() && b.isInt()) || (a.isInt() && b.isString())) {
                 auto& str = a.isString() ? a.asString() : b.asString();
@@ -730,8 +739,11 @@ VM::Result VM::execute(int baseFrameCount_) {
                 push(v);
             }
             if (!peek().isNumber()) { RUNTIME_ERR("Operand of '-' must be a number"); }
-            if (peek().isInt()) push(Value(-pop().asInt()));
-            else push(Value(-pop().asNumber()));
+            if (peek().isInt()) {
+                int64_t v = pop().asInt();
+                if (v == INT64_MIN) push(Value(-static_cast<double>(v)));
+                else push(Value(-v));
+            } else push(Value(-pop().asNumber()));
             break;
         }
 

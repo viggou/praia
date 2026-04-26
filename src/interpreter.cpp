@@ -783,7 +783,11 @@ Value Interpreter::evaluate(const Expr* expr) {
             }
             if (!operand.isNumber())
                 throw RuntimeError("Operand of '-' must be a number", e->line, e->column);
-            if (operand.isInt()) return Value(-operand.asInt());
+            if (operand.isInt()) {
+                int64_t v = operand.asInt();
+                if (v == INT64_MIN) return Value(-static_cast<double>(v));
+                return Value(-v);
+            }
             return Value(-operand.asNumber());
         }
         if (e->op == TokenType::NOT)
@@ -856,8 +860,12 @@ Value Interpreter::evaluate(const Expr* expr) {
 
         switch (e->op) {
         case TokenType::PLUS:
-            if (left.isInt() && right.isInt())
-                return Value(left.asInt() + right.asInt());
+            if (left.isInt() && right.isInt()) {
+                int64_t result;
+                if (!__builtin_add_overflow(left.asInt(), right.asInt(), &result))
+                    return Value(result);
+                return Value(left.asNumber() + right.asNumber()); // overflow → promote to double
+            }
             if (left.isNumber() && right.isNumber())
                 return Value(left.asNumber() + right.asNumber());
             if (left.isArray() && right.isArray()) {
@@ -876,14 +884,22 @@ Value Interpreter::evaluate(const Expr* expr) {
                 return Value(left.toString() + right.toString());
             throw RuntimeError("Operands of '+' must be numbers, strings, or arrays", e->line, e->column);
         case TokenType::MINUS:
-            if (left.isInt() && right.isInt())
-                return Value(left.asInt() - right.asInt());
+            if (left.isInt() && right.isInt()) {
+                int64_t result;
+                if (!__builtin_sub_overflow(left.asInt(), right.asInt(), &result))
+                    return Value(result);
+                return Value(left.asNumber() - right.asNumber());
+            }
             if (left.isNumber() && right.isNumber())
                 return Value(left.asNumber() - right.asNumber());
             throw RuntimeError("Operands of '-' must be numbers", e->line, e->column);
         case TokenType::STAR:
-            if (left.isInt() && right.isInt())
-                return Value(left.asInt() * right.asInt());
+            if (left.isInt() && right.isInt()) {
+                int64_t result;
+                if (!__builtin_mul_overflow(left.asInt(), right.asInt(), &result))
+                    return Value(result);
+                return Value(left.asNumber() * right.asNumber());
+            }
             if (left.isNumber() && right.isNumber())
                 return Value(left.asNumber() * right.asNumber());
             if (left.isString() && right.isInt()) {
