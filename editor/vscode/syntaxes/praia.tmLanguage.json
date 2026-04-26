@@ -46,7 +46,7 @@
           "patterns": [
             {
               "name": "constant.character.escape.praia",
-              "match": "\\\\[ntr\\\\\"'/%]"
+              "match": "\\\\([ntr0\\\\\"'/%]|x[0-9a-fA-F]{2}|u\\{[0-9a-fA-F]+\\})"
             },
             {
               "name": "meta.interpolation.praia",
@@ -65,7 +65,7 @@
           "patterns": [
             {
               "name": "constant.character.escape.praia",
-              "match": "\\\\[ntr\\\\\"'/%]"
+              "match": "\\\\([ntr0\\\\\"'/%]|x[0-9a-fA-F]{2}|u\\{[0-9a-fA-F]+\\})"
             },
             {
               "name": "meta.interpolation.praia",
@@ -82,12 +82,28 @@
     "numbers": {
       "patterns": [
         {
+          "name": "constant.numeric.hex.praia",
+          "match": "\\b0[xX][0-9a-fA-F][0-9a-fA-F_]*\\b"
+        },
+        {
+          "name": "constant.numeric.binary.praia",
+          "match": "\\b0[bB][01][01_]*\\b"
+        },
+        {
+          "name": "constant.numeric.octal.praia",
+          "match": "\\b0[oO][0-7][0-7_]*\\b"
+        },
+        {
           "name": "constant.numeric.float.praia",
-          "match": "\\b\\d+\\.\\d+\\b"
+          "match": "\\b\\d[\\d_]*\\.\\d[\\d_]*([eE][+-]?\\d[\\d_]*)?\\b"
+        },
+        {
+          "name": "constant.numeric.float.praia",
+          "match": "\\b\\d[\\d_]*[eE][+-]?\\d[\\d_]*\\b"
         },
         {
           "name": "constant.numeric.integer.praia",
-          "match": "\\b\\d+\\b"
+          "match": "\\b\\d[\\d_]*\\b"
         }
       ]
     },
@@ -115,7 +131,7 @@
         },
         {
           "name": "keyword.control.praia",
-          "match": "\\b(if|elif|else|match|static|while|for|in|is|break|continue)\\b"
+          "match": "\\b(if|elif|else|match|when|static|while|for|in|is|break|continue)\\b"
         },
         {
           "name": "keyword.control.flow.praia",
@@ -123,7 +139,7 @@
         },
         {
           "name": "keyword.control.exception.praia",
-          "match": "\\b(try|catch|throw|ensure)\\b"
+          "match": "\\b(try|catch|throw|finally|ensure)\\b"
         },
         {
           "name": "keyword.control.async.praia",
@@ -184,6 +200,14 @@
         {
           "name": "keyword.operator.logical.praia",
           "match": "&&|\\|\\|"
+        },
+        {
+          "name": "keyword.operator.nil-coalesce.praia",
+          "match": "\\?\\?"
+        },
+        {
+          "name": "keyword.operator.optional-chain.praia",
+          "match": "\\?\\."
         },
         {
           "name": "keyword.operator.bitwise.shift.praia",

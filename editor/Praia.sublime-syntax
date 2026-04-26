@@ -44,7 +44,7 @@ contexts:
         - match: '"'
           scope: punctuation.definition.string.end.praia
           pop: true
-        - match: \\[ntr\\\"'/%]
+        - match: \\([ntr0\\\"'/%]|x[0-9a-fA-F]{2}|u\{[0-9a-fA-F]+\})
           scope: constant.character.escape.praia
         - match: '%\{'
           scope: punctuation.section.interpolation.begin.praia
@@ -62,7 +62,7 @@ contexts:
         - match: "'"
           scope: punctuation.definition.string.end.praia
           pop: true
-        - match: \\[ntr\\\"'/%]
+        - match: \\([ntr0\\\"'/%]|x[0-9a-fA-F]{2}|u\{[0-9a-fA-F]+\})
           scope: constant.character.escape.praia
         - match: '%\{'
           scope: punctuation.section.interpolation.begin.praia
@@ -75,9 +75,17 @@ contexts:
             - include: main
 
   numbers:
-    - match: \b\d+\.\d+\b
+    - match: \b0[xX][0-9a-fA-F][0-9a-fA-F_]*\b
+      scope: constant.numeric.hex.praia
+    - match: \b0[bB][01][01_]*\b
+      scope: constant.numeric.binary.praia
+    - match: \b0[oO][0-7][0-7_]*\b
+      scope: constant.numeric.octal.praia
+    - match: \b\d[\d_]*\.[\d][\d_]*([eE][+-]?\d[\d_]*)?\b
       scope: constant.numeric.float.praia
-    - match: \b\d+\b
+    - match: \b\d[\d_]*[eE][+-]?\d[\d_]*\b
+      scope: constant.numeric.float.praia
+    - match: \b\d[\d_]*\b
       scope: constant.numeric.integer.praia
 
   keywords:
@@ -91,11 +99,11 @@ contexts:
       scope: storage.type.enum.praia
     - match: \b(extends)\b
       scope: storage.modifier.praia
-    - match: \b(if|elif|else|match|while|for|in|is|break|continue|static)\b
+    - match: \b(if|elif|else|match|when|while|for|in|is|break|continue|static)\b
       scope: keyword.control.praia
     - match: \b(return|yield)\b
       scope: keyword.control.flow.praia
-    - match: \b(try|catch|throw|ensure)\b
+    - match: \b(try|catch|throw|finally|ensure)\b
       scope: keyword.control.exception.praia
     - match: \b(async|await)\b
       scope: keyword.control.async.praia
@@ -127,6 +135,10 @@ contexts:
       scope: keyword.operator.pipe.praia
     - match: '&&|\|\|'
       scope: keyword.operator.logical.praia
+    - match: '\?\?'
+      scope: keyword.operator.nil-coalesce.praia
+    - match: '\?\.'
+      scope: keyword.operator.optional-chain.praia
     - match: '<<|>>'
       scope: keyword.operator.bitwise.shift.praia
     - match: '==|!=|<=|>=|<|>'
