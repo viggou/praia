@@ -1,4 +1,5 @@
 #include "builtins.h"
+#include "fiber.h"
 #include "gc_heap.h"
 #include "grain_resolve.h"
 #include "interpreter.h"
@@ -466,15 +467,9 @@ void Interpreter::execute(const Stmt* stmt) {
             try {
                 while (true) {
                     if (gen->state == PraiaGenerator::State::COMPLETED) break;
-                    // Call .next() inline
-                    {
-                        std::unique_lock<std::mutex> lock(gen->mtx);
-                        gen->sendValue = Value();
-                        gen->resumed = true;
-                        gen->hasValue = false;
-                        gen->callerCV.notify_one();
-                        gen->genCV.wait(lock, [&] { return gen->hasValue; });
-                    }
+                    gen->sendValue = Value();
+                    gen->fiber->resume();
+
                     if (!gen->errorMessage.empty())
                         throw RuntimeError(gen->errorMessage, s->line, s->column);
                     if (gen->done) break;
@@ -1077,14 +1072,10 @@ Value Interpreter::evaluate(const Expr* expr) {
             throw RuntimeError("yield outside of generator", e->line, e->column);
         auto gen = genVal.asGenerator();
 
-        std::unique_lock<std::mutex> lock(gen->mtx);
         gen->lastYielded = val;
-        gen->hasValue = true;
         gen->state = PraiaGenerator::State::SUSPENDED;
-        gen->genCV.notify_one();  // wake caller waiting in .next()
-        gen->callerCV.wait(lock, [&] { return gen->resumed; }); // wait for next .next()
-        gen->resumed = false;
-        if (gen->done) throw ReturnSignal{Value()}; // generator was destroyed
+        Fiber::suspend();  // return control to .next() caller
+        if (gen->done) throw ReturnSignal{Value()}; // generator was abandoned
         gen->state = PraiaGenerator::State::RUNNING;
         return gen->sendValue;
     }
@@ -1227,14 +1218,9 @@ Value Interpreter::evaluate(const Expr* expr) {
                             result->entries["done"] = Value(true);
                             return Value(result);
                         }
-                        std::unique_lock<std::mutex> lock(gen->mtx);
                         gen->sendValue = args.empty() ? Value() : args[0];
-                        gen->resumed = true;
-                        gen->hasValue = false;
-                        gen->callerCV.notify_one();
-                        gen->genCV.wait(lock, [&] { return gen->hasValue; });
+                        gen->fiber->resume();
 
-                        // Propagate errors from generator body
                         if (!gen->errorMessage.empty())
                             throw RuntimeError(gen->errorMessage, 0);
 
