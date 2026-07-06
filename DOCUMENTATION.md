@@ -1057,13 +1057,13 @@ try {
     print(arr[99])
 } catch (e) {
     print(e is Error)      // true
-    print(e.type)          // "Error" (subclass name once the site migrates)
+    print(e.type)          // "Error"
     print(e.message)       // "Array index out of bounds"
     print(str(e))          // "Error: Array index out of bounds"
 }
 ```
 
-`Error` includes a small set of string-forwarding shims — `.contains(sub)`, `.startsWith(prefix)`, `.endsWith(suffix)` — that delegate to the stringified form so existing `err.contains("Division")` idioms keep working. For concat, use `str(err) + "…"` — the `+` operator is deliberately not overloaded on Error.
+`Error` includes a small set of string-forwarding shims — `.contains(sub)`, `.startsWith(prefix)`, `.endsWith(suffix)` — that delegate to `err.message` (the raw text), NOT to `str(err)` (which prefixes `"<Type>: "` via `__str`). That means `err.contains("Error")` on a Division-by-zero error stays `false`, matching the pre-hierarchy `err.what()`-only substring space. For concat, use `str(err) + "…"` — the `+` operator is deliberately not overloaded on Error.
 
 #### Builtin Error subclasses
 

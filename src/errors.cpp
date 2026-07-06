@@ -32,7 +32,7 @@ namespace praia {
 //   without callers having to concatenate the two themselves.
 // - `errno` / `line` / `column` are just Praia identifiers here —
 //   they don't conflict with C++ macros because this is Praia source.
-const char* kErrorClassesSource = R"PRAIA(
+const char* const kErrorClassesSource = R"PRAIA(
 class Error {
     func init(message = "") {
         this.message = str(message)
@@ -186,29 +186,35 @@ static BootstrapProgram parseBootstrapSource() {
     return std::make_shared<std::vector<StmtPtr>>(std::move(program));
 }
 
-// Retained bootstrap ASTs. Each engine construction pushes one; they
-// live to process exit so class-method pointers remain valid. The
-// vector + mutex are process-wide because an embedder can construct
-// multiple interpreters / VMs concurrently — every push must
-// serialize through the same lock so std::vector::push_back doesn't
-// race with itself.
-static std::mutex& retainedBootstrapMutex() {
+// Single process-lifetime BootstrapProgram shared across every
+// engine an embedder constructs. Parsed at most once (lazily, on
+// first bootstrap call) and kept alive forever so the tree-walker's
+// `PraiaClass::methods` — which stores raw `const ClassMethod*`
+// pointers into this AST — remains valid for as long as any engine
+// holds those classes. The mutex serialises the one-shot parse
+// under concurrent engine construction.
+static std::mutex& sharedBootstrapMutex() {
     static std::mutex m;
     return m;
 }
-static std::vector<BootstrapProgram>& retainedBootstrapAsts() {
-    static std::vector<BootstrapProgram> asts;
-    return asts;
-}
-static void retainBootstrapProgram(BootstrapProgram program) {
-    std::lock_guard<std::mutex> lock(retainedBootstrapMutex());
-    retainedBootstrapAsts().push_back(std::move(program));
+
+// Returns the shared AST. First caller parses; subsequent callers
+// get the same shared_ptr. Returns nullptr only if the initial parse
+// itself failed.
+static const BootstrapProgram& sharedBootstrapProgram() {
+    static BootstrapProgram cached;
+    static bool initialised = false;
+    std::lock_guard<std::mutex> lock(sharedBootstrapMutex());
+    if (!initialised) {
+        cached = parseBootstrapSource();
+        initialised = true;
+    }
+    return cached;
 }
 
 void bootstrapErrorClasses(Interpreter& interp) {
-    auto program = parseBootstrapSource();
+    const auto& program = sharedBootstrapProgram();
     if (!program) return;
-    retainBootstrapProgram(program);
     try {
         interp.interpret(*program);
     } catch (const std::exception& e) {
@@ -218,15 +224,13 @@ void bootstrapErrorClasses(Interpreter& interp) {
 }
 
 void bootstrapErrorClasses(VM& vm) {
-    auto program = parseBootstrapSource();
+    const auto& program = sharedBootstrapProgram();
     if (!program) return;
-    // NOTE: no retainBootstrapProgram call here. The VM lowers the
-    // AST to bytecode inside `compiler.compile(*program)`; the
-    // resulting PraiaClass entries hold their methods in
-    // `vmMethods` (bytecode-based) and don't reference the AST
-    // nodes. Once the compiled script has run, the AST can be
-    // freed. Retaining it per VM would leak a copy per engine an
-    // embedder constructs.
+    // The VM lowers the AST to bytecode inside
+    // `compiler.compile(*program)`; the resulting PraiaClass
+    // entries hold their methods in `vmMethods` (bytecode-based)
+    // and don't reference the AST nodes. Sharing the parsed AST
+    // across VMs is still fine — compile() reads it as const.
     Compiler compiler;
     auto script = compiler.compile(*program);
     if (!script) {

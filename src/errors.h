@@ -35,8 +35,9 @@ namespace praia {
 
 // The Praia source that defines Error + all subclasses. Kept as a
 // string constant so both engines can lex/parse/execute it via their
-// normal machinery.
-extern const char* kErrorClassesSource;
+// normal machinery. `const char* const` (pointer itself is const)
+// so nothing can reassign the symbol to point at another buffer.
+extern const char* const kErrorClassesSource;
 
 // Run the bootstrap source once at engine construction. Each overload
 // is a no-op if the source fails to compile (defensive — an engine
