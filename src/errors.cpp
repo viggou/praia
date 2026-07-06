@@ -133,7 +133,7 @@ class NetworkError extends IOError {
 
 class HTTPError extends IOError {
     func init(message = "", status = nil, url = nil, body = nil) {
-        super.init(message, url, nil)
+        super.init(message, nil, nil)
         this.type = "HTTPError"
         this.status = status
         this.url = url
