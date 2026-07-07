@@ -30,6 +30,12 @@ namespace praia {
 // - `__str()` renders `"<type>: <message>"` so `print(e)` and
 //   string interpolation display the class name plus the message
 //   without callers having to concatenate the two themselves.
+// - `.contains` / `.startsWith` / `.endsWith` on Error forward to
+//   the message string so pre-hierarchy tests that string-op the
+//   caught RuntimeError (there are ~40 across the suite) keep working
+//   without a sweeping migration. Delegate to `.message` — not
+//   `str(this)` — so `"Error: "` prefix doesn't leak into substring
+//   checks.
 // - `errno` / `line` / `column` are just Praia identifiers here —
 //   they don't conflict with C++ macros because this is Praia source.
 const char* const kErrorClassesSource = R"PRAIA(
@@ -43,119 +49,43 @@ class Error {
     func __str() {
         return this.type + ": " + this.message
     }
-    // String-forwarding compat shims. Praia code has, since the
-    // pre-hierarchy days, treated the catch variable as a string
-    // and called `.contains` / `.startsWith` on it. Keeping those
-    // idioms working avoids a big-bang migration of hundreds of
-    // existing call sites; each shim delegates to the raw `.message`
-    // (NOT `str(this)`) so the substring space matches the legacy
-    // `err.what()`-only semantics — a caller checking
-    // `err.contains("Error")` shouldn't get a false positive from
-    // the `"Error: "` prefix that `str(this)` prepends.
-    // Subclasses inherit these unchanged. We deliberately do NOT
-    // implement `__add` for `err + "suffix"` — adding an operator
-    // overload makes `hasOperatorOverloads` true on every Error
-    // instance and routes every arithmetic/string op through the
-    // slow class-walk dispatch, which showed up as a real slowdown
-    // in the http-stream test suite. Users concat with `str(err)`.
-    func contains(sub) {
-        return this.message.contains(sub)
-    }
-    func startsWith(prefix) {
-        return this.message.startsWith(prefix)
-    }
-    func endsWith(suffix) {
-        return this.message.endsWith(suffix)
-    }
+    func contains(needle) { return this.message.contains(needle) }
+    func startsWith(prefix) { return this.message.startsWith(prefix) }
+    func endsWith(suffix) { return this.message.endsWith(suffix) }
 }
 
 class TypeError extends Error {
-    func init(message = "") {
-        super.init(message)
-        this.type = "TypeError"
-    }
+    func init(message = "") { super.init(message); this.type = "TypeError" }
 }
-
 class ValueError extends Error {
-    func init(message = "") {
-        super.init(message)
-        this.type = "ValueError"
-    }
+    func init(message = "") { super.init(message); this.type = "ValueError" }
 }
-
 class NameError extends Error {
-    func init(message = "") {
-        super.init(message)
-        this.type = "NameError"
-    }
+    func init(message = "") { super.init(message); this.type = "NameError" }
 }
-
 class IndexError extends Error {
-    func init(message = "", index = nil) {
-        super.init(message)
-        this.type = "IndexError"
-        this.index = index
-    }
+    func init(message = "", index = nil) { super.init(message); this.type = "IndexError"; this.index = index }
 }
-
 class KeyError extends Error {
-    func init(message = "", key = nil) {
-        super.init(message)
-        this.type = "KeyError"
-        this.key = key
-    }
+    func init(message = "", key = nil) { super.init(message); this.type = "KeyError"; this.key = key }
 }
-
 class AssertionError extends Error {
-    func init(message = "") {
-        super.init(message)
-        this.type = "AssertionError"
-    }
+    func init(message = "") { super.init(message); this.type = "AssertionError" }
 }
-
 class IOError extends Error {
-    func init(message = "", path = nil, errno = nil) {
-        super.init(message)
-        this.type = "IOError"
-        this.path = path
-        this.errno = errno
-    }
+    func init(message = "", path = nil, errno = nil) { super.init(message); this.type = "IOError"; this.path = path; this.errno = errno }
 }
-
 class NetworkError extends IOError {
-    func init(message = "", host = nil, port = nil, errno = nil) {
-        super.init(message, nil, errno)
-        this.type = "NetworkError"
-        this.host = host
-        this.port = port
-    }
+    func init(message = "", host = nil, port = nil, errno = nil) { super.init(message, nil, errno); this.type = "NetworkError"; this.host = host; this.port = port }
 }
-
 class HTTPError extends IOError {
-    func init(message = "", status = nil, url = nil, body = nil) {
-        super.init(message, nil, nil)
-        this.type = "HTTPError"
-        this.status = status
-        this.url = url
-        this.body = body
-    }
+    func init(message = "", status = nil, url = nil, body = nil) { super.init(message, nil, nil); this.type = "HTTPError"; this.status = status; this.url = url; this.body = body }
 }
-
 class TimeoutError extends IOError {
-    func init(message = "") {
-        super.init(message)
-        this.type = "TimeoutError"
-    }
+    func init(message = "") { super.init(message); this.type = "TimeoutError" }
 }
-
 class ParseError extends Error {
-    func init(message = "", line = 0, column = 0, source = nil) {
-        super.init(message)
-        this.type = "ParseError"
-        this.line = line
-        this.column = column
-        this.source = source
-    }
+    func init(message = "", line = 0, column = 0, source = nil) { super.init(message); this.type = "ParseError"; this.line = line; this.column = column; this.source = source }
 }
 )PRAIA";
 
