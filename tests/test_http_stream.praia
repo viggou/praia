@@ -204,26 +204,11 @@ testing.test("readLine returns one line at a time, nil at EOF", lam{ in
     s.close()
 })
 
-// ── Composition with json.parser (NDJSON over HTTP) ──────────
-
-testing.test("json.parser consumes the stream end-to-end", lam{ in
-    // The stream handle exposes .read(n), so json.parser accepts it
-    // as a source without any glue.
-    let s = http.openStream({blockPrivateHosts: false, url: base + "/ndjson"})
-    let p = json.parser(s)
-    let sum = 0
-    while (!p.eof()) {
-        let rec = p.nextValue()
-        sum = sum + rec.n
-    }
-    testing.expectEqual(sum, 6, "1 + 2 + 3")
-    s.close()
-})
-
-// Redirect-following, lifecycle, argument validation, and RAII tests
-// live in tests/test_http_stream_lifecycle.praia. Splitting them off
-// keeps each test file's openStream count low enough that the tree
-// walker doesn't accumulate async-server state into the failure zone
-// when each file runs in its own subprocess.
+// json.parser composition, redirect-following, lifecycle, argument
+// validation, and RAII tests live in their own files
+// (tests/test_http_stream_ndjson.praia, tests/test_http_stream_lifecycle.praia).
+// Splitting them off keeps each test file's openStream count low
+// enough that the tree walker doesn't accumulate async-server state
+// into the failure zone when each file runs in its own subprocess.
 
 testing.done()
