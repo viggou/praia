@@ -26,10 +26,31 @@
 
 #include <memory>
 #include <string>
+#include <unordered_map>
 
 class Interpreter;
 class Environment;
 class VM;
+
+// RuntimeError variant carrying the target Praia Error subclass name
+// plus its structured field payload. Constructed by the praia::throw*
+// helpers below and unpacked by wrapRuntimeErrorFor{Interpreter,Vm}
+// via dynamic_cast — bare `throw RuntimeError(msg, line)` continues
+// to wrap as the base Error, so per-site migration is fully
+// incremental. Piggybacks on the existing catch pipeline (interpreter
+// try/catch at src/interpreter.cpp:829 + VM OP_THROW) — no new
+// exception type on the C++ side.
+struct TypedRuntimeError : RuntimeError {
+    std::string className;
+    std::unordered_map<std::string, Value> fields;
+    TypedRuntimeError(std::string cls,
+                      const std::string& msg,
+                      std::unordered_map<std::string, Value> f,
+                      int line, int column)
+        : RuntimeError(msg, line, column),
+          className(std::move(cls)),
+          fields(std::move(f)) {}
+};
 
 namespace praia {
 
@@ -58,6 +79,66 @@ Value makeErrorInstance(const Value& classValue,
                         const std::string& className,
                         const std::string& message,
                         int line, int column);
+
+// Extended overload: overlays `extras` on top of the default
+// nil-populated subclass fields (index, key, path, errno, host, port,
+// status, url, body, source). Used by the wrap functions when they
+// unpack a TypedRuntimeError, and by the throw* helpers indirectly.
+// `message`, `type`, `line`, `column` are guarded against overwrite —
+// callers can't accidentally clobber the base four via `extras`.
+Value makeErrorInstance(const Value& classValue,
+                        const std::string& className,
+                        const std::string& message,
+                        int line, int column,
+                        const std::unordered_map<std::string, Value>& extras);
+
+// ── Typed-throw helpers ───────────────────────────────────────────
+//
+// Each helper throws a TypedRuntimeError; the interpreter's outer
+// try/catch (src/interpreter.cpp:829) and the VM's OP_THROW handler
+// unpack it into the corresponding Praia Error subclass instance.
+// `[[noreturn]]` so callers drop `throw` at the call site and the
+// compiler still tracks control flow.
+//
+// The C++ arg name `errnoVal` avoids the POSIX `errno` macro; the
+// Praia-side field name is `"errno"` (matches `kErrorClassesSource`).
+[[noreturn]] void throwTypeError     (const std::string& msg, int line = 0, int column = 0);
+[[noreturn]] void throwValueError    (const std::string& msg, int line = 0, int column = 0);
+[[noreturn]] void throwNameError     (const std::string& msg, int line = 0, int column = 0);
+[[noreturn]] void throwAssertionError(const std::string& msg, int line = 0, int column = 0);
+[[noreturn]] void throwIndexError    (const std::string& msg, Value index = Value(),
+                                      int line = 0, int column = 0);
+[[noreturn]] void throwKeyError      (const std::string& msg, Value key = Value(),
+                                      int line = 0, int column = 0);
+[[noreturn]] void throwIOError       (const std::string& msg,
+                                      const std::string& path = "",
+                                      int errnoVal = 0,
+                                      int line = 0, int column = 0);
+[[noreturn]] void throwNetworkError  (const std::string& msg,
+                                      const std::string& host = "",
+                                      int port = 0,
+                                      int errnoVal = 0,
+                                      int line = 0, int column = 0);
+[[noreturn]] void throwHTTPError     (const std::string& msg,
+                                      int status = 0,
+                                      const std::string& url = "",
+                                      const std::string& body = "",
+                                      int line = 0, int column = 0);
+[[noreturn]] void throwTimeoutError  (const std::string& msg, int line = 0, int column = 0);
+[[noreturn]] void throwParseError    (const std::string& msg,
+                                      int srcLine = 0, int srcColumn = 0,
+                                      const std::string& source = "",
+                                      int line = 0, int column = 0);
+
+// Escape hatch for classes not covered above (e.g. user-registered
+// subclasses via grains). Any keys in `extras` land as instance fields
+// after the nil defaults, with the base four (message/type/line/column)
+// guarded against overwrite. If the class isn't registered the wrapper
+// falls back to base `Error` at catch time.
+[[noreturn]] void throwPraiaError    (const std::string& className,
+                                      const std::string& msg,
+                                      std::unordered_map<std::string, Value> extras = {},
+                                      int line = 0, int column = 0);
 
 // Engine-specific class lookups. Return the class Value if found in
 // globals; nil Value otherwise (caller falls back to string coercion).

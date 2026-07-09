@@ -202,10 +202,15 @@ static Value callWithContext(Interpreter& interp,
         Value result = func->call(interp, args);
         interp.callStack.pop_back(); // pop only on success
         return result;
-    } catch (const RuntimeError& err) {
-        // Leave frame on stack for trace, but fix line 0
-        if (err.line == 0)
-            throw RuntimeError(err.what(), line);
+    } catch (RuntimeError& err) {
+        // Leave frame on stack for trace, but fix line 0 in place so
+        // stack-trace formatting shows the call site. Mutating through
+        // the reference preserves the derived type (TypedRuntimeError)
+        // — re-constructing a fresh `RuntimeError(err.what(), line)`
+        // would slice the class name + fields off any typed throw
+        // (throwIOError etc.), leaving the wrap function unable to
+        // dispatch to the correct Error subclass.
+        if (err.line == 0) err.line = line;
         throw;
     } catch (...) {
         // Leave frame on stack for trace
