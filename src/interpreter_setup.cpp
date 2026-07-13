@@ -762,6 +762,19 @@ Interpreter::Interpreter(bool installErrorClasses) {
             if (!args[0].isString())
                 praia::throwTypeError(opName + " prefix must be a string");
             prefix = args[0].asString();
+            // Constrain the prefix to a single filename component so
+            // both fs.tempDir and fs.mktemp only create entries beneath
+            // the system temp dir. Reject path separators and traversal
+            // components — otherwise `fs.tempDir("../../etc/x")` would
+            // splice into `/tmp/../../etc/x.XXXXXX`, letting a
+            // user-supplied prefix escape the temp root. Backslash is
+            // rejected defensively for Windows paths.
+            if (prefix.find('/')  != std::string::npos ||
+                prefix.find('\\') != std::string::npos ||
+                prefix == "." || prefix == "..") {
+                praia::throwValueError(opName + " prefix must be a single "
+                    "filename component (no path separators or '..')");
+            }
         }
         std::error_code ec;
         auto tmpPath = fs::temp_directory_path(ec);
@@ -3991,12 +4004,17 @@ Interpreter::Interpreter(bool installErrorClasses) {
         }));
 
     // fs.readLines (canonical) + sys.readLines deprecated forwarder.
+    // Uses the same typed error contract as fs.read/write/append:
+    // TypeError on arg-shape mismatch, IOError carrying `path` + `errno`
+    // on open failure. The deprecated sys.readLines forwarder below
+    // delegates through this lambda so it inherits the typed errors.
     FsImpl fsReadLines = [](const std::vector<Value>& args) -> Value {
         if (!args[0].isString())
-            throw RuntimeError("fs.readLines() requires a string path", 0);
-        std::ifstream f(args[0].asString());
+            praia::throwTypeError("fs.readLines() requires a string path");
+        const std::string path = args[0].asString();
+        std::ifstream f(path);
         if (!f.is_open())
-            throw RuntimeError("Cannot read file: " + args[0].asString(), 0);
+            praia::throwIOError("Cannot read file: " + path, path, errno);
         auto result = gcNew<PraiaArray>();
         std::string line;
         while (std::getline(f, line))

@@ -84,6 +84,49 @@ testing.test("FileHandle after close → IOError carrying the path", lam{ in
     fs.remove(tmp)
 })
 
+// ── fs.readLines: missing file → IOError with path + errno ─────
+testing.test("fs.readLines on a missing file surfaces IOError", lam{ in
+    try {
+        fs.readLines("/no/such/file/xyz-PRAIA-TEST-lines")
+        testing.expect(false, "expected IOError")
+    } catch (e) {
+        testing.expect(e is IOError, nil)
+        testing.expectEqual(e.path, "/no/such/file/xyz-PRAIA-TEST-lines", nil)
+        testing.expect(e.errno != 0 && e.errno != nil, nil)
+    }
+})
+
+// ── fs.tempDir / fs.mktemp: prefix validation rejects traversal ─
+//
+// A prefix containing a path separator or ".." would splice into the
+// template and land the temp entry outside the system temp dir.
+// Prefix validation makes both natives reject such prefixes as
+// ValueError (right type, wrong value).
+testing.test("fs.tempDir rejects a prefix with a path separator", lam{ in
+    try {
+        let d = fs.tempDir("../etc/nope")
+        testing.expect(false, "expected ValueError, got " + str(d))
+    } catch (e) {
+        testing.expect(e is ValueError, "ValueError, not IOError")
+        testing.expect(str(e).contains("filename component"), nil)
+    }
+})
+
+testing.test("fs.mktemp rejects '..' as the whole prefix", lam{ in
+    try {
+        let p = fs.mktemp("..")
+        testing.expect(false, "expected ValueError, got " + str(p))
+    } catch (e) {
+        testing.expect(e is ValueError, nil)
+    }
+})
+
+testing.test("fs.tempDir still accepts a plain prefix", lam{ in
+    let d = fs.tempDir("praia-helpers-test")
+    testing.expect(type(d) == "string" && len(d) > 0, "returned a path")
+    fs.remove(d)
+})
+
 // ── Regression: engine RuntimeError still coerces to base Error ─
 //
 // The migration is incremental. Every non-migrated `throw RuntimeError`
