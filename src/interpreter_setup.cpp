@@ -740,26 +740,43 @@ Interpreter::Interpreter(bool installErrorClasses) {
     FsImpl fsMkdir = [](const std::vector<Value>& args) -> Value {
         if (!args[0].isString())
             praia::throwTypeError("fs.mkdir() requires a string path");
-        fs::create_directories(args[0].asString());
+        const std::string& p = args[0].asString();
+        std::error_code ec;
+        fs::create_directories(p, ec);
+        if (ec)
+            praia::throwIOError("fs.mkdir(): " + p + ": " + ec.message(),
+                                p, ec.value());
         return Value();
     };
 
-    // fs.tempDir(prefix?) — atomic mkdtemp(3) under the system temp
-    // dir, mode 0700. Caller is responsible for removal.
-    FsImpl fsTempDir = [](const std::vector<Value>& args) -> Value {
+    // Build the `<tmp>/prefix.XXXXXX` template buffer that both fs.tempDir
+    // (mkdtemp) and fs.mktemp (mkstemp) hand off to their respective
+    // syscalls. Shared to keep the prefix-validation + temp-root lookup
+    // in one place — the two callers only differ in the final syscall.
+    // `opName` labels the throw messages so callers don't have to
+    // rebuild them per site.
+    auto buildTempTemplate = [](const std::string& opName,
+                                const std::vector<Value>& args) -> std::vector<char> {
         std::string prefix = "praia";
         if (!args.empty()) {
             if (!args[0].isString())
-                praia::throwTypeError("fs.tempDir() prefix must be a string");
+                praia::throwTypeError(opName + " prefix must be a string");
             prefix = args[0].asString();
         }
         std::error_code ec;
         auto tmpPath = fs::temp_directory_path(ec);
         if (ec)
-            praia::throwIOError("fs.tempDir(): " + ec.message(), "", ec.value());
+            praia::throwIOError(opName + ": " + ec.message(), "", ec.value());
         std::string tmpl = tmpPath.string() + "/" + prefix + ".XXXXXX";
         std::vector<char> buf(tmpl.begin(), tmpl.end());
         buf.push_back('\0');
+        return buf;
+    };
+
+    // fs.tempDir(prefix?) — atomic mkdtemp(3) under the system temp
+    // dir, mode 0700. Caller is responsible for removal.
+    FsImpl fsTempDir = [buildTempTemplate](const std::vector<Value>& args) -> Value {
+        auto buf = buildTempTemplate("fs.tempDir()", args);
         if (!mkdtemp(buf.data())) {
             const int err = errno;
             praia::throwIOError("fs.tempDir(): " + std::string(std::strerror(err)),
@@ -774,7 +791,11 @@ Interpreter::Interpreter(bool installErrorClasses) {
         auto& p = args[0].asString();
         if (!fs::exists(p))
             praia::throwIOError("Cannot remove: " + p + " (not found)", p, ENOENT);
-        fs::remove_all(p);
+        std::error_code ec;
+        fs::remove_all(p, ec);
+        if (ec)
+            praia::throwIOError("fs.remove(): " + p + ": " + ec.message(),
+                                p, ec.value());
         return Value();
     };
 
@@ -785,8 +806,15 @@ Interpreter::Interpreter(bool installErrorClasses) {
         if (!fs::is_directory(p))
             praia::throwIOError("fs.readDir(): not a directory: " + p, p, ENOTDIR);
         auto arr = gcNew<PraiaArray>();
-        for (auto& entry : fs::directory_iterator(p))
-            arr->elements.push_back(Value(entry.path().filename().string()));
+        std::error_code ec;
+        for (auto it = fs::directory_iterator(p, ec);
+             it != fs::directory_iterator() && !ec;
+             it.increment(ec)) {
+            arr->elements.push_back(Value(it->path().filename().string()));
+        }
+        if (ec)
+            praia::throwIOError("fs.readDir(): " + p + ": " + ec.message(),
+                                p, ec.value());
         return Value(arr);
     };
 
@@ -797,7 +825,13 @@ Interpreter::Interpreter(bool installErrorClasses) {
         auto& dst = args[1].asString();
         if (!fs::exists(src))
             praia::throwIOError("Cannot copy: " + src + " (not found)", src, ENOENT);
-        fs::copy(src, dst, fs::copy_options::recursive | fs::copy_options::overwrite_existing);
+        std::error_code ec;
+        fs::copy(src, dst,
+                 fs::copy_options::recursive | fs::copy_options::overwrite_existing,
+                 ec);
+        if (ec)
+            praia::throwIOError("fs.copy(): " + src + " → " + dst + ": " + ec.message(),
+                                src, ec.value());
         return Value();
     };
 
@@ -808,7 +842,11 @@ Interpreter::Interpreter(bool installErrorClasses) {
         auto& dst = args[1].asString();
         if (!fs::exists(src))
             praia::throwIOError("Cannot move: " + src + " (not found)", src, ENOENT);
-        fs::rename(src, dst);
+        std::error_code ec;
+        fs::rename(src, dst, ec);
+        if (ec)
+            praia::throwIOError("fs.move(): " + src + " → " + dst + ": " + ec.message(),
+                                src, ec.value());
         return Value();
     };
 
@@ -1341,20 +1379,8 @@ Interpreter::Interpreter(bool installErrorClasses) {
     // process could race us. Returns the path; the file already
     // exists empty. (Phase 3 will add a handle-returning variant so
     // callers don't have to open() it again.)
-    FsImpl fsMktemp = [](const std::vector<Value>& args) -> Value {
-        std::string prefix = "praia";
-        if (!args.empty()) {
-            if (!args[0].isString())
-                praia::throwTypeError("fs.mktemp() prefix must be a string");
-            prefix = args[0].asString();
-        }
-        std::error_code ec;
-        auto tmpPath = fs::temp_directory_path(ec);
-        if (ec)
-            praia::throwIOError("fs.mktemp(): " + ec.message(), "", ec.value());
-        std::string tmpl = tmpPath.string() + "/" + prefix + ".XXXXXX";
-        std::vector<char> buf(tmpl.begin(), tmpl.end());
-        buf.push_back('\0');
+    FsImpl fsMktemp = [buildTempTemplate](const std::vector<Value>& args) -> Value {
+        auto buf = buildTempTemplate("fs.mktemp()", args);
         int fd = ::mkstemp(buf.data());
         if (fd < 0) {
             const int err = errno;
