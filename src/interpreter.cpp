@@ -210,7 +210,18 @@ static Value callWithContext(Interpreter& interp,
         // would slice the class name + fields off any typed throw
         // (throwIOError etc.), leaving the wrap function unable to
         // dispatch to the correct Error subclass.
-        if (err.line == 0) err.line = line;
+        //
+        // ParseError is exempt: its line/column carry the *source*
+        // position (see throwParseError in errors.cpp), not the C++
+        // throw site. srcLine == 0 is a legitimate "unknown source
+        // line" and clobbering it with the call-site line would
+        // report a bogus location to the user.
+        if (err.line == 0) {
+            bool isParseError = false;
+            if (auto* tre = dynamic_cast<const TypedRuntimeError*>(&err))
+                isParseError = (tre->className == "ParseError");
+            if (!isParseError) err.line = line;
+        }
         throw;
     } catch (...) {
         // Leave frame on stack for trace

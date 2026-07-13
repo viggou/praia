@@ -263,18 +263,31 @@ Value lookupErrorClass(VM& vm, const std::string& className) {
 
 // ── Catch coercion ────────────────────────────────────────────────
 
+// A resolved class name must be a real PraiaClass — not just any
+// Callable — before we can instantiate an error via it. User code (or
+// a plugin) could shadow "IOError" with a plain lambda; that lambda is
+// callable but not instantiable, and makeErrorInstance would silently
+// fall back to Value(message), stripping the typed-throw's structured
+// payload. This helper lets both wrap functions reject non-class
+// callables early and fall back to the base Error class.
+static bool isPraiaClassValue(const Value& v) {
+    if (!v.isCallable()) return false;
+    return std::dynamic_pointer_cast<PraiaClass>(v.asCallable()) != nullptr;
+}
+
 Value wrapRuntimeErrorForInterpreter(Interpreter& interp,
                                      const RuntimeError& re) {
     // A typed throw carries the target class + structured payload.
     // Look up the specific class; if the bootstrap didn't register
     // it (typo in throwPraiaError, engine constructed with
-    // NoErrorBootstrap, etc.) fall back to base `Error` — and use
-    // "Error" for the .type / str(e) rendering too, so the reported
+    // NoErrorBootstrap, etc.) — or if user code shadowed the name
+    // with a non-class callable — fall back to base `Error`, and use
+    // "Error" for the .type / str(e) rendering too so the reported
     // class name never lies about the actual klass on the instance.
     if (auto* tre = dynamic_cast<const TypedRuntimeError*>(&re)) {
         std::string cls = tre->className;
         Value klass = lookupErrorClass(interp, cls);
-        if (!klass.isCallable()) {
+        if (!isPraiaClassValue(klass)) {
             cls = "Error";
             klass = lookupErrorClass(interp, cls);
         }
@@ -289,7 +302,7 @@ Value wrapRuntimeErrorForVm(VM& vm, const RuntimeError& re) {
     if (auto* tre = dynamic_cast<const TypedRuntimeError*>(&re)) {
         std::string cls = tre->className;
         Value klass = lookupErrorClass(vm, cls);
-        if (!klass.isCallable()) {
+        if (!isPraiaClassValue(klass)) {
             cls = "Error";
             klass = lookupErrorClass(vm, cls);
         }
@@ -382,8 +395,7 @@ void throwTimeoutError(const std::string& msg, int line, int column) {
 }
 
 void throwParseError(const std::string& msg,
-                     int srcLine, int srcColumn, const std::string& source,
-                     int /*line*/, int /*column*/) {
+                     int srcLine, int srcColumn, const std::string& source) {
     std::unordered_map<std::string, Value> f;
     if (!source.empty()) f["source"] = Value(source);
     // Route srcLine/srcColumn through the RuntimeError's own
@@ -391,10 +403,7 @@ void throwParseError(const std::string& msg,
     // populate the instance's `.line` / `.column` fields. ParseError's
     // Praia-side init treats `.line` / `.column` as the *source*
     // location (not the C++ throw site), so this puts the source
-    // position exactly where user code expects to read it. The
-    // trailing `line`/`column` args are ignored for ParseError —
-    // C++ throw-site info is never useful when reporting a parse
-    // failure to the user.
+    // position exactly where user code expects to read it.
     throw TypedRuntimeError("ParseError", msg, std::move(f), srcLine, srcColumn);
 }
 

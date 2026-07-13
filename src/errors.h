@@ -125,10 +125,14 @@ Value makeErrorInstance(const Value& classValue,
                                       const std::string& body = "",
                                       int line = 0, int column = 0);
 [[noreturn]] void throwTimeoutError  (const std::string& msg, int line = 0, int column = 0);
+// ParseError routes srcLine/srcColumn through the RuntimeError's own
+// line/column channel so the Praia-side instance's `.line` / `.column`
+// carry the source location. No throw-site line/column tail here —
+// C++ builtins pass 0 for those anyway, and mixing "source position"
+// with "throw location" on the same fields would be a foot-gun.
 [[noreturn]] void throwParseError    (const std::string& msg,
                                       int srcLine = 0, int srcColumn = 0,
-                                      const std::string& source = "",
-                                      int line = 0, int column = 0);
+                                      const std::string& source = "");
 
 // Escape hatch for classes not covered above (e.g. user-registered
 // subclasses via grains). Any keys in `extras` land as instance fields

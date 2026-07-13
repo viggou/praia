@@ -127,6 +127,19 @@ testing.test("fs.tempDir still accepts a plain prefix", lam{ in
     fs.remove(d)
 })
 
+// Extras beyond the single `prefix` arg used to be silently dropped
+// because the natives are registered arity=-1; the shared helper now
+// rejects that shape so the caller notices their mistake.
+testing.test("fs.tempDir rejects a second argument", lam{ in
+    try {
+        let d = fs.tempDir("praia", "unexpected-second-arg")
+        testing.expect(false, "expected TypeError, got " + str(d))
+    } catch (e) {
+        testing.expect(e is TypeError, nil)
+        testing.expect(str(e).contains("at most one"), nil)
+    }
+})
+
 // ── Regression: engine RuntimeError still coerces to base Error ─
 //
 // The migration is incremental. Every non-migrated `throw RuntimeError`
@@ -136,6 +149,10 @@ testing.test("fs.tempDir still accepts a plain prefix", lam{ in
 testing.test("bare RuntimeError still wraps to base Error", lam{ in
     try {
         let x = 1 / 0
+        // If division-by-zero ever stops throwing (an unwanted
+        // semantics change), the catch block below wouldn't run and
+        // this test would spuriously pass. Fail loudly instead.
+        testing.expect(false, "expected 1/0 to throw")
     } catch (e) {
         testing.expect(e is Error,     "Error base still works")
         testing.expect(!(e is IOError), "no accidental subclass upgrade")
