@@ -1,0 +1,196 @@
+use "testing"
+
+// Verify that C++ throw helpers on the engine side produce typed
+// Error subclass instances with structured fields — the first module
+// (fs.*) to migrate to praia::throwIOError / throwTypeError /
+// throwValueError. See src/errors.h for the helper API and
+// src/interpreter_setup.cpp for the fs.* migration.
+
+// ── fs.read: missing file → IOError with path + errno ──────────
+testing.test("fs.read on a missing file surfaces IOError", lam{ in
+    try {
+        fs.read("/no/such/file/xyz-PRAIA-TEST")
+        testing.expect(false, "expected fs.read to throw")
+    } catch (e) {
+        testing.expect(e is IOError, "IOError")
+        testing.expect(e is Error,   "IOError extends Error")
+        testing.expectEqual(e.path, "/no/such/file/xyz-PRAIA-TEST",
+                            ".path carries the offending path")
+        testing.expect(e.errno != 0 && e.errno != nil,
+                       ".errno is a real errno (ENOENT=2 on POSIX)")
+        testing.expect(str(e).contains("Cannot read"),
+                       "str(e) still readable")
+    }
+})
+
+// ── fs.chmod: bad arg types → TypeError, not IOError ───────────
+testing.test("fs.chmod with non-string path → TypeError", lam{ in
+    try {
+        fs.chmod(123, 0)
+        testing.expect(false, "expected TypeError")
+    } catch (e) {
+        testing.expect(e is TypeError, "TypeError")
+        testing.expect(!(e is IOError), "not IOError — arg-shape, not I/O")
+    }
+})
+
+testing.test("fs.chmod with non-numeric mode → TypeError", lam{ in
+    try {
+        fs.chmod("/tmp", "not-a-number")
+        testing.expect(false, "expected TypeError")
+    } catch (e) {
+        testing.expect(e is TypeError, nil)
+    }
+})
+
+// ── fs.open: invalid mode string → ValueError ──────────────────
+testing.test("fs.open with a bogus mode string → ValueError", lam{ in
+    try {
+        fs.open("/tmp/should-not-open", "bogus-mode")
+        testing.expect(false, "expected ValueError")
+    } catch (e) {
+        testing.expect(e is ValueError, "ValueError — mode is right type, wrong value")
+        testing.expect(!(e is IOError), "not IOError")
+        testing.expect(str(e).contains("invalid mode"), nil)
+    }
+})
+
+// ── fs.stat: missing path → IOError with path + errno ──────────
+testing.test("fs.stat on a missing path → IOError w/ path + errno", lam{ in
+    try {
+        fs.stat("/no/such/xyz-PRAIA-TEST")
+        testing.expect(false, "expected IOError")
+    } catch (e) {
+        testing.expect(e is IOError, nil)
+        testing.expectEqual(e.path, "/no/such/xyz-PRAIA-TEST", nil)
+        testing.expect(e.errno != 0 && e.errno != nil, nil)
+    }
+})
+
+// ── FileHandle: read on closed handle → IOError w/ path ────────
+testing.test("FileHandle after close → IOError carrying the path", lam{ in
+    let tmp = fs.mktemp("praia-errhelpers")
+    let h = fs.open(tmp, "r")
+    h.close()
+    try {
+        h.read(4)
+        testing.expect(false, "expected IOError")
+    } catch (e) {
+        testing.expect(e is IOError, nil)
+        testing.expectEqual(e.path, tmp,
+                            ".path pinned on the handle survives close()")
+        testing.expect(str(e).contains("closed"), nil)
+    }
+    fs.remove(tmp)
+})
+
+// ── fs.readLines: missing file → IOError with path + errno ─────
+testing.test("fs.readLines on a missing file surfaces IOError", lam{ in
+    try {
+        fs.readLines("/no/such/file/xyz-PRAIA-TEST-lines")
+        testing.expect(false, "expected IOError")
+    } catch (e) {
+        testing.expect(e is IOError, nil)
+        testing.expectEqual(e.path, "/no/such/file/xyz-PRAIA-TEST-lines", nil)
+        testing.expect(e.errno != 0 && e.errno != nil, nil)
+    }
+})
+
+// ── fs.tempDir / fs.mktemp: prefix validation rejects traversal ─
+//
+// A prefix containing a path separator or ".." would splice into the
+// template and land the temp entry outside the system temp dir.
+// Prefix validation makes both natives reject such prefixes as
+// ValueError (right type, wrong value).
+testing.test("fs.tempDir rejects a prefix with a path separator", lam{ in
+    try {
+        let d = fs.tempDir("../etc/nope")
+        testing.expect(false, "expected ValueError, got " + str(d))
+    } catch (e) {
+        testing.expect(e is ValueError, "ValueError, not IOError")
+        testing.expect(str(e).contains("filename component"), nil)
+    }
+})
+
+testing.test("fs.mktemp rejects '..' as the whole prefix", lam{ in
+    try {
+        let p = fs.mktemp("..")
+        testing.expect(false, "expected ValueError, got " + str(p))
+    } catch (e) {
+        testing.expect(e is ValueError, nil)
+    }
+})
+
+testing.test("fs.tempDir still accepts a plain prefix", lam{ in
+    let d = fs.tempDir("praia-helpers-test")
+    testing.expect(type(d) == "string" && len(d) > 0, "returned a path")
+    fs.remove(d)
+})
+
+// Extras beyond the single `prefix` arg used to be silently dropped
+// because the natives are registered arity=-1; the shared helper now
+// rejects that shape so the caller notices their mistake.
+testing.test("fs.tempDir rejects a second argument", lam{ in
+    try {
+        let d = fs.tempDir("praia", "unexpected-second-arg")
+        testing.expect(false, "expected TypeError, got " + str(d))
+    } catch (e) {
+        testing.expect(e is TypeError, nil)
+        testing.expect(str(e).contains("at most one"), nil)
+    }
+})
+
+// ── Shadowed canonical class name → catch still gets canonical ─
+//
+// A user redefinition of `IOError` (accidental or malicious) must not
+// hijack the catch-coercion path. The wrap functions snapshot the
+// bootstrap classes into a per-engine registry and consult it instead
+// of the live globals, so `fs.read("/no/such")` still lands as the
+// canonical IOError with proper .path / .errno / .contains shim.
+testing.test("user shadowing IOError doesn't hijack the catch path", lam{ in
+    class IOError {
+        func init(m) { this.hijacked = m }
+    }
+    try {
+        fs.read("/no/such/xyz-PRAIA-TEST-shadow")
+        testing.expect(false, "expected fs.read to throw")
+    } catch (e) {
+        testing.expect(e is Error,
+            "still a canonical Error subclass, not the shadow")
+        testing.expectEqual(e.path, "/no/such/xyz-PRAIA-TEST-shadow",
+            ".path still populated via canonical class")
+        testing.expect(e.errno != 0 && e.errno != nil,
+            ".errno still populated")
+        testing.expect(str(e).contains("Cannot read"),
+            "shim still available (shadow class had no __str)")
+    }
+})
+
+// ── Regression: engine RuntimeError still coerces to base Error ─
+//
+// The migration is incremental. Every non-migrated `throw RuntimeError`
+// (e.g. `1/0` inside the interpreter) must still land as a plain
+// `Error` instance — otherwise the whole codebase would need to move
+// in lockstep. This test pins that contract on the tree-walker path.
+testing.test("bare RuntimeError still wraps to base Error", lam{ in
+    try {
+        let x = 1 / 0
+        // If division-by-zero ever stops throwing (an unwanted
+        // semantics change), the catch block below wouldn't run and
+        // this test would spuriously pass. Fail loudly instead.
+        testing.expect(false, "expected 1/0 to throw")
+    } catch (e) {
+        testing.expect(e is Error,     "Error base still works")
+        testing.expect(!(e is IOError), "no accidental subclass upgrade")
+        testing.expect(!(e is TypeError), "no accidental subclass upgrade")
+    }
+})
+
+// ── Regression: user throw of a raw value still flows verbatim ──
+testing.test("user `throw \"raw\"` bypasses the coercion path", lam{ in
+    try { throw "raw" } catch (e) {
+        testing.expectEqual(e, "raw", "user-thrown string arrives verbatim")
+    }
+})
+
+testing.done()

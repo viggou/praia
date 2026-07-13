@@ -693,112 +693,254 @@ Interpreter::Interpreter(bool installErrorClasses) {
     // banner first and the rename guidance in the error second.
     using FsImpl = std::function<Value(const std::vector<Value>&)>;
 
+    // errno capture for iostream: iostream doesn't set errno on failure
+    // consistently across platforms, so reset errno before each stream
+    // operation and use whatever the underlying syscall left behind.
+    // Fall back to EIO when the platform gave us nothing — better than
+    // reporting `errno=0` (which is indistinguishable from "no error").
     FsImpl fsRead = [](const std::vector<Value>& args) -> Value {
         if (!args[0].isString())
-            throw RuntimeError("fs.read() requires a string path", 0);
-        std::ifstream f(args[0].asString());
-        if (!f.is_open())
-            throw RuntimeError("Cannot read file: " + args[0].asString(), 0);
+            praia::throwTypeError("fs.read() requires a string path");
+        const std::string path = args[0].asString();
+        errno = 0;
+        std::ifstream f(path);
+        if (!f.is_open()) {
+            int err = errno ? errno : EIO;
+            praia::throwIOError("Cannot read file: " + path, path, err);
+        }
         std::stringstream ss;
+        errno = 0;
         ss << f.rdbuf();
+        // Post-open failure (mid-read I/O error, partial short-read):
+        // rdbuf() silently sets badbit, so without this check a
+        // truncated read would return "success" with truncated content.
+        if (f.bad()) {
+            int err = errno ? errno : EIO;
+            praia::throwIOError("Failed reading file: " + path, path, err);
+        }
         return Value(ss.str());
     };
 
     FsImpl fsWrite = [](const std::vector<Value>& args) -> Value {
         if (!args[0].isString())
-            throw RuntimeError("fs.write() requires a string path", 0);
-        std::ofstream f(args[0].asString());
-        if (!f.is_open())
-            throw RuntimeError("Cannot write file: " + args[0].asString(), 0);
+            praia::throwTypeError("fs.write() requires a string path");
+        const std::string path = args[0].asString();
+        errno = 0;
+        std::ofstream f(path);
+        if (!f.is_open()) {
+            int err = errno ? errno : EIO;
+            praia::throwIOError("Cannot write file: " + path, path, err);
+        }
+        errno = 0;
         f << args[1].toString();
+        // Explicit close so the destructor doesn't swallow finalisation
+        // errors (out-of-space, quota, flush failures on close). Any
+        // bit set on the stream after close means either the write or
+        // the close itself failed.
+        f.close();
+        if (f.fail() || f.bad()) {
+            int err = errno ? errno : EIO;
+            praia::throwIOError("Failed writing file: " + path, path, err);
+        }
         return Value();
     };
 
     FsImpl fsAppend = [](const std::vector<Value>& args) -> Value {
         if (!args[0].isString())
-            throw RuntimeError("fs.append() requires a string path", 0);
-        std::ofstream f(args[0].asString(), std::ios::app);
-        if (!f.is_open())
-            throw RuntimeError("Cannot open file: " + args[0].asString(), 0);
+            praia::throwTypeError("fs.append() requires a string path");
+        const std::string path = args[0].asString();
+        errno = 0;
+        std::ofstream f(path, std::ios::app);
+        if (!f.is_open()) {
+            int err = errno ? errno : EIO;
+            praia::throwIOError("Cannot open file: " + path, path, err);
+        }
+        errno = 0;
         f << args[1].toString();
+        f.close();
+        if (f.fail() || f.bad()) {
+            int err = errno ? errno : EIO;
+            praia::throwIOError("Failed appending to file: " + path, path, err);
+        }
         return Value();
     };
 
     FsImpl fsExists = [](const std::vector<Value>& args) -> Value {
         if (!args[0].isString())
-            throw RuntimeError("fs.exists() requires a string path", 0);
-        return Value(fs::exists(args[0].asString()));
+            praia::throwTypeError("fs.exists() requires a string path");
+        const std::string& p = args[0].asString();
+        std::error_code ec;
+        // fs::exists(p, ec) returns false for both "doesn't exist" (ec
+        // stays clear) and hard errors (ec set, e.g. EACCES on the
+        // parent directory). Surface the hard errors as IOError so
+        // callers can distinguish "not there" from "can't tell".
+        bool r = fs::exists(p, ec);
+        if (ec)
+            praia::throwIOError("fs.exists(): " + p + ": " + ec.message(),
+                                p, ec.value());
+        return Value(r);
     };
 
     FsImpl fsMkdir = [](const std::vector<Value>& args) -> Value {
         if (!args[0].isString())
-            throw RuntimeError("fs.mkdir() requires a string path", 0);
-        fs::create_directories(args[0].asString());
+            praia::throwTypeError("fs.mkdir() requires a string path");
+        const std::string& p = args[0].asString();
+        std::error_code ec;
+        fs::create_directories(p, ec);
+        if (ec)
+            praia::throwIOError("fs.mkdir(): " + p + ": " + ec.message(),
+                                p, ec.value());
         return Value();
     };
 
-    // fs.tempDir(prefix?) — atomic mkdtemp(3) under the system temp
-    // dir, mode 0700. Caller is responsible for removal.
-    FsImpl fsTempDir = [](const std::vector<Value>& args) -> Value {
+    // Build the `<tmp>/prefix.XXXXXX` template buffer that both fs.tempDir
+    // (mkdtemp) and fs.mktemp (mkstemp) hand off to their respective
+    // syscalls. Shared to keep the prefix-validation + temp-root lookup
+    // in one place — the two callers only differ in the final syscall.
+    // `opName` labels the throw messages so callers don't have to
+    // rebuild them per site.
+    auto buildTempTemplate = [](const std::string& opName,
+                                const std::vector<Value>& args) -> std::vector<char> {
+        // Both callers register with arity=-1 (variadic) so they can
+        // accept 0 or 1 arg. Enforce the (0 or 1) shape here so extras
+        // don't get silently dropped — a caller who mistakenly passes
+        // options as a second arg should hear about it, not have their
+        // options ignored.
+        if (args.size() > 1)
+            praia::throwTypeError(opName + " takes at most one argument (prefix)");
         std::string prefix = "praia";
         if (!args.empty()) {
             if (!args[0].isString())
-                throw RuntimeError("fs.tempDir() prefix must be a string", 0);
+                praia::throwTypeError(opName + " prefix must be a string");
             prefix = args[0].asString();
+            // Constrain the prefix to a single filename component so
+            // both fs.tempDir and fs.mktemp only create entries beneath
+            // the system temp dir. Reject path separators and traversal
+            // components — otherwise `fs.tempDir("../../etc/x")` would
+            // splice into `/tmp/../../etc/x.XXXXXX`, letting a
+            // user-supplied prefix escape the temp root. Backslash is
+            // rejected defensively for Windows paths.
+            if (prefix.find('/')  != std::string::npos ||
+                prefix.find('\\') != std::string::npos ||
+                prefix == "." || prefix == "..") {
+                praia::throwValueError(opName + " prefix must be a single "
+                    "filename component (no path separators or '..')");
+            }
         }
         std::error_code ec;
         auto tmpPath = fs::temp_directory_path(ec);
         if (ec)
-            throw RuntimeError("fs.tempDir(): " + ec.message(), 0);
+            praia::throwIOError(opName + ": " + ec.message(), "", ec.value());
         std::string tmpl = tmpPath.string() + "/" + prefix + ".XXXXXX";
         std::vector<char> buf(tmpl.begin(), tmpl.end());
         buf.push_back('\0');
-        if (!mkdtemp(buf.data()))
-            throw RuntimeError("fs.tempDir(): " + std::string(std::strerror(errno)), 0);
+        return buf;
+    };
+
+    // fs.tempDir(prefix?) — atomic mkdtemp(3) under the system temp
+    // dir, mode 0700. Caller is responsible for removal.
+    FsImpl fsTempDir = [buildTempTemplate](const std::vector<Value>& args) -> Value {
+        auto buf = buildTempTemplate("fs.tempDir()", args);
+        if (!mkdtemp(buf.data())) {
+            const int err = errno;
+            praia::throwIOError("fs.tempDir(): " + std::string(std::strerror(err)),
+                                "", err);
+        }
         return Value(std::string(buf.data()));
     };
 
     FsImpl fsRemove = [](const std::vector<Value>& args) -> Value {
         if (!args[0].isString())
-            throw RuntimeError("fs.remove() requires a string path", 0);
+            praia::throwTypeError("fs.remove() requires a string path");
         auto& p = args[0].asString();
-        if (!fs::exists(p))
-            throw RuntimeError("Cannot remove: " + p + " (not found)", 0);
-        fs::remove_all(p);
+        std::error_code ec;
+        if (!fs::exists(p, ec)) {
+            if (ec)
+                praia::throwIOError("fs.remove(): " + p + ": " + ec.message(),
+                                    p, ec.value());
+            praia::throwIOError("Cannot remove: " + p + " (not found)", p, ENOENT);
+        }
+        fs::remove_all(p, ec);
+        if (ec)
+            praia::throwIOError("fs.remove(): " + p + ": " + ec.message(),
+                                p, ec.value());
         return Value();
     };
 
     FsImpl fsReadDir = [](const std::vector<Value>& args) -> Value {
         if (!args[0].isString())
-            throw RuntimeError("fs.readDir() requires a string path", 0);
+            praia::throwTypeError("fs.readDir() requires a string path");
         auto& p = args[0].asString();
-        if (!fs::is_directory(p))
-            throw RuntimeError("fs.readDir(): not a directory: " + p, 0);
+        std::error_code ec;
+        // Distinguish "not found" (ENOENT) from "found, but not a
+        // directory" (ENOTDIR) so callers dispatching on `errno` get a
+        // truthful code. Prior mapping-of-both-to-ENOTDIR was a lie
+        // for the missing-path case.
+        if (!fs::exists(p, ec)) {
+            if (ec)
+                praia::throwIOError("fs.readDir(): " + p + ": " + ec.message(),
+                                    p, ec.value());
+            praia::throwIOError("fs.readDir(): " + p + ": no such path",
+                                p, ENOENT);
+        }
+        if (!fs::is_directory(p, ec)) {
+            if (ec)
+                praia::throwIOError("fs.readDir(): " + p + ": " + ec.message(),
+                                    p, ec.value());
+            praia::throwIOError("fs.readDir(): not a directory: " + p,
+                                p, ENOTDIR);
+        }
         auto arr = gcNew<PraiaArray>();
-        for (auto& entry : fs::directory_iterator(p))
-            arr->elements.push_back(Value(entry.path().filename().string()));
+        for (auto it = fs::directory_iterator(p, ec);
+             it != fs::directory_iterator() && !ec;
+             it.increment(ec)) {
+            arr->elements.push_back(Value(it->path().filename().string()));
+        }
+        if (ec)
+            praia::throwIOError("fs.readDir(): " + p + ": " + ec.message(),
+                                p, ec.value());
         return Value(arr);
     };
 
     FsImpl fsCopy = [](const std::vector<Value>& args) -> Value {
         if (!args[0].isString() || !args[1].isString())
-            throw RuntimeError("fs.copy() requires two string paths", 0);
+            praia::throwTypeError("fs.copy() requires two string paths");
         auto& src = args[0].asString();
         auto& dst = args[1].asString();
-        if (!fs::exists(src))
-            throw RuntimeError("Cannot copy: " + src + " (not found)", 0);
-        fs::copy(src, dst, fs::copy_options::recursive | fs::copy_options::overwrite_existing);
+        std::error_code ec;
+        if (!fs::exists(src, ec)) {
+            if (ec)
+                praia::throwIOError("fs.copy(): " + src + ": " + ec.message(),
+                                    src, ec.value());
+            praia::throwIOError("Cannot copy: " + src + " (not found)",
+                                src, ENOENT);
+        }
+        fs::copy(src, dst,
+                 fs::copy_options::recursive | fs::copy_options::overwrite_existing,
+                 ec);
+        if (ec)
+            praia::throwIOError("fs.copy(): " + src + " → " + dst + ": " + ec.message(),
+                                src, ec.value());
         return Value();
     };
 
     FsImpl fsMove = [](const std::vector<Value>& args) -> Value {
         if (!args[0].isString() || !args[1].isString())
-            throw RuntimeError("fs.move() requires two string paths", 0);
+            praia::throwTypeError("fs.move() requires two string paths");
         auto& src = args[0].asString();
         auto& dst = args[1].asString();
-        if (!fs::exists(src))
-            throw RuntimeError("Cannot move: " + src + " (not found)", 0);
-        fs::rename(src, dst);
+        std::error_code ec;
+        if (!fs::exists(src, ec)) {
+            if (ec)
+                praia::throwIOError("fs.move(): " + src + ": " + ec.message(),
+                                    src, ec.value());
+            praia::throwIOError("Cannot move: " + src + " (not found)",
+                                src, ENOENT);
+        }
+        fs::rename(src, dst, ec);
+        if (ec)
+            praia::throwIOError("fs.move(): " + src + " → " + dst + ": " + ec.message(),
+                                src, ec.value());
         return Value();
     };
 
@@ -842,11 +984,13 @@ Interpreter::Interpreter(bool installErrorClasses) {
 
     FsImpl fsStat = [statToMap](const std::vector<Value>& args) -> Value {
         if (!args[0].isString())
-            throw RuntimeError("fs.stat() requires a string path", 0);
+            praia::throwTypeError("fs.stat() requires a string path");
         auto& p = args[0].asString();
         struct stat st;
-        if (::stat(p.c_str(), &st) != 0)
-            throw RuntimeError("fs.stat(): " + p + ": " + std::strerror(errno), 0);
+        if (::stat(p.c_str(), &st) != 0) {
+            const int err = errno;
+            praia::throwIOError("fs.stat(): " + p + ": " + std::strerror(err), p, err);
+        }
         return statToMap(st);
     };
 
@@ -855,11 +999,13 @@ Interpreter::Interpreter(bool installErrorClasses) {
     // when "type" should distinguish symlinks from regular files.
     FsImpl fsLstat = [statToMap](const std::vector<Value>& args) -> Value {
         if (!args[0].isString())
-            throw RuntimeError("fs.lstat() requires a string path", 0);
+            praia::throwTypeError("fs.lstat() requires a string path");
         auto& p = args[0].asString();
         struct stat st;
-        if (::lstat(p.c_str(), &st) != 0)
-            throw RuntimeError("fs.lstat(): " + p + ": " + std::strerror(errno), 0);
+        if (::lstat(p.c_str(), &st) != 0) {
+            const int err = errno;
+            praia::throwIOError("fs.lstat(): " + p + ": " + std::strerror(err), p, err);
+        }
         return statToMap(st);
     };
 
@@ -870,13 +1016,15 @@ Interpreter::Interpreter(bool installErrorClasses) {
     // it's a sharper API).
     FsImpl fsChmod = [](const std::vector<Value>& args) -> Value {
         if (!args[0].isString())
-            throw RuntimeError("fs.chmod() requires a string path", 0);
+            praia::throwTypeError("fs.chmod() requires a string path");
         if (!args[1].isNumber())
-            throw RuntimeError("fs.chmod() requires a numeric mode", 0);
+            praia::throwTypeError("fs.chmod() requires a numeric mode");
         auto& p = args[0].asString();
         mode_t mode = static_cast<mode_t>(args[1].toInt64ForBitwise()) & 07777;
-        if (::chmod(p.c_str(), mode) != 0)
-            throw RuntimeError("fs.chmod(): " + p + ": " + std::strerror(errno), 0);
+        if (::chmod(p.c_str(), mode) != 0) {
+            const int err = errno;
+            praia::throwIOError("fs.chmod(): " + p + ": " + std::strerror(err), p, err);
+        }
         return Value();
     };
 
@@ -886,11 +1034,14 @@ Interpreter::Interpreter(bool installErrorClasses) {
     // location to create.
     FsImpl fsSymlink = [](const std::vector<Value>& args) -> Value {
         if (!args[0].isString() || !args[1].isString())
-            throw RuntimeError("fs.symlink(target, linkpath) requires two string paths", 0);
+            praia::throwTypeError("fs.symlink(target, linkpath) requires two string paths");
         auto& target   = args[0].asString();
         auto& linkpath = args[1].asString();
-        if (::symlink(target.c_str(), linkpath.c_str()) != 0)
-            throw RuntimeError("fs.symlink(): " + linkpath + ": " + std::strerror(errno), 0);
+        if (::symlink(target.c_str(), linkpath.c_str()) != 0) {
+            const int err = errno;
+            praia::throwIOError("fs.symlink(): " + linkpath + ": " + std::strerror(err),
+                                linkpath, err);
+        }
         return Value();
     };
 
@@ -898,7 +1049,7 @@ Interpreter::Interpreter(bool installErrorClasses) {
     // — relative or absolute, possibly dangling. Throws on a non-link.
     FsImpl fsReadlink = [](const std::vector<Value>& args) -> Value {
         if (!args[0].isString())
-            throw RuntimeError("fs.readlink() requires a string path", 0);
+            praia::throwTypeError("fs.readlink() requires a string path");
         auto& p = args[0].asString();
         // PATH_MAX-sized scratch then grow if the link is longer (rare
         // but possible — Linux allows symlink contents up to ~4096
@@ -907,8 +1058,11 @@ Interpreter::Interpreter(bool installErrorClasses) {
         std::vector<char> buf(1024);
         while (true) {
             ssize_t n = ::readlink(p.c_str(), buf.data(), buf.size());
-            if (n < 0)
-                throw RuntimeError("fs.readlink(): " + p + ": " + std::strerror(errno), 0);
+            if (n < 0) {
+                const int err = errno;
+                praia::throwIOError("fs.readlink(): " + p + ": " + std::strerror(err),
+                                    p, err);
+            }
             if (static_cast<size_t>(n) < buf.size())
                 return Value(std::string(buf.data(), n));
             // Buffer was exactly filled — symlink may have been
@@ -927,7 +1081,7 @@ Interpreter::Interpreter(bool installErrorClasses) {
     // .tmp.XXXXXX droppings behind.
     FsImpl fsAtomicWrite = [](const std::vector<Value>& args) -> Value {
         if (!args[0].isString())
-            throw RuntimeError("fs.atomicWrite() requires a string path", 0);
+            praia::throwTypeError("fs.atomicWrite() requires a string path");
         auto& targetPath = args[0].asString();
         // Allow strings or bytes for content. toString() copes with both;
         // for bytes we want raw payload not a stringified representation,
@@ -945,24 +1099,30 @@ Interpreter::Interpreter(bool installErrorClasses) {
         buf.push_back('\0');
 
         int fd = ::mkstemp(buf.data());
-        if (fd < 0)
-            throw RuntimeError("fs.atomicWrite(): mkstemp failed for " + targetPath +
-                               ": " + std::strerror(errno), 0);
+        if (fd < 0) {
+            const int err = errno;
+            praia::throwIOError("fs.atomicWrite(): mkstemp failed for " + targetPath +
+                                ": " + std::strerror(err),
+                                targetPath, err);
+        }
         std::string tmpPath(buf.data());
 
         // Lambda to unlink the temp on any error path before
-        // re-throwing.
-        auto bail = [&](const std::string& msg) {
+        // re-throwing. Capture targetPath so IOError carries the
+        // caller-facing path, not the internal tmp file.
+        auto bail = [&](const std::string& msg, int err) {
             ::close(fd);
             ::unlink(tmpPath.c_str());
-            throw RuntimeError("fs.atomicWrite(): " + msg, 0);
+            praia::throwIOError("fs.atomicWrite(): " + msg, targetPath, err);
         };
 
         // mkstemp creates with mode 0600; loosen to 0644 so the
         // renamed file matches what `fs.write` produces. Users who
         // want stricter perms can chmod afterwards.
-        if (::fchmod(fd, 0644) != 0)
-            bail("fchmod failed: " + std::string(std::strerror(errno)));
+        if (::fchmod(fd, 0644) != 0) {
+            const int err = errno;
+            bail("fchmod failed: " + std::string(std::strerror(err)), err);
+        }
 
         // Write the full content. write(2) can return short; loop
         // until done or error.
@@ -972,7 +1132,8 @@ Interpreter::Interpreter(bool installErrorClasses) {
             ssize_t n = ::write(fd, p, remaining);
             if (n < 0) {
                 if (errno == EINTR) continue;
-                bail("write failed: " + std::string(std::strerror(errno)));
+                const int err = errno;
+                bail("write failed: " + std::string(std::strerror(err)), err);
             }
             p += n;
             remaining -= static_cast<size_t>(n);
@@ -982,22 +1143,28 @@ Interpreter::Interpreter(bool installErrorClasses) {
         // happens in cache but the new contents may not be on disk
         // when the rename's metadata commit lands — a crash window
         // where readers see an empty file. fsync closes that window.
-        if (::fsync(fd) != 0)
-            bail("fsync failed: " + std::string(std::strerror(errno)));
+        if (::fsync(fd) != 0) {
+            const int err = errno;
+            bail("fsync failed: " + std::string(std::strerror(err)), err);
+        }
         if (::close(fd) != 0) {
+            const int err = errno;
             ::unlink(tmpPath.c_str());
-            throw RuntimeError("fs.atomicWrite(): close failed: " +
-                               std::string(std::strerror(errno)), 0);
+            praia::throwIOError("fs.atomicWrite(): close failed: " +
+                                std::string(std::strerror(err)),
+                                targetPath, err);
         }
 
         // The atomic step. On the same filesystem this is one
         // metadata commit; readers see old-or-new, nothing in
         // between.
         if (::rename(tmpPath.c_str(), targetPath.c_str()) != 0) {
-            std::string err = std::strerror(errno);
+            const int err = errno;
+            std::string errStr = std::strerror(err);
             ::unlink(tmpPath.c_str());
-            throw RuntimeError("fs.atomicWrite(): rename to " + targetPath +
-                               " failed: " + err, 0);
+            praia::throwIOError("fs.atomicWrite(): rename to " + targetPath +
+                                " failed: " + errStr,
+                                targetPath, err);
         }
 
         // fsync the parent directory so the rename's directory-entry
@@ -1010,14 +1177,18 @@ Interpreter::Interpreter(bool installErrorClasses) {
         // we surface the error rather than silently downgrading the
         // contract.
         int dirFd = ::open(dir.string().c_str(), O_RDONLY | O_DIRECTORY);
-        if (dirFd < 0)
-            throw RuntimeError("fs.atomicWrite(): open parent dir for fsync failed: " +
-                               std::string(std::strerror(errno)), 0);
+        if (dirFd < 0) {
+            const int err = errno;
+            praia::throwIOError("fs.atomicWrite(): open parent dir for fsync failed: " +
+                                std::string(std::strerror(err)),
+                                dir.string(), err);
+        }
         if (::fsync(dirFd) != 0) {
-            int e = errno;
+            const int err = errno;
             ::close(dirFd);
-            throw RuntimeError("fs.atomicWrite(): fsync parent dir failed: " +
-                               std::string(std::strerror(e)), 0);
+            praia::throwIOError("fs.atomicWrite(): fsync parent dir failed: " +
+                                std::string(std::strerror(err)),
+                                dir.string(), err);
         }
         ::close(dirFd);
         return Value();
@@ -1057,8 +1228,11 @@ Interpreter::Interpreter(bool installErrorClasses) {
         ssize_t n;
         do { n = ::read(h.fd, h.readBuf.data(), h.readBuf.size()); }
         while (n < 0 && errno == EINTR);
-        if (n < 0)
-            throw RuntimeError("FileHandle.read: " + std::string(std::strerror(errno)), 0);
+        if (n < 0) {
+            const int err = errno;
+            praia::throwIOError("FileHandle.read: " + std::string(std::strerror(err)),
+                                h.path, err);
+        }
         if (n == 0) { h.atEOF = true; return false; }
         h.readBufPos = 0;
         h.readBufEnd = static_cast<size_t>(n);
@@ -1073,9 +1247,12 @@ Interpreter::Interpreter(bool installErrorClasses) {
     auto syncBeforeWrite = [](FileHandle& h) {
         if (h.readBufPos < h.readBufEnd) {
             int64_t buffered = static_cast<int64_t>(h.readBufEnd - h.readBufPos);
-            if (::lseek(h.fd, -buffered, SEEK_CUR) < 0)
-                throw RuntimeError("FileHandle.write: seek correction failed: " +
-                                   std::string(std::strerror(errno)), 0);
+            if (::lseek(h.fd, -buffered, SEEK_CUR) < 0) {
+                const int err = errno;
+                praia::throwIOError("FileHandle.write: seek correction failed: " +
+                                    std::string(std::strerror(err)),
+                                    h.path, err);
+            }
         }
         h.readBufPos = h.readBufEnd = 0;
         h.atEOF = false;
@@ -1083,9 +1260,9 @@ Interpreter::Interpreter(bool installErrorClasses) {
 
     FsImpl fsOpen = [refillReadBuf, syncBeforeWrite](const std::vector<Value>& args) -> Value {
         if (!args[0].isString())
-            throw RuntimeError("fs.open() requires a string path", 0);
+            praia::throwTypeError("fs.open() requires a string path");
         if (!args[1].isString())
-            throw RuntimeError("fs.open() requires a mode string ('r','w','a','r+','w+','a+')", 0);
+            praia::throwTypeError("fs.open() requires a mode string ('r','w','a','r+','w+','a+')");
         auto& p = args[0].asString();
         auto& m = args[1].asString();
 
@@ -1097,12 +1274,14 @@ Interpreter::Interpreter(bool installErrorClasses) {
         else if (m == "w+") flags = O_RDWR   | O_CREAT | O_TRUNC;
         else if (m == "a+") flags = O_RDWR   | O_CREAT | O_APPEND;
         else
-            throw RuntimeError("fs.open(): invalid mode \"" + m +
-                               "\" (use 'r','w','a','r+','w+','a+')", 0);
+            praia::throwValueError("fs.open(): invalid mode \"" + m +
+                                   "\" (use 'r','w','a','r+','w+','a+')");
 
         int fd = ::open(p.c_str(), flags, 0644);
-        if (fd < 0)
-            throw RuntimeError("fs.open(): " + p + ": " + std::strerror(errno), 0);
+        if (fd < 0) {
+            const int err = errno;
+            praia::throwIOError("fs.open(): " + p + ": " + std::strerror(err), p, err);
+        }
 
         auto h = std::make_shared<FileHandle>();
         h->fd = fd;
@@ -1113,12 +1292,12 @@ Interpreter::Interpreter(bool installErrorClasses) {
 
         handleMap->entries[Value("read")] = Value(makeNative("FileHandle.read", 1,
             [h](const std::vector<Value>& args) -> Value {
-                if (h->closed) throw RuntimeError("FileHandle is closed", 0);
+                if (h->closed) praia::throwIOError("FileHandle is closed", h->path, EBADF);
                 if (!args[0].isNumber())
-                    throw RuntimeError("FileHandle.read(n) requires a numeric byte count", 0);
+                    praia::throwTypeError("FileHandle.read(n) requires a numeric byte count");
                 int64_t wantSigned = args[0].toInt64ForBitwise();
                 if (wantSigned < 0)
-                    throw RuntimeError("FileHandle.read(n): n must be non-negative", 0);
+                    praia::throwValueError("FileHandle.read(n): n must be non-negative");
                 size_t want = static_cast<size_t>(wantSigned);
                 if (want == 0) return Value(std::string(""));
                 std::string out;
@@ -1139,9 +1318,12 @@ Interpreter::Interpreter(bool installErrorClasses) {
                     ssize_t n;
                     do { n = ::read(h->fd, tmp, chunk); }
                     while (n < 0 && errno == EINTR);
-                    if (n < 0)
-                        throw RuntimeError("FileHandle.read: " +
-                                           std::string(std::strerror(errno)), 0);
+                    if (n < 0) {
+                        const int err = errno;
+                        praia::throwIOError("FileHandle.read: " +
+                                            std::string(std::strerror(err)),
+                                            h->path, err);
+                    }
                     if (n == 0) { h->atEOF = true; break; }
                     out.append(tmp, n);
                     want -= static_cast<size_t>(n);
@@ -1151,7 +1333,7 @@ Interpreter::Interpreter(bool installErrorClasses) {
 
         handleMap->entries[Value("readLine")] = Value(makeNative("FileHandle.readLine", 0,
             [h, refillReadBuf](const std::vector<Value>&) -> Value {
-                if (h->closed) throw RuntimeError("FileHandle is closed", 0);
+                if (h->closed) praia::throwIOError("FileHandle is closed", h->path, EBADF);
                 std::string line;
                 while (true) {
                     // Scan current buffer for '\n'.
@@ -1172,7 +1354,7 @@ Interpreter::Interpreter(bool installErrorClasses) {
 
         handleMap->entries[Value("write")] = Value(makeNative("FileHandle.write", 1,
             [h, syncBeforeWrite](const std::vector<Value>& args) -> Value {
-                if (h->closed) throw RuntimeError("FileHandle is closed", 0);
+                if (h->closed) praia::throwIOError("FileHandle is closed", h->path, EBADF);
                 std::string data = args[0].toString();
                 syncBeforeWrite(*h);
                 const char* p = data.data();
@@ -1181,9 +1363,12 @@ Interpreter::Interpreter(bool installErrorClasses) {
                     ssize_t n;
                     do { n = ::write(h->fd, p, remaining); }
                     while (n < 0 && errno == EINTR);
-                    if (n < 0)
-                        throw RuntimeError("FileHandle.write: " +
-                                           std::string(std::strerror(errno)), 0);
+                    if (n < 0) {
+                        const int err = errno;
+                        praia::throwIOError("FileHandle.write: " +
+                                            std::string(std::strerror(err)),
+                                            h->path, err);
+                    }
                     p += n;
                     remaining -= static_cast<size_t>(n);
                 }
@@ -1192,9 +1377,9 @@ Interpreter::Interpreter(bool installErrorClasses) {
 
         handleMap->entries[Value("seek")] = Value(makeNative("FileHandle.seek", -1,
             [h](const std::vector<Value>& args) -> Value {
-                if (h->closed) throw RuntimeError("FileHandle is closed", 0);
+                if (h->closed) praia::throwIOError("FileHandle is closed", h->path, EBADF);
                 if (args.empty() || !args[0].isNumber())
-                    throw RuntimeError("FileHandle.seek(offset, whence='start') requires a numeric offset", 0);
+                    praia::throwTypeError("FileHandle.seek(offset, whence='start') requires a numeric offset");
                 int64_t offset = args[0].toInt64ForBitwise();
                 int whence = SEEK_SET;
                 if (args.size() >= 2 && !args[1].isNil()) {
@@ -1203,17 +1388,17 @@ Interpreter::Interpreter(bool installErrorClasses) {
                         if      (w == "start")   whence = SEEK_SET;
                         else if (w == "current") whence = SEEK_CUR;
                         else if (w == "end")     whence = SEEK_END;
-                        else throw RuntimeError(
-                            "FileHandle.seek: whence must be 'start'/'current'/'end' (got '" + w + "')", 0);
+                        else praia::throwValueError(
+                            "FileHandle.seek: whence must be 'start'/'current'/'end' (got '" + w + "')");
                     } else if (args[1].isNumber()) {
                         int w = static_cast<int>(args[1].toInt64ForBitwise());
                         if (w != SEEK_SET && w != SEEK_CUR && w != SEEK_END)
-                            throw RuntimeError(
-                                "FileHandle.seek: numeric whence must be 0 (start), 1 (current), or 2 (end)", 0);
+                            praia::throwValueError(
+                                "FileHandle.seek: numeric whence must be 0 (start), 1 (current), or 2 (end)");
                         whence = w;
                     } else {
-                        throw RuntimeError(
-                            "FileHandle.seek: whence must be a string or number", 0);
+                        praia::throwTypeError(
+                            "FileHandle.seek: whence must be a string or number");
                     }
                 }
                 // Drop the read buffer — its contents no longer reflect
@@ -1221,19 +1406,25 @@ Interpreter::Interpreter(bool installErrorClasses) {
                 h->readBufPos = h->readBufEnd = 0;
                 h->atEOF = false;
                 off_t r = ::lseek(h->fd, offset, whence);
-                if (r < 0)
-                    throw RuntimeError("FileHandle.seek: " +
-                                       std::string(std::strerror(errno)), 0);
+                if (r < 0) {
+                    const int err = errno;
+                    praia::throwIOError("FileHandle.seek: " +
+                                        std::string(std::strerror(err)),
+                                        h->path, err);
+                }
                 return Value(static_cast<int64_t>(r));
             }));
 
         handleMap->entries[Value("tell")] = Value(makeNative("FileHandle.tell", 0,
             [h](const std::vector<Value>&) -> Value {
-                if (h->closed) throw RuntimeError("FileHandle is closed", 0);
+                if (h->closed) praia::throwIOError("FileHandle is closed", h->path, EBADF);
                 off_t r = ::lseek(h->fd, 0, SEEK_CUR);
-                if (r < 0)
-                    throw RuntimeError("FileHandle.tell: " +
-                                       std::string(std::strerror(errno)), 0);
+                if (r < 0) {
+                    const int err = errno;
+                    praia::throwIOError("FileHandle.tell: " +
+                                        std::string(std::strerror(err)),
+                                        h->path, err);
+                }
                 // Kernel position is past readBufEnd; the user's
                 // logical position is readBufPos. Subtract the
                 // unconsumed buffered bytes.
@@ -1246,10 +1437,13 @@ Interpreter::Interpreter(bool installErrorClasses) {
         // pushing kernel page cache to durable storage. Cheap on success.
         handleMap->entries[Value("flush")] = Value(makeNative("FileHandle.flush", 0,
             [h](const std::vector<Value>&) -> Value {
-                if (h->closed) throw RuntimeError("FileHandle is closed", 0);
-                if (::fsync(h->fd) != 0)
-                    throw RuntimeError("FileHandle.flush: " +
-                                       std::string(std::strerror(errno)), 0);
+                if (h->closed) praia::throwIOError("FileHandle is closed", h->path, EBADF);
+                if (::fsync(h->fd) != 0) {
+                    const int err = errno;
+                    praia::throwIOError("FileHandle.flush: " +
+                                        std::string(std::strerror(err)),
+                                        h->path, err);
+                }
                 return Value();
             }));
 
@@ -1279,23 +1473,13 @@ Interpreter::Interpreter(bool installErrorClasses) {
     // process could race us. Returns the path; the file already
     // exists empty. (Phase 3 will add a handle-returning variant so
     // callers don't have to open() it again.)
-    FsImpl fsMktemp = [](const std::vector<Value>& args) -> Value {
-        std::string prefix = "praia";
-        if (!args.empty()) {
-            if (!args[0].isString())
-                throw RuntimeError("fs.mktemp() prefix must be a string", 0);
-            prefix = args[0].asString();
-        }
-        std::error_code ec;
-        auto tmpPath = fs::temp_directory_path(ec);
-        if (ec)
-            throw RuntimeError("fs.mktemp(): " + ec.message(), 0);
-        std::string tmpl = tmpPath.string() + "/" + prefix + ".XXXXXX";
-        std::vector<char> buf(tmpl.begin(), tmpl.end());
-        buf.push_back('\0');
+    FsImpl fsMktemp = [buildTempTemplate](const std::vector<Value>& args) -> Value {
+        auto buf = buildTempTemplate("fs.mktemp()", args);
         int fd = ::mkstemp(buf.data());
-        if (fd < 0)
-            throw RuntimeError("fs.mktemp(): " + std::string(std::strerror(errno)), 0);
+        if (fd < 0) {
+            const int err = errno;
+            praia::throwIOError("fs.mktemp(): " + std::string(std::strerror(err)), "", err);
+        }
         ::close(fd);  // Phase 3: return a handle instead.
         return Value(std::string(buf.data()));
     };
@@ -3901,12 +4085,25 @@ Interpreter::Interpreter(bool installErrorClasses) {
         }));
 
     // fs.readLines (canonical) + sys.readLines deprecated forwarder.
+    // Uses the same typed error contract as fs.read/write/append:
+    // TypeError on arg-shape mismatch, IOError carrying `path` + `errno`
+    // on open failure. The deprecated sys.readLines forwarder below
+    // delegates through this lambda so it inherits the typed errors.
     FsImpl fsReadLines = [](const std::vector<Value>& args) -> Value {
         if (!args[0].isString())
-            throw RuntimeError("fs.readLines() requires a string path", 0);
-        std::ifstream f(args[0].asString());
-        if (!f.is_open())
-            throw RuntimeError("Cannot read file: " + args[0].asString(), 0);
+            praia::throwTypeError("fs.readLines() requires a string path");
+        const std::string path = args[0].asString();
+        // errno-capture pattern (matches fs.read / fs.write / fs.append):
+        // reset errno before the stream op since iostream doesn't
+        // reliably touch it, then fall back to EIO if the platform gave
+        // us nothing — better than reporting `errno=0` which is
+        // indistinguishable from "no error".
+        errno = 0;
+        std::ifstream f(path);
+        if (!f.is_open()) {
+            int err = errno ? errno : EIO;
+            praia::throwIOError("Cannot read file: " + path, path, err);
+        }
         auto result = gcNew<PraiaArray>();
         std::string line;
         while (std::getline(f, line))

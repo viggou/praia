@@ -202,10 +202,26 @@ static Value callWithContext(Interpreter& interp,
         Value result = func->call(interp, args);
         interp.callStack.pop_back(); // pop only on success
         return result;
-    } catch (const RuntimeError& err) {
-        // Leave frame on stack for trace, but fix line 0
-        if (err.line == 0)
-            throw RuntimeError(err.what(), line);
+    } catch (RuntimeError& err) {
+        // Leave frame on stack for trace, but fix line 0 in place so
+        // stack-trace formatting shows the call site. Mutating through
+        // the reference preserves the derived type (TypedRuntimeError)
+        // — re-constructing a fresh `RuntimeError(err.what(), line)`
+        // would slice the class name + fields off any typed throw
+        // (throwIOError etc.), leaving the wrap function unable to
+        // dispatch to the correct Error subclass.
+        //
+        // ParseError is exempt: its line/column carry the *source*
+        // position (see throwParseError in errors.cpp), not the C++
+        // throw site. srcLine == 0 is a legitimate "unknown source
+        // line" and clobbering it with the call-site line would
+        // report a bogus location to the user.
+        if (err.line == 0) {
+            bool isParseError = false;
+            if (auto* tre = dynamic_cast<const TypedRuntimeError*>(&err))
+                isParseError = (tre->className == "ParseError");
+            if (!isParseError) err.line = line;
+        }
         throw;
     } catch (...) {
         // Leave frame on stack for trace
