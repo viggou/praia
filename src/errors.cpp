@@ -8,10 +8,13 @@
 #include "vm/compiler.h"
 #include "vm/vm.h"
 
+#include <functional>
 #include <iostream>
 #include <memory>
 #include <mutex>
 #include <string>
+#include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace praia {
@@ -142,6 +145,92 @@ static const BootstrapProgram& sharedBootstrapProgram() {
     return cached;
 }
 
+// ── Canonical class registry ─────────────────────────────────────
+//
+// After each engine's bootstrap runs we snapshot the resulting Error
+// subclass instances into a per-engine map keyed by class name. The
+// wrap functions consult this registry instead of the live globals so
+// that a user later doing `class IOError { ... }` can't shadow the
+// engine's canonical IOError and hijack the catch coercion path.
+// Without this, `throwIOError` would look up the user's shadowing
+// class from globals and hand `makeErrorInstance` a Praia class whose
+// inheritance chain doesn't extend `Error`, breaking `is Error`
+// dispatch and `.contains` shims on caught errors.
+//
+// The bootstrap runs at engine construction, so the registry is
+// populated exactly once per engine before any user code runs.
+
+// The full list of names defined by kErrorClassesSource. Anything not
+// on this list is not a canonical error class — throwPraiaError with
+// an off-list name falls back to base Error at catch time.
+static const std::vector<std::string>& canonicalErrorNames() {
+    static const std::vector<std::string> names = {
+        "Error", "TypeError", "ValueError", "NameError",
+        "IndexError", "KeyError", "AssertionError",
+        "IOError", "NetworkError", "HTTPError", "TimeoutError",
+        "ParseError",
+    };
+    return names;
+}
+
+static std::mutex& canonicalRegistryMutex() {
+    static std::mutex m;
+    return m;
+}
+
+// Keyed by engine pointer (Interpreter* or VM*). Two engines never
+// share an address (different types occupy different memory) so a
+// single map serves both. Entries live for the lifetime of the
+// process — engines are typically constructed a handful of times per
+// run; growth is bounded.
+static std::unordered_map<
+    void*,
+    std::unordered_map<std::string, std::shared_ptr<PraiaClass>>>&
+canonicalRegistry() {
+    static std::unordered_map<
+        void*,
+        std::unordered_map<std::string, std::shared_ptr<PraiaClass>>> reg;
+    return reg;
+}
+
+// Snapshot the canonical classes as they were installed by the
+// bootstrap. `lookup` reads the current binding of a name from the
+// engine's globals; we only keep entries that resolved to a
+// PraiaClass (a defensive cast — bootstrap should always produce
+// classes here).
+static void registerCanonicalErrorClasses(
+    void* engineKey,
+    const std::function<Value(const std::string&)>& lookup) {
+    std::lock_guard<std::mutex> lock(canonicalRegistryMutex());
+    auto& perEngine = canonicalRegistry()[engineKey];
+    perEngine.clear();
+    for (const auto& name : canonicalErrorNames()) {
+        Value v = lookup(name);
+        if (!v.isCallable()) continue;
+        auto klass = std::dynamic_pointer_cast<PraiaClass>(v.asCallable());
+        if (klass) perEngine[name] = std::move(klass);
+    }
+}
+
+// Consulted by the wrap functions. Returns the canonical class for
+// `name` if it was registered by the bootstrap. If `name` isn't in
+// the canonical set (typo in throwPraiaError, off-list class), the
+// second bool is false and the class is the canonical base `Error`.
+// Returns {nullptr, false} only if the bootstrap for this engine
+// failed to install any error classes at all.
+static std::pair<std::shared_ptr<PraiaClass>, bool>
+lookupCanonicalErrorClass(void* engineKey, const std::string& name) {
+    std::lock_guard<std::mutex> lock(canonicalRegistryMutex());
+    auto engineIt = canonicalRegistry().find(engineKey);
+    if (engineIt == canonicalRegistry().end()) return {nullptr, false};
+    auto& perEngine = engineIt->second;
+    auto it = perEngine.find(name);
+    if (it != perEngine.end()) return {it->second, true};
+    auto fb = perEngine.find("Error");
+    if (fb != perEngine.end()) return {fb->second, false};
+    return {nullptr, false};
+}
+
 void bootstrapErrorClasses(Interpreter& interp) {
     const auto& program = sharedBootstrapProgram();
     if (!program) return;
@@ -150,7 +239,13 @@ void bootstrapErrorClasses(Interpreter& interp) {
     } catch (const std::exception& e) {
         std::cerr << "internal: Error-class bootstrap failed to run: "
                   << e.what() << std::endl;
+        return;
     }
+    // Snapshot right after bootstrap so later user redefinitions of a
+    // class name don't reach the wrap functions.
+    registerCanonicalErrorClasses(&interp, [&interp](const std::string& name) {
+        return lookupErrorClass(interp, name);
+    });
 }
 
 void bootstrapErrorClasses(VM& vm) {
@@ -173,7 +268,11 @@ void bootstrapErrorClasses(VM& vm) {
     } catch (const std::exception& e) {
         std::cerr << "internal: Error-class bootstrap failed to run in VM: "
                   << e.what() << std::endl;
+        return;
     }
+    registerCanonicalErrorClasses(&vm, [&vm](const std::string& name) {
+        return lookupErrorClass(vm, name);
+    });
 }
 
 // ── Instance construction ─────────────────────────────────────────
@@ -263,54 +362,62 @@ Value lookupErrorClass(VM& vm, const std::string& className) {
 
 // ── Catch coercion ────────────────────────────────────────────────
 
-// A resolved class name must be a real PraiaClass — not just any
-// Callable — before we can instantiate an error via it. User code (or
-// a plugin) could shadow "IOError" with a plain lambda; that lambda is
-// callable but not instantiable, and makeErrorInstance would silently
-// fall back to Value(message), stripping the typed-throw's structured
-// payload. This helper lets both wrap functions reject non-class
-// callables early and fall back to the base Error class.
-static bool isPraiaClassValue(const Value& v) {
-    if (!v.isCallable()) return false;
-    return std::dynamic_pointer_cast<PraiaClass>(v.asCallable()) != nullptr;
+// Convert a registered PraiaClass shared_ptr back into a Value so the
+// wrap functions can hand it to makeErrorInstance. Value stores the
+// class via its Callable base, so an explicit static_pointer_cast is
+// needed.
+static Value classPtrToValue(const std::shared_ptr<PraiaClass>& klass) {
+    return Value(std::static_pointer_cast<Callable>(klass));
+}
+
+// Look up a canonical class by name for the given engine. If the name
+// isn't in the canonical set, or the bootstrap didn't register it, we
+// return the canonical base `Error` and rewrite the reported name to
+// "Error" so `.type` / `str(e)` never lie about the actual klass on
+// the instance. If the engine's bootstrap itself never ran (e.g.
+// NoErrorBootstrap throwaway interpreter), fall back to the last-ditch
+// live lookup so we still hand something usable to makeErrorInstance.
+template <typename EngineT>
+static Value resolveCanonicalClass(EngineT& engine,
+                                    std::string& reportedName /* in/out */) {
+    auto [klass, wasCanonical] = lookupCanonicalErrorClass(&engine, reportedName);
+    if (!klass) {
+        // Engine has no registry entry — bootstrap never ran or failed
+        // wholesale. Fall back to the live globals.
+        return lookupErrorClass(engine, "Error");
+    }
+    if (!wasCanonical) reportedName = "Error";
+    return classPtrToValue(klass);
 }
 
 Value wrapRuntimeErrorForInterpreter(Interpreter& interp,
                                      const RuntimeError& re) {
     // A typed throw carries the target class + structured payload.
-    // Look up the specific class; if the bootstrap didn't register
-    // it (typo in throwPraiaError, engine constructed with
-    // NoErrorBootstrap, etc.) — or if user code shadowed the name
-    // with a non-class callable — fall back to base `Error`, and use
-    // "Error" for the .type / str(e) rendering too so the reported
-    // class name never lies about the actual klass on the instance.
+    // We resolve against the canonical bootstrap registry — not
+    // whatever the globals currently hold — so a user class named
+    // `IOError` (or a plugin's rebind of `Error`) can't hijack the
+    // catch coercion path.
     if (auto* tre = dynamic_cast<const TypedRuntimeError*>(&re)) {
         std::string cls = tre->className;
-        Value klass = lookupErrorClass(interp, cls);
-        if (!isPraiaClassValue(klass)) {
-            cls = "Error";
-            klass = lookupErrorClass(interp, cls);
-        }
+        Value klass = resolveCanonicalClass(interp, cls);
         return makeErrorInstance(klass, cls, tre->what(),
                                  tre->line, tre->column, tre->fields);
     }
-    Value klassVal = lookupErrorClass(interp, "Error");
-    return makeErrorInstance(klassVal, "Error", re.what(), re.line, re.column);
+    std::string cls = "Error";
+    Value klass = resolveCanonicalClass(interp, cls);
+    return makeErrorInstance(klass, "Error", re.what(), re.line, re.column);
 }
 
 Value wrapRuntimeErrorForVm(VM& vm, const RuntimeError& re) {
     if (auto* tre = dynamic_cast<const TypedRuntimeError*>(&re)) {
         std::string cls = tre->className;
-        Value klass = lookupErrorClass(vm, cls);
-        if (!isPraiaClassValue(klass)) {
-            cls = "Error";
-            klass = lookupErrorClass(vm, cls);
-        }
+        Value klass = resolveCanonicalClass(vm, cls);
         return makeErrorInstance(klass, cls, tre->what(),
                                  tre->line, tre->column, tre->fields);
     }
-    Value klassVal = lookupErrorClass(vm, "Error");
-    return makeErrorInstance(klassVal, "Error", re.what(), re.line, re.column);
+    std::string cls = "Error";
+    Value klass = resolveCanonicalClass(vm, cls);
+    return makeErrorInstance(klass, "Error", re.what(), re.line, re.column);
 }
 
 // ── Typed-throw helpers ───────────────────────────────────────────

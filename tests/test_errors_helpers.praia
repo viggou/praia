@@ -140,6 +140,32 @@ testing.test("fs.tempDir rejects a second argument", lam{ in
     }
 })
 
+// ── Shadowed canonical class name → catch still gets canonical ─
+//
+// A user redefinition of `IOError` (accidental or malicious) must not
+// hijack the catch-coercion path. The wrap functions snapshot the
+// bootstrap classes into a per-engine registry and consult it instead
+// of the live globals, so `fs.read("/no/such")` still lands as the
+// canonical IOError with proper .path / .errno / .contains shim.
+testing.test("user shadowing IOError doesn't hijack the catch path", lam{ in
+    class IOError {
+        func init(m) { this.hijacked = m }
+    }
+    try {
+        fs.read("/no/such/xyz-PRAIA-TEST-shadow")
+        testing.expect(false, "expected fs.read to throw")
+    } catch (e) {
+        testing.expect(e is Error,
+            "still a canonical Error subclass, not the shadow")
+        testing.expectEqual(e.path, "/no/such/xyz-PRAIA-TEST-shadow",
+            ".path still populated via canonical class")
+        testing.expect(e.errno != 0 && e.errno != nil,
+            ".errno still populated")
+        testing.expect(str(e).contains("Cannot read"),
+            "shim still available (shadow class had no __str)")
+    }
+})
+
 // ── Regression: engine RuntimeError still coerces to base Error ─
 //
 // The migration is incremental. Every non-migrated `throw RuntimeError`

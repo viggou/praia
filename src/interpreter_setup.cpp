@@ -4093,9 +4093,17 @@ Interpreter::Interpreter(bool installErrorClasses) {
         if (!args[0].isString())
             praia::throwTypeError("fs.readLines() requires a string path");
         const std::string path = args[0].asString();
+        // errno-capture pattern (matches fs.read / fs.write / fs.append):
+        // reset errno before the stream op since iostream doesn't
+        // reliably touch it, then fall back to EIO if the platform gave
+        // us nothing — better than reporting `errno=0` which is
+        // indistinguishable from "no error".
+        errno = 0;
         std::ifstream f(path);
-        if (!f.is_open())
-            praia::throwIOError("Cannot read file: " + path, path, errno);
+        if (!f.is_open()) {
+            int err = errno ? errno : EIO;
+            praia::throwIOError("Cannot read file: " + path, path, err);
+        }
         auto result = gcNew<PraiaArray>();
         std::string line;
         while (std::getline(f, line))
